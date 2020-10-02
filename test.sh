@@ -3,7 +3,9 @@
 #set -x
 set -e
 
-export LD_LIBRARY_PATH="$(pwd)/../../../Projets/gcc-build/build/gcc/"
+export GCC_PATH=$(cat gcc_path)
+
+export LD_LIBRARY_PATH="$GCC_PATH"
 if [[ "$1" == "--release" ]]; then
     export CHANNEL='release'
     CARGO_INCREMENTAL=1 cargo rustc --release -- -Zrun_dsymutil=no

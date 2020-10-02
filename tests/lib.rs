@@ -8,11 +8,12 @@ use lang_tester::LangTester;
 use tempfile::TempDir;
 
 fn main() {
-    // TODO: load correct libgccjit.so file.
     let tempdir = TempDir::new().expect("temp dir");
     let current_dir = current_dir().expect("current dir");
     let current_dir = current_dir.to_str().expect("current dir").to_string();
-    env::set_var("LD_LIBRARY_PATH", format!("{}/../../../Projets/gcc-build/build/gcc/", current_dir));
+    let gcc_path = include_str!("../gcc_path");
+    let gcc_path = gcc_path.trim();
+    env::set_var("LD_LIBRARY_PATH", gcc_path);
     LangTester::new()
         .test_dir("tests/run")
         .test_file_filter(|path| path.extension().expect("extension").to_str().expect("to_str") == "rs")

@@ -10,6 +10,8 @@ The following two patches need to be applied:**
  * https://gcc.gnu.org/pipermail/jit/2020q3/001228.html
  * https://gcc.gnu.org/pipermail/jit/2020q3/001247.html
 
+**Put the path to your custom build of libgccjit in the file `gcc_path`.**
+
 ```bash
 $ git clone https://github.com/antoyo/rustc_codegen_gcc.git
 $ cd rustc_codegen_gcc

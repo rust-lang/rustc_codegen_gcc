@@ -182,7 +182,7 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, diag_hand
             }
 
             EmitObj::Bitcode => {
-                unimplemented!();
+                //unimplemented!();
                 /*debug!("copying bitcode {:?} to obj {:?}", bc_out, obj_out);
                 if let Err(e) = link_or_copy(&bc_out, &obj_out) {
                     diag_handler.err(&format!("failed to copy bitcode to object file: {}", e));

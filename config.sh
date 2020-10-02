@@ -2,6 +2,8 @@ set -e
 
 export CARGO_INCREMENTAL=0
 
+export GCC_PATH=$(cat gcc_path)
+
 unamestr=`uname`
 if [[ "$unamestr" == 'Linux' ]]; then
    dylib_ext='so'
@@ -39,7 +41,7 @@ fi
 RUSTC="rustc $RUSTFLAGS -L crate=target/out --out-dir target/out"
 export RUSTC_LOG=warn # display metadata load errors
 
-export LD_LIBRARY_PATH="$(pwd)/target/out:$(pwd)/build_sysroot/sysroot/lib/rustlib/$TARGET_TRIPLE/lib:$(pwd)/../../../Projets/gcc-build/build/gcc/"
+export LD_LIBRARY_PATH="$(pwd)/target/out:$(pwd)/build_sysroot/sysroot/lib/rustlib/$TARGET_TRIPLE/lib:$GCC_PATH"
 export DYLD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
 export CG_CLIF_DISPLAY_CG_TIME=1

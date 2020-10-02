@@ -1,3 +1,4 @@
+gcc_path
 target
 **/*.rs.bk
 *.rlib
