@@ -85,7 +85,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub tcx: TyCtxt<'tcx>,
 
     pub fields: RefCell<FxHashMap<Type<'gcc>, Vec<Field<'gcc>>>>,
-    pub array_types: RefCell<FxHashSet<Type<'gcc>>>,
     pub vector_types: RefCell<FxHashMap<Type<'gcc>, (u64, Type<'gcc>)>>,
     pub struct_types: RefCell<FxHashMap<Vec<Type<'gcc>>, Type<'gcc>>>,
 
@@ -216,7 +215,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             types: Default::default(),
             tcx,
             fields: Default::default(),
-            array_types: Default::default(),
             vector_types: Default::default(),
             struct_types: Default::default(),
             types_with_fields_to_set: Default::default(),

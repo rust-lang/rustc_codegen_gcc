@@ -599,7 +599,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn not(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
         let operation =
-            if a.get_type().is_bool(&self.cx) {
+            if a.get_type().is_bool() {
                 UnaryOp::LogicalNegate
             }
             else {
@@ -756,11 +756,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {
         let aligned_type = ty.get_aligned(align.bytes());
         let type_fields = self.fields.borrow().get(&ty).cloned();
-        // TODO: remove these conditiosn when libgccjit has a reflection API.
-        if self.array_types.borrow().contains(&ty) {
-            self.array_types.borrow_mut().insert(aligned_type);
-        }
-        else if self.vector_types.borrow().contains_key(&ty) {
+        // TODO: remove these conditions when libgccjit has a reflection API.
+        if self.vector_types.borrow().contains_key(&ty) {
             let value = self.vector_types.borrow().get(&ty).expect("vector type").clone();
             self.vector_types.borrow_mut().insert(aligned_type, value);
         }
@@ -1033,7 +1030,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let value = ptr.dereference(None).to_rvalue();
         let value_type = value.get_type();
 
-        if self.array_types.borrow().contains(&value_type) {
+        if value_type.is_array() {
             let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
             let element = self.context.new_array_access(None, value, index);
             element.get_address(None)
@@ -1247,7 +1244,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         assert_eq!(idx as usize as u64, idx);
         let value_type = aggregate_value.get_type();
 
-        if self.array_types.borrow().contains(&value_type) {
+        if value_type.is_array() {
             let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
             let element = self.context.new_array_access(None, aggregate_value, index);
             element.get_address(None)
@@ -1271,7 +1268,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let value_type = aggregate_value.get_type();
 
         let lvalue =
-            if self.array_types.borrow().contains(&value_type) {
+            if value_type.is_array() {
                 let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
                 self.context.new_array_access(None, aggregate_value, index)
             }
@@ -1469,7 +1466,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn zext(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         // FIXME: this does not zero-extend.
-        if value.get_type().is_bool(&self.cx) && dest_typ.is_i8(&self.cx) {
+        if value.get_type().is_bool() && dest_typ.is_i8(&self.cx) {
             // FIXME: hack because base::from_immediate converts i1 to i8.
             // Fix the code in codegen_ssa::base::from_immediate.
             return value;

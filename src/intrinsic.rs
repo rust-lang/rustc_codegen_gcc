@@ -1246,24 +1246,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
-        if typ.is_i8(&self.cx) || typ.is_u8(&self.cx) {
-            8
-        }
-        else if typ.is_i16(&self.cx) || typ.is_u16(&self.cx) {
-            16
-        }
-        else if typ.is_i32(&self.cx) || typ.is_u32(&self.cx) {
-            32
-        }
-        else if typ.is_i64(&self.cx) || typ.is_u64(&self.cx) {
-            64
-        }
-        else if typ.is_i128(&self.cx) || typ.is_u128(&self.cx) {
-            128
-        }
-        else {
-            unimplemented!();
-        }
+        typ.get_size() as i64 * 8
     }
 
     fn overflow_intrinsic_call(&mut self, intrinsic: &str, lhs: RValue<'gcc>, rhs: RValue<'gcc>, result: &PlaceRef<'tcx, RValue<'gcc>>) {
@@ -1350,7 +1333,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 let then_block = func.new_block("then");
 
-                let unsigned_type = result_type.to_unsigned(&self.cx);
+                let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
                 let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
                 let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
                     self.context.new_rvalue_from_int(unsigned_type, 0)
@@ -1412,7 +1395,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
-            let unsigned_type = result_type.to_unsigned(&self.cx);
+            let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
             let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
             let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
                 self.context.new_rvalue_from_int(unsigned_type, 0)

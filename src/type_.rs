@@ -132,23 +132,13 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn type_kind(&self, typ: Type<'gcc>) -> TypeKind {
-        // TODO: find a better way to compare types without taking alignment into account.
-        if typ.is_i8(self) || typ.is_u8(self) ||
-            typ.is_i16(self) || typ.is_u16(self) ||
-            typ.is_i32(self) || typ.is_u32(self) ||
-            typ.is_i64(self) || typ.is_u64(self) ||
-            typ.is_i128(self) || typ.is_u128(self)
-        {
+        if typ.is_int() {
             TypeKind::Integer
         }
-        // TODO: find a better way to do that.
-        else if format!("{:?}", typ).contains("__attribute__ ((vector_size") {
+        else if typ.is_vector() {
             TypeKind::Vector
         }
         else {
-            if format!("{:?}", typ).contains("vector_size") {
-                panic!("missed vector type");
-            }
             // TODO
             TypeKind::Void
         }
@@ -195,24 +185,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> u64 {
-        if typ.is_i8(self) || typ.is_u8(self) {
-            8
-        }
-        else if typ.is_i16(self) || typ.is_u16(self) {
-            16
-        }
-        else if typ.is_i32(self) || typ.is_u32(self) {
-            32
-        }
-        else if typ.is_i64(self) || typ.is_u64(self) {
-            64
-        }
-        else if typ.is_i128(self) || typ.is_u128(self) {
-            128
-        }
-        else {
-            panic!("Cannot get width of int type {:?}", typ);
-        }
+        typ.get_size() as u64 * 8
     }
 
     fn val_ty(&self, value: RValue<'gcc>) -> Type<'gcc> {
@@ -253,9 +226,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn type_array(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
-        let array_type = self.context.new_array_type(None, ty, len as i32);
-        self.array_types.borrow_mut().insert(array_type);
-        array_type
+        self.context.new_array_type(None, ty, len as i32)
     }
 }
 
