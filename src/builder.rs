@@ -154,12 +154,9 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
 
         let mut all_args_match = true;
         let mut param_types = vec![];
-        let func_types = self.cx.function_type_param_return_value.borrow();
-        let ptr: *mut usize = unsafe { std::mem::transmute(func.get_type()) };
-        let func_sig = func_types.get(&func.get_type())
-            .unwrap_or_else(|| panic!("No function_type_param_return_value for {:?}", func.get_type()));
-        for (index, arg) in args.iter().enumerate().take(func_sig.params.len()) {
-            let param = func_sig.params[index];
+        let gcc_func: Function<'gcc> = self.cx.rvalue_as_function(func);
+        for (index, arg) in args.iter().enumerate().take(gcc_func.get_param_count()) {
+            let param = gcc_func.get_param(index as i32).to_rvalue().get_type();
             if param != arg.get_type() {
                 all_args_match = false;
             }
@@ -265,9 +262,8 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
 
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local or call add_eval().
-        let return_type = self.function_type_param_return_value.borrow().get(&func.get_type())
-            .map(|func_sig| func_sig.return_type)
-            .unwrap_or_else(|| panic!("No return type for {:?}", func));
+        let gcc_func: Function<'gcc> = self.cx.rvalue_as_function(func);
+        let return_type = gcc_func.get_return_type();
         let current_block = self.current_block.borrow().expect("block");
         let void_type = self.context.new_type::<()>();
         let current_func = current_block.get_function();
@@ -763,10 +759,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
         else if let Some(fields) = type_fields {
             self.fields.borrow_mut().insert(aligned_type, fields);
-        }
-        else if self.function_type_param_return_value.borrow().contains_key(&ty) {
-            let func_sig = self.function_type_param_return_value.borrow().get(&ty).expect("function sig").clone();
-            self.function_type_param_return_value.borrow_mut().insert(aligned_type, func_sig);
         }
 
         // TODO: It might be better to return a LValue, but fixing the rustc API is non-trivial.

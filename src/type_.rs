@@ -105,13 +105,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn type_func(&self, params: &[Type<'gcc>], return_type: Type<'gcc>) -> Type<'gcc> {
-        let pointer_type = self.context.new_function_pointer_type(None, return_type, params, false);
-        // TODO: check if necessary.
-        /*self.function_type_param_return_value.borrow_mut().insert(pointer_type, crate::context::FuncSig {
-            params: params.to_vec(),
-            return_type,
-        });*/
-        pointer_type
+        self.context.new_function_pointer_type(None, return_type, params, false)
     }
 
     fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
@@ -185,7 +179,24 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> u64 {
-        typ.get_size() as u64 * 8
+        if typ.is_i8(self) || typ.is_u8(self) {
+            8
+        }
+        else if typ.is_i16(self) || typ.is_u16(self) {
+            16
+        }
+        else if typ.is_i32(self) || typ.is_u32(self) {
+            32
+        }
+        else if typ.is_i64(self) || typ.is_u64(self) {
+            64
+        }
+        else if typ.is_i128(self) || typ.is_u128(self) {
+            128
+        }
+        else {
+            panic!("Cannot get width of int type {:?}", typ);
+        }
     }
 
     fn val_ty(&self, value: RValue<'gcc>) -> Type<'gcc> {

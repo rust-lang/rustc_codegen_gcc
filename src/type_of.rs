@@ -177,10 +177,6 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                         // TODO: don't compute the params and return value twice.
                         let (return_type, params, _) = fn_abi.gcc_type(cx);
                         let fn_ptr_type = cx.fn_ptr_backend_type(&fn_abi);
-                        cx.function_type_param_return_value.borrow_mut().insert(fn_ptr_type, FuncSig {
-                            params,
-                            return_type,
-                        });
                         fn_ptr_type
                     },
                     _ => self.scalar_gcc_type_at(cx, scalar, Size::ZERO),

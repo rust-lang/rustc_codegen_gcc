@@ -49,7 +49,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
     // TODO: First set it to a dummy block to avoid using Option?
     pub current_block: RefCell<Option<Block<'gcc>>>,
     pub current_func: RefCell<Option<Function<'gcc>>>,
-    pub function_type_param_return_value: RefCell<FxHashMap<Type<'gcc>, FuncSig<'gcc>>>,
     pub normal_function_addresses: RefCell<FxHashSet<RValue<'gcc>>>,
 
     /// The function where globals are initialized.
@@ -177,7 +176,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             context,
             current_block: RefCell::new(None),
             current_func: RefCell::new(None),
-            function_type_param_return_value: Default::default(),
             normal_function_addresses: Default::default(),
             functions: RefCell::new(functions),
             global_init_func,
@@ -238,7 +236,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {
         let function: Function<'gcc> = unsafe { std::mem::transmute(value) };
         debug_assert!(self.functions.borrow().values().find(|value| **value == function).is_some(),
-            "{:?} is not a function", value);
+            "{:?} ({:?}) is not a function", value, value.get_type());
         function
     }
 
@@ -291,10 +289,6 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         let pointer_type = ptr.get_type();
 
         self.normal_function_addresses.borrow_mut().insert(ptr);
-        self.function_type_param_return_value.borrow_mut().insert(pointer_type, FuncSig {
-            params,
-            return_type,
-        });
 
         ptr
     }

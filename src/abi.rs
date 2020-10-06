@@ -162,10 +162,6 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
     fn ptr_to_gcc_type(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc> {
         let (return_type, params, variadic) = self.gcc_type(cx);
         let pointer_type = cx.context.new_function_pointer_type(None, return_type, &params, variadic);
-        cx.function_type_param_return_value.borrow_mut().insert(pointer_type, FuncSig {
-            params,
-            return_type,
-        });
         pointer_type
     }
 

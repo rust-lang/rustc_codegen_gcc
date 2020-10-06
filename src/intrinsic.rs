@@ -1246,7 +1246,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
-        typ.get_size() as i64 * 8
+        self.cx.int_width(typ) as i64
     }
 
     fn overflow_intrinsic_call(&mut self, intrinsic: &str, lhs: RValue<'gcc>, rhs: RValue<'gcc>, result: &PlaceRef<'tcx, RValue<'gcc>>) {
