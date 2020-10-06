@@ -2,6 +2,11 @@
 
 **Despite its name, libgccjit can be used for ahead-of-time compilation, as is used here.**
 
+## Motivation
+
+The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
+A secondary goal is to check if using the gcc backend will provide any compilation speed improvement.
+
 ## Building
 
 **This requires a patched libgccjit in order to work.
