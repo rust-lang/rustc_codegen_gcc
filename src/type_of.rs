@@ -44,9 +44,7 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
         Abi::Scalar(_) => bug!("handled elsewhere"),
         Abi::Vector { ref element, count } => {
             let element = layout.scalar_gcc_type_at(cx, element, Size::ZERO);
-            let vector_type = cx.context.new_vector_type(element, count);
-            cx.vector_types.borrow_mut().insert(vector_type, (count, element));
-            return vector_type
+            return cx.context.new_vector_type(element, count);
         },
         Abi::ScalarPair(..) => {
             return cx.type_struct(

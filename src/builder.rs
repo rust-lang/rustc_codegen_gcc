@@ -131,7 +131,7 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
         Cow::Owned(casted_args)
     }
 
-    fn check_ptr_call<'b>(&mut self, typ: &str, func: RValue<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
+    fn check_ptr_call<'b>(&mut self, typ: &str, func_ptr: RValue<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
         //let mut fn_ty = self.cx.val_ty(func);
         // Strip off pointers
         /*while self.cx.type_kind(fn_ty) == TypeKind::Pointer {
@@ -154,9 +154,9 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
 
         let mut all_args_match = true;
         let mut param_types = vec![];
-        let gcc_func: Function<'gcc> = self.cx.rvalue_as_function(func);
+        let gcc_func = func_ptr.get_type().is_function_ptr_type().expect("function ptr");
         for (index, arg) in args.iter().enumerate().take(gcc_func.get_param_count()) {
-            let param = gcc_func.get_param(index as i32).to_rvalue().get_type();
+            let param = gcc_func.get_param_type(index);
             if param != arg.get_type() {
                 all_args_match = false;
             }
@@ -253,16 +253,16 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
         }
     }
 
-    fn function_ptr_call(&mut self, mut func: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
+    fn function_ptr_call(&mut self, mut func_ptr: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
         //debug!("func ptr call {:?} with args ({:?})", func, args);
 
-        let args = self.check_ptr_call("call", func, args);
+        let args = self.check_ptr_call("call", func_ptr, args);
         //let bundle = funclet.map(|funclet| funclet.bundle());
         //let bundle = bundle.as_ref().map(|b| &*b.raw);
 
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local or call add_eval().
-        let gcc_func: Function<'gcc> = self.cx.rvalue_as_function(func);
+        let gcc_func = func_ptr.get_type().is_function_ptr_type().expect("function ptr");
         let return_type = gcc_func.get_return_type();
         let current_block = self.current_block.borrow().expect("block");
         let void_type = self.context.new_type::<()>();
@@ -271,11 +271,11 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
         if return_type != void_type {
             unsafe { RETURN_VALUE_COUNT += 1 };
             let result = current_func.new_local(None, return_type, &format!("returnValue{}", unsafe { RETURN_VALUE_COUNT }));
-            current_block.add_assignment(None, result, self.cx.context.new_call_through_ptr(None, func, &args));
+            current_block.add_assignment(None, result, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             result.to_rvalue()
         }
         else {
-            current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func, &args));
+            current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             // Return dummy value when not having return value.
             self.context.new_rvalue_from_long(self.isize_type, 0)
         }
@@ -751,16 +751,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {
         let aligned_type = ty.get_aligned(align.bytes());
-        let type_fields = self.fields.borrow().get(&ty).cloned();
-        // TODO: remove these conditions when libgccjit has a reflection API.
-        if self.vector_types.borrow().contains_key(&ty) {
-            let value = self.vector_types.borrow().get(&ty).expect("vector type").clone();
-            self.vector_types.borrow_mut().insert(aligned_type, value);
-        }
-        else if let Some(fields) = type_fields {
-            self.fields.borrow_mut().insert(aligned_type, fields);
-        }
-
         // TODO: It might be better to return a LValue, but fixing the rustc API is non-trivial.
         self.current_func().new_local(None, aligned_type, "stack_var").get_address(None)
     }
@@ -1027,7 +1017,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             let element = self.context.new_array_access(None, value, index);
             element.get_address(None)
         }
-        else if let Some(&(count, element_type)) = self.vector_types.borrow().get(&value_type) {
+        else if let Some(vector_type) = value_type.is_vector() {
+            let count = vector_type.get_num_units();
+            let element_type = vector_type.get_element_type();
             let indexes = vec![self.context.new_rvalue_from_long(element_type, i64::try_from(idx).expect("i64::try_from")); count as usize];
             let indexes = self.context.new_rvalue_from_vector(None, value_type, &indexes);
             let variable = self.current_func.borrow().expect("func")
@@ -1036,11 +1028,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 .add_assignment(None, variable, value + indexes);
             variable.get_address(None)
         }
+        else if let Some(struct_type) = value_type.is_struct() {
+            ptr.dereference_field(None, struct_type.get_field(idx as i32)).get_address(None)
+        }
         else {
-            let fields = self.fields.borrow();
-            let fields = &fields.get(&value_type)
-                .unwrap_or_else(|| panic!("Structure {:?} ({:?}) not in fields", value, value.get_type()));
-            ptr.dereference_field(None, fields[idx as usize]).get_address(None)
+            panic!("Unexpected type {:?}", value_type);
         }
     }
 
@@ -1241,14 +1233,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             let element = self.context.new_array_access(None, aggregate_value, index);
             element.get_address(None)
         }
-        else if let Some(&(count, element_type)) = self.vector_types.borrow().get(&value_type) {
+        else if value_type.is_vector().is_some() {
             panic!();
         }
+        else if let Some(struct_type) = value_type.is_struct() {
+            aggregate_value.access_field(None, struct_type.get_field(idx as i32)).to_rvalue()
+        }
         else {
-            let fields = self.fields.borrow();
-            let fields = &fields.get(&value_type)
-                .unwrap_or_else(|| panic!("Structure {:?} not in fields", aggregate_value.get_type()));
-            aggregate_value.access_field(None, fields[idx as usize]).to_rvalue()
+            panic!("Unexpected type {:?}", value_type);
         }
         /*assert_eq!(idx as c_uint as u64, idx);
         unsafe { llvm::LLVMBuildExtractValue(self.llbuilder, agg_val, idx as c_uint, UNNAMED) }*/
@@ -1264,14 +1256,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
                 self.context.new_array_access(None, aggregate_value, index)
             }
-            else if let Some(&(count, element_type)) = self.vector_types.borrow().get(&value_type) {
+            else if value_type.is_vector().is_some() {
                 panic!();
             }
+            else if let Some(struct_type) = value_type.is_struct() {
+                aggregate_value.access_field(None, struct_type.get_field(idx as i32))
+            }
             else {
-                let fields = self.fields.borrow();
-                let fields = &fields.get(&value_type)
-                    .unwrap_or_else(|| panic!("Structure {:?} not in fields", aggregate_value.get_type()));
-                aggregate_value.access_field(None, fields[idx as usize])
+                panic!("Unexpected type {:?}", value_type);
             };
         self.llbb().add_assignment(None, lvalue, value);
 

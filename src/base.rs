@@ -73,7 +73,7 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
         //let llvm_module = ModuleLlvm::new(tcx, &cgu_name.as_str());
         let context = Context::default();
         //context.set_dump_code_on_compile(true);
-        //context.set_dump_initial_gimple(true);
+        context.set_dump_initial_gimple(true);
         context.set_debug_info(true);
         //context.set_dump_everything(true);
         //context.set_keep_intermediates(true);

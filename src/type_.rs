@@ -120,16 +120,15 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         let name = types.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
         //let typ = self.context.new_struct_type(None, format!("struct{}", name), &fields).as_type();
         let typ = self.context.new_struct_type(None, "struct", &fields).as_type();
-        self.fields.borrow_mut().insert(typ, fields);
         self.struct_types.borrow_mut().insert(types, typ);
         typ
     }
 
     fn type_kind(&self, typ: Type<'gcc>) -> TypeKind {
-        if typ.is_int() {
+        if typ.is_integral() {
             TypeKind::Integer
         }
-        else if typ.is_vector() {
+        else if typ.is_vector().is_some() {
             TypeKind::Vector
         }
         else {
@@ -219,7 +218,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             .map(|field| self.context.new_field(None, *field, "field"))
             .collect();
         typ.set_fields(None, &fields);
-        self.fields.borrow_mut().insert(typ.as_type(), fields);
     }
 
     fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
@@ -227,9 +225,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let fields: Vec<_> = fields.iter()
             .map(|field| self.context.new_field(None, *field, "field"))
             .collect();
-        let typ = self.context.new_struct_type(None, "unnamedStruct", &fields).as_type();
-        self.fields.borrow_mut().insert(typ, fields);
-        typ
+        return self.context.new_struct_type(None, "unnamedStruct", &fields).as_type();
     }
 
     pub fn type_named_struct(&self, name: &str) -> Struct<'gcc> {

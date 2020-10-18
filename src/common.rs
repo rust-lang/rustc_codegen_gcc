@@ -187,9 +187,10 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         let name = fields.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
         let typ = self.type_struct(&fields, packed);
         let structure = self.global_init_func.new_local(None, typ, &name);
-        let fields = &self.fields.borrow()[&typ];
-        for (value, field) in values.iter().zip(fields.iter()) {
-            let field_lvalue = structure.access_field(None, *field);
+        let struct_type = typ.is_struct().expect("struct type");
+        for (index, value) in values.iter().enumerate() {
+            let field = struct_type.get_field(index as i32);
+            let field_lvalue = structure.access_field(None, field);
             self.global_init_block.add_assignment(None, field_lvalue, *value);
         }
         self.lvalue_to_rvalue(structure)

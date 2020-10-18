@@ -83,8 +83,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub types: RefCell<FxHashMap<(Ty<'tcx>, Option<VariantIdx>), Type<'gcc>>>,
     pub tcx: TyCtxt<'tcx>,
 
-    pub fields: RefCell<FxHashMap<Type<'gcc>, Vec<Field<'gcc>>>>,
-    pub vector_types: RefCell<FxHashMap<Type<'gcc>, (u64, Type<'gcc>)>>,
     pub struct_types: RefCell<FxHashMap<Vec<Type<'gcc>>, Type<'gcc>>>,
 
     pub types_with_fields_to_set: RefCell<FxHashMap<Type<'gcc>, (Struct<'gcc>, TyAndLayout<'tcx>)>>,
@@ -212,8 +210,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             scalar_types: Default::default(),
             types: Default::default(),
             tcx,
-            fields: Default::default(),
-            vector_types: Default::default(),
             struct_types: Default::default(),
             types_with_fields_to_set: Default::default(),
             local_gen_sym_counter: Cell::new(0),
