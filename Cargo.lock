@@ -30,6 +30,7 @@ dependencies = [
 [[package]]
 name = "gccjit"
 version = "1.0.0"
+source = "git+https://github.com/antoyo/gccjit.rs?branch=feature/rustc#d47429baf195f599667b18585bc29603c0abd48a"
 dependencies = [
  "gccjit_sys",
 ]
@@ -37,6 +38,7 @@ dependencies = [
 [[package]]
 name = "gccjit_sys"
 version = "0.0.1"
+source = "git+https://github.com/antoyo/gccjit.rs?branch=feature/rustc#d47429baf195f599667b18585bc29603c0abd48a"
 dependencies = [
  "libc 0.1.12",
 ]

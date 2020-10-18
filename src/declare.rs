@@ -1,4 +1,4 @@
-use gccjit::{Function, FunctionType, GlobalKind, RValue, ToRValue, Type};
+use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, DeclareMethods};
 use rustc_middle::ty::Ty;
 use rustc_target::abi::call::FnAbi;
@@ -16,6 +16,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else {
             self.declare_global(name, ty)
         }
+    }
+
+    pub fn declare_unnamed_global(&self, ty: Type<'gcc>) -> LValue<'gcc> {
+        let index = self.global_gen_sym_counter.get();
+        self.global_gen_sym_counter.set(index + 1);
+        let name = format!("global_{}_{}", index, unit_name(&self.codegen_unit));
+        self.context.new_global(None, GlobalKind::Exported, ty, &name)
     }
 
     pub fn declare_global_with_linkage(&self, name: &str, ty: Type<'gcc>, linkage: GlobalKind) -> RValue<'gcc> {
@@ -77,11 +84,8 @@ impl<'gcc, 'tcx> DeclareMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
-        let index = self.global_gen_sym_counter.get();
-        self.global_gen_sym_counter.set(index + 1);
-        let name = format!("global_{}_{}", index, unit_name(&self.codegen_unit));
-        self.context.new_global(None, GlobalKind::Exported, ty, &name)
-            .get_address(None)
+        let global = self.declare_unnamed_global(ty);
+        global.get_address(None)
     }
 
     fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {
