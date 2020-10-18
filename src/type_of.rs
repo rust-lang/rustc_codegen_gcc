@@ -44,9 +44,7 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
         Abi::Scalar(_) => bug!("handled elsewhere"),
         Abi::Vector { ref element, count } => {
             let element = layout.scalar_gcc_type_at(cx, element, Size::ZERO);
-            let vector_type = cx.context.new_vector_type(element, count);
-            cx.vector_types.borrow_mut().insert(vector_type, (count, element));
-            return vector_type
+            return cx.context.new_vector_type(element, count);
         },
         Abi::ScalarPair(..) => {
             return cx.type_struct(
@@ -177,10 +175,6 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                         // TODO: don't compute the params and return value twice.
                         let (return_type, params, _) = fn_abi.gcc_type(cx);
                         let fn_ptr_type = cx.fn_ptr_backend_type(&fn_abi);
-                        cx.function_type_param_return_value.borrow_mut().insert(fn_ptr_type, FuncSig {
-                            params,
-                            return_type,
-                        });
                         fn_ptr_type
                     },
                     _ => self.scalar_gcc_type_at(cx, scalar, Size::ZERO),

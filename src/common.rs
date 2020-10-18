@@ -96,10 +96,7 @@ pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) ->
 }
 
 pub fn type_is_pointer<'gcc>(typ: Type<'gcc>) -> bool {
-    // TODO: fix when having proper type reflection.
-    // TODO: put all pointer types in a HashSet and check if it's there instead of relying on
-    // string comparison.
-    format!("{:?}", typ).ends_with('*')
+    typ.get_pointee().is_some()
 }
 
 impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
@@ -190,9 +187,10 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         let name = fields.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
         let typ = self.type_struct(&fields, packed);
         let structure = self.global_init_func.new_local(None, typ, &name);
-        let fields = &self.fields.borrow()[&typ];
-        for (value, field) in values.iter().zip(fields.iter()) {
-            let field_lvalue = structure.access_field(None, *field);
+        let struct_type = typ.is_struct().expect("struct type");
+        for (index, value) in values.iter().enumerate() {
+            let field = struct_type.get_field(index as i32);
+            let field_lvalue = structure.access_field(None, field);
             self.global_init_block.add_assignment(None, field_lvalue, *value);
         }
         self.lvalue_to_rvalue(structure)
@@ -303,8 +301,6 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 pub trait SignType<'gcc, 'tcx> {
     fn is_signed(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
     fn is_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
-
-    fn to_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc>;
 }
 
 impl<'gcc, 'tcx> SignType<'gcc, 'tcx> for Type<'gcc> {
@@ -315,31 +311,9 @@ impl<'gcc, 'tcx> SignType<'gcc, 'tcx> for Type<'gcc> {
     fn is_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
         self.is_u8(cx) || self.is_u16(cx) || self.is_u32(cx) || self.is_u64(cx) || self.is_u128(cx)
     }
-
-    fn to_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc> {
-        if self.is_i8(cx) {
-            cx.u8_type
-        }
-        else if self.is_i16(cx) {
-            cx.u16_type
-        }
-        else if self.is_i32(cx) {
-            cx.u32_type
-        }
-        else if self.is_i64(cx) {
-            cx.u64_type
-        }
-        else if self.is_i128(cx) {
-            cx.u128_type
-        }
-        else {
-            *self
-        }
-    }
 }
 
 pub trait TypeReflection<'gcc, 'tcx>  {
-    fn is_bool(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
     fn is_uchar(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
     fn is_ushort(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
     fn is_uint(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
@@ -361,77 +335,72 @@ pub trait TypeReflection<'gcc, 'tcx>  {
     fn is_f64(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
 }
 
-// TODO: remove all this when libgccjit has a reflection API.
 impl<'gcc, 'tcx> TypeReflection<'gcc, 'tcx> for Type<'gcc> {
-    fn is_bool(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.bool_type))
-    }
-
     fn is_uchar(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u8_type))
+        self.unqualified() == cx.u8_type
     }
 
     fn is_ushort(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u16_type))
+        self.unqualified() == cx.u16_type
     }
 
     fn is_uint(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.uint_type))
+        self.unqualified() == cx.uint_type
     }
 
     fn is_ulong(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        !self.is_ulonglong(cx) && format!("{:?}", self).starts_with(&format!("{:?}", cx.ulong_type))
+        self.unqualified() == cx.ulong_type
     }
 
     fn is_ulonglong(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.ulonglong_type))
+        self.unqualified() == cx.ulonglong_type
     }
 
     fn is_i8(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.i8_type))
+        self.unqualified() == cx.i8_type
     }
 
     fn is_u8(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u8_type))
+        self.unqualified() == cx.u8_type
     }
 
     fn is_i16(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.i16_type))
+        self.unqualified() == cx.i16_type
     }
 
     fn is_u16(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u16_type))
+        self.unqualified() == cx.u16_type
     }
 
     fn is_i32(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.i32_type))
+        self.unqualified() == cx.i32_type
     }
 
     fn is_u32(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u32_type))
+        self.unqualified() == cx.u32_type
     }
 
     fn is_i64(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.i64_type))
+        self.unqualified() == cx.i64_type
     }
 
     fn is_u64(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u64_type))
+        self.unqualified() == cx.u64_type
     }
 
     fn is_i128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.i128_type))
+        self.unqualified() == cx.i128_type
     }
 
     fn is_u128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.u128_type))
+        self.unqualified() == cx.u128_type
     }
 
     fn is_f32(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.context.new_type::<f32>()))
+        self.unqualified() == cx.context.new_type::<f32>()
     }
 
     fn is_f64(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        format!("{:?}", self).starts_with(&format!("{:?}", cx.context.new_type::<f64>()))
+        self.unqualified() == cx.context.new_type::<f64>()
     }
 }
