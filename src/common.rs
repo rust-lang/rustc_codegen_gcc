@@ -81,18 +81,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 }
 
 pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) -> RValue<'gcc> {
-    // TODO: use gcc_jit_context_new_blob when it's merged?
-    // https://gcc.gnu.org/pipermail/jit/2020q2/001214.html
     let context = &cx.context;
     let typ = context.new_array_type(None, context.new_type::<u8>(), bytes.len() as i32);
-    let value = cx.global_init_func.new_local(None, typ, "bytesTODO");
-    let block = cx.global_init_block;
-    for (index, byte) in bytes.iter().enumerate() {
-        let index = context.new_rvalue_from_long(cx.i32_type, index as i64);
-        let byte = context.new_rvalue_from_long(context.new_type::<u8>(), *byte as i64);
-        block.add_assignment(None, context.new_array_access(None, value, index), byte);
-    }
-    value.to_rvalue()
+    let global = cx.declare_unnamed_global(typ);
+    global.global_set_initializer(bytes);
+    global.to_rvalue()
 }
 
 pub fn type_is_pointer<'gcc>(typ: Type<'gcc>) -> bool {
