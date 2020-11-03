@@ -1,7 +1,6 @@
-use rustc_codegen_ssa::traits::{DeclareMethods, PreDefineMethods};
+use rustc_codegen_ssa::traits::PreDefineMethods;
 use rustc_middle::mir::mono::{Linkage, Visibility};
-use rustc_middle::ty::Instance;
-use rustc_middle::ty::TypeFoldable;
+use rustc_middle::ty::{self, Instance, TypeFoldable};
 use rustc_middle::ty::layout::FnAbiExt;
 use rustc_span::def_id::DefId;
 use rustc_target::abi::LayoutOf;
@@ -14,7 +13,7 @@ use crate::type_of::LayoutGccExt;
 impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn predefine_static(&self, def_id: DefId, linkage: Linkage, visibility: Visibility, symbol_name: &str) {
         let instance = Instance::mono(self.tcx, def_id);
-        let ty = instance.monomorphic_ty(self.tcx);
+        let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
         let gcc_type = self.layout_of(ty).gcc_type(self, true);
 
         let g = self.define_global(symbol_name, gcc_type).unwrap_or_else(|| {

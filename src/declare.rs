@@ -1,10 +1,10 @@
-use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, ToRValue, Type};
-use rustc_codegen_ssa::traits::{BaseTypeMethods, DeclareMethods};
+use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
+use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::Ty;
 use rustc_target::abi::call::FnAbi;
 
 use crate::abi::FnAbiGccExt;
-use crate::context::{CodegenCx, FuncSig, unit_name};
+use crate::context::{CodegenCx, unit_name};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>) -> RValue<'gcc> {
@@ -42,10 +42,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // FIXME: this is a wrong cast. That requires changing the compiler API.
         unsafe { std::mem::transmute(func) }
     }
-}
 
-impl<'gcc, 'tcx> DeclareMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
-    fn declare_global(&self, name: &str, ty: Type<'gcc>) -> RValue<'gcc> {
+    pub fn declare_global(&self, name: &str, ty: Type<'gcc>) -> RValue<'gcc> {
         //debug!("declare_global(name={:?})", name);
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name)
             .get_address(None);
@@ -56,7 +54,7 @@ impl<'gcc, 'tcx> DeclareMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         global
     }
 
-    fn declare_cfn(&self, name: &str, fn_type: Type<'gcc>) -> RValue<'gcc> {
+    pub fn declare_cfn(&self, name: &str, fn_type: Type<'gcc>) -> RValue<'gcc> {
         // TODO: use the fn_type parameter.
         let const_string = self.context.new_type::<u8>().make_pointer().make_pointer();
         let return_type = self.type_i32();
@@ -70,7 +68,7 @@ impl<'gcc, 'tcx> DeclareMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    fn declare_fn(&self, name: &str, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> RValue<'gcc> {
+    pub fn declare_fn(&self, name: &str, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> RValue<'gcc> {
         //debug!("declare_rust_fn(name={:?}, fn_abi={:?})", name, fn_abi);
         let (return_type, params, variadic) = fn_abi.gcc_type(self);
         let func = declare_raw_fn(self, name, () /*fn_abi.llvm_cconv()*/, return_type, &params, variadic);
@@ -79,16 +77,16 @@ impl<'gcc, 'tcx> DeclareMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    fn define_global(&self, name: &str, ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+    pub fn define_global(&self, name: &str, ty: Type<'gcc>) -> Option<RValue<'gcc>> {
         Some(self.get_or_insert_global(name, ty))
     }
 
-    fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
+    pub fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
         let global = self.declare_unnamed_global(ty);
         global.get_address(None)
     }
 
-    fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {
+    pub fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {
         //debug!("get_declared_value(name={:?})", name);
         // TODO: use a different field than globals, because this seems to return a function?
         self.globals.borrow().get(name).cloned()

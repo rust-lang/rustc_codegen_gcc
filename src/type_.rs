@@ -3,7 +3,7 @@ use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods};
 use rustc_codegen_ssa::common::TypeKind;
 use rustc_middle::bug;
 use rustc_middle::ty::layout::TyAndLayout;
-use rustc_target::abi::{Align, Integer, Size};
+use rustc_target::abi::{AddressSpace, Align, Integer, Size};
 
 use crate::common::TypeReflection;
 use crate::context::CodegenCx;
@@ -142,6 +142,11 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         /*assert_ne!(self.type_kind(ty), TypeKind::Function,
             "don't call ptr_to on function types, use ptr_to_gcc_type on FnAbi instead"
         );*/
+        ty.make_pointer()
+    }
+
+    fn type_ptr_to_ext(&self, ty: Type<'gcc>, address_space: AddressSpace) -> Type<'gcc> {
+        // TODO: use address_space
         ty.make_pointer()
     }
 

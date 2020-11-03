@@ -1,10 +1,15 @@
 #![feature(
     no_core, lang_items, intrinsics, unboxed_closures, type_ascription, extern_types,
     untagged_unions, decl_macro, rustc_attrs, transparent_unions, optin_builtin_traits,
-    thread_local, track_caller
+    thread_local
 )]
 #![no_core]
 #![allow(dead_code)]
+
+#[no_mangle]
+unsafe extern "C" fn _Unwind_Resume() {
+    intrinsics::unreachable();
+}
 
 #[lang = "sized"]
 pub trait Sized {}
@@ -388,6 +393,7 @@ pub struct PhantomData<T: ?Sized>;
 #[lang = "fn_once"]
 #[rustc_paren_sugar]
 pub trait FnOnce<Args> {
+    #[lang = "fn_once_output"]
     type Output;
 
     extern "rust-call" fn call_once(self, args: Args) -> Self::Output;
@@ -498,6 +504,7 @@ pub mod intrinsics {
         pub fn bitreverse<T>(x: T) -> T;
         pub fn bswap<T>(x: T) -> T;
         pub fn write_bytes<T>(dst: *mut T, val: u8, count: usize);
+        pub fn unreachable() -> !;
     }
 }
 

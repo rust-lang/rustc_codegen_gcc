@@ -5,7 +5,6 @@ use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{
     BaseTypeMethods,
     ConstMethods,
-    DeclareMethods,
     DerivedTypeMethods,
     MiscMethods,
     StaticMethods,
@@ -17,7 +16,7 @@ use rustc_mir::interpret::{Allocation, GlobalAlloc, Scalar};
 use rustc_span::Symbol;
 use rustc_target::abi::{self, HasDataLayout, LayoutOf, Pointer, Size};
 
-use crate::consts::{self, const_alloc_to_gcc};
+use crate::consts::const_alloc_to_gcc;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
@@ -167,7 +166,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn const_str(&self, s: Symbol) -> (RValue<'gcc>, RValue<'gcc>) {
         let len = s.as_str().len();
         let cs = self.const_ptrcast(self.const_cstr(s, false),
-            self.type_ptr_to(self.layout_of(self.tcx.mk_str()).gcc_type(self, true)),
+            self.type_ptr_to(self.layout_of(self.tcx.types.str_).gcc_type(self, true)),
         );
         (cs, self.const_usize(len as u64))
     }

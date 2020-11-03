@@ -98,7 +98,7 @@ $RUN_WRAPPER ./target/out/std_example --target $TARGET_TRIPLE
 #fi
 #popd
 
-pushd build_sysroot/sysroot_src/src/libcore/tests
+pushd build_sysroot/sysroot_src/library/core/tests
 echo "[TEST] libcore"
 rm -r ./target || true
 ../../../../../cargo.sh test

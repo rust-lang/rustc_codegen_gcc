@@ -4,13 +4,11 @@ use gccjit::{
     Block,
     Context,
     CType,
-    Field,
     Function,
     FunctionType,
     LValue,
     RValue,
     Struct,
-    ToRValue,
     Type,
 };
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -27,7 +25,7 @@ use rustc_middle::ty::{self, Instance, ParamEnv, PolyExistentialTraitRef, Ty, Ty
 use rustc_middle::ty::layout::{FnAbiExt, HasParamEnv, HasTyCtxt, LayoutError, TyAndLayout};
 use rustc_session::Session;
 use rustc_span::{Span, Symbol, DUMMY_SP};
-use rustc_target::abi::{HasDataLayout, LayoutOf, PointeeInfo, Pointer, Size, TargetDataLayout, VariantIdx};
+use rustc_target::abi::{HasDataLayout, LayoutOf, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_target::abi::call::FnAbi;
 use rustc_target::spec::{HasTargetSpec, Target};
 
@@ -257,6 +255,7 @@ impl<'gcc, 'tcx> BackendTypes for CodegenCx<'gcc, 'tcx> {
     type Funclet = (); // TODO
 
     type DIScope = (); // TODO
+    type DILocation = (); // TODO
     type DIVariable = (); // TODO
 }
 
@@ -272,7 +271,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn get_fn_addr(&self, instance: Instance<'tcx>) -> RValue<'gcc> {
-        let symbol = self.tcx.symbol_name(instance).name.as_str();
+        let symbol = self.tcx.symbol_name(instance).name;
 
         let func = get_fn(self, instance);
         let func = self.rvalue_as_function(func);
@@ -379,6 +378,18 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             llvm::LLVMSetSection(g, section.as_ptr());
         }*/
     }
+
+    fn declare_c_main(&self, fn_type: Self::Type) -> Option<Self::Function> {
+        if self.get_declared_value("main").is_none() {
+            Some(self.declare_cfn("main", fn_type))
+        }
+        else {
+            // If the symbol already exists, it is an error: for example, the user wrote
+            // #[no_mangle] extern "C" fn main(..) {..}
+            // instead of #[start]
+            None
+        }
+    }
 }
 
 impl<'gcc, 'tcx> HasTyCtxt<'tcx> for CodegenCx<'gcc, 'tcx> {
@@ -395,7 +406,7 @@ impl<'gcc, 'tcx> HasDataLayout for CodegenCx<'gcc, 'tcx> {
 
 impl<'gcc, 'tcx> HasTargetSpec for CodegenCx<'gcc, 'tcx> {
     fn target_spec(&self) -> &Target {
-        &self.tcx.sess.target.target
+        &self.tcx.sess.target
     }
 }
 

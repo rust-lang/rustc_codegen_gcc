@@ -4,7 +4,7 @@
 //   status: 0
 //   stdout: 5
 
-#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
+#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]

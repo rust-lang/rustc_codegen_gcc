@@ -5,12 +5,12 @@ use crate::rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods, Layo
 use rustc_middle::bug;
 use rustc_middle::ty::{self, Ty, TypeFoldable};
 use rustc_middle::ty::layout::{FnAbiExt, TyAndLayout};
-use rustc_middle::ty::print::obsolete::DefPathBasedNames;
+use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_target::abi::{self, Abi, Align, F32, F64, FieldsShape, Int, Integer, LayoutOf, Pointer, PointeeInfo, Size, TyAndLayoutMethods, Variants};
 use rustc_target::abi::call::{CastTarget, FnAbi, Reg};
 
 use crate::abi::{FnAbiGccExt, GccType};
-use crate::context::{CodegenCx, FuncSig};
+use crate::context::CodegenCx;
 use crate::type_::struct_fields;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -58,35 +58,37 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
         Abi::Uninhabited | Abi::Aggregate { .. } => {}
     }
 
-    let name =
-        match layout.ty.kind {
-            ty::Closure(..) |
-                ty::Generator(..) |
-                ty::Adt(..) |
-                // FIXME(eddyb) producing readable type names for trait objects can result
-                // in problematically distinct types due to HRTB and subtyping (see #47638).
-                // ty::Dynamic(..) |
-                ty::Foreign(..) |
-                ty::Str => {
-                    let mut name = String::with_capacity(32);
-                    let printer = DefPathBasedNames::new(cx.tcx, true, true);
-                    printer.push_type_name(layout.ty, &mut name, false);
-                    if let (&ty::Adt(def, _), &Variants::Single { index })
-                        = (&layout.ty.kind, &layout.variants)
-                    {
-                        if def.is_enum() && !def.variants.is_empty() {
-                            write!(&mut name, "::{}", def.variants[index].ident).unwrap();
-                        }
-                    }
-                    if let (&ty::Generator(_, substs, _), &Variants::Single { index })
-                        = (&layout.ty.kind, &layout.variants)
-                    {
-                        write!(&mut name, "::{}", substs.as_generator().variant_name(index)).unwrap();
-                    }
-                    Some(name)
+    let name = match layout.ty.kind() {
+        // FIXME(eddyb) producing readable type names for trait objects can result
+        // in problematically distinct types due to HRTB and subtyping (see #47638).
+        // ty::Dynamic(..) |
+        ty::Adt(..) | ty::Closure(..) | ty::Foreign(..) | ty::Generator(..) | ty::Str
+            if !cx.sess().fewer_names() =>
+        {
+            let mut name = with_no_trimmed_paths(|| layout.ty.to_string());
+            if let (&ty::Adt(def, _), &Variants::Single { index }) =
+                (layout.ty.kind(), &layout.variants)
+            {
+                if def.is_enum() && !def.variants.is_empty() {
+                    write!(&mut name, "::{}", def.variants[index].ident).unwrap();
                 }
-            _ => None
-        };
+            }
+            if let (&ty::Generator(_, _, _), &Variants::Single { index }) =
+                (layout.ty.kind(), &layout.variants)
+            {
+                write!(&mut name, "::{}", ty::GeneratorSubsts::variant_name(index)).unwrap();
+            }
+            Some(name)
+        }
+        ty::Adt(..) => {
+            // If `Some` is returned then a named struct is created in LLVM. Name collisions are
+            // avoided by LLVM (with increasing suffixes). If rustc doesn't generate names then that
+            // can improve perf.
+            // FIXME: I don't think that's true for libgccjit.
+            Some(String::new())
+        }
+        _ => None,
+    };
 
     match layout.fields {
         FieldsShape::Primitive | FieldsShape::Union(_) => {
@@ -144,7 +146,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         }
     }
 
-    /// Gets the LLVM type corresponding to a Rust type, i.e., `rustc_middle::ty::Ty`.
+    /// Gets the GCC type corresponding to a Rust type, i.e., `rustc_middle::ty::Ty`.
     /// The pointee type of the pointer in `PlaceRef` is always this type.
     /// For sized types, it is also the right LLVM type for an `alloca`
     /// containing a value of that type, and most immediates (except `bool`).
@@ -163,20 +165,14 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 return ty;
             }
             let ty =
-                match self.ty.kind {
+                match *self.ty.kind() {
                     ty::Ref(_, ty, _) | ty::RawPtr(ty::TypeAndMut { ty, .. }) => {
                         cx.type_ptr_to(cx.layout_of(ty).gcc_type(cx, set_fields))
                     }
                     ty::Adt(def, _) if def.is_box() => {
                         cx.type_ptr_to(cx.layout_of(self.ty.boxed_ty()).gcc_type(cx, true))
                     }
-                    ty::FnPtr(sig) => {
-                        let fn_abi = FnAbi::of_fn_ptr(cx, sig, &[]);
-                        // TODO: don't compute the params and return value twice.
-                        let (return_type, params, _) = fn_abi.gcc_type(cx);
-                        let fn_ptr_type = cx.fn_ptr_backend_type(&fn_abi);
-                        fn_ptr_type
-                    },
+                    ty::FnPtr(sig) => cx.fn_ptr_backend_type(&FnAbi::of_fn_ptr(cx, sig, &[])),
                     _ => self.scalar_gcc_type_at(cx, scalar, Size::ZERO),
                 };
             cx.scalar_types.borrow_mut().insert(self.ty, ty);
@@ -226,16 +222,17 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         cx.types.borrow_mut().insert((self.ty, variant_index), ty);
 
         if let Some((ty, layout)) = defer {
-            if set_fields {
+            //TODO: do we still need this conditions and the set_fields parameter?
+            //if set_fields {
                 let (fields, packed) = struct_fields(cx, layout);
                 cx.set_struct_body(ty, &fields, packed);
-            }
+            /*}
             else {
                 // Since we might be trying to generate a type containing another type which is not
                 // completely generated yet, we don't set the fields right now, but we save the
                 // type to set the fields later.
                 cx.types_with_fields_to_set.borrow_mut().insert(ty.as_type(), (ty, layout));
-            }
+            }*/
         }
 
         ty
@@ -274,7 +271,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         // TODO: remove llvm hack:
         // HACK(eddyb) special-case fat pointers until LLVM removes
         // pointee types, to avoid bitcasting every `OperandRef::deref`.
-        match self.ty.kind {
+        match self.ty.kind() {
             ty::Ref(..) | ty::RawPtr(_) => {
                 return self.field(cx, index).gcc_type(cx, true);
             }

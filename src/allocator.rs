@@ -3,16 +3,17 @@ use gccjit::{FunctionType, ToRValue};
 use rustc_ast::expand::allocator::{AllocatorKind, AllocatorTy, ALLOCATOR_METHODS};
 use rustc_middle::bug;
 use rustc_middle::ty::TyCtxt;
+use rustc_span::symbol::sym;
 
 use crate::GccContext;
 
-pub(crate) unsafe fn codegen(tcx: TyCtxt<'_>, mods: &mut GccContext, kind: AllocatorKind) {
+pub(crate) unsafe fn codegen(tcx: TyCtxt<'_>, mods: &mut GccContext, kind: AllocatorKind, has_alloc_error_handler: bool) {
     let context = &mods.context;
     let usize =
-        match &tcx.sess.target.target.target_pointer_width[..] {
-            "16" => context.new_type::<u16>(),
-            "32" => context.new_type::<u32>(),
-            "64" => context.new_type::<u64>(),
+        match tcx.sess.target.pointer_width {
+            16 => context.new_type::<u16>(),
+            32 => context.new_type::<u32>(),
+            64 => context.new_type::<u64>(),
             tws => bug!("Unsupported target word size for int: {}", tws),
         };
     let i8 = context.new_type::<i8>();
@@ -48,7 +49,7 @@ pub(crate) unsafe fn codegen(tcx: TyCtxt<'_>, mods: &mut GccContext, kind: Alloc
             .collect();
         let func = context.new_function(None, FunctionType::Exported, output.unwrap_or(void), &args, name, false);
 
-        if tcx.sess.target.target.options.default_hidden_visibility {
+        if tcx.sess.target.options.default_hidden_visibility {
             //llvm::LLVMRustSetVisibility(func, llvm::Visibility::Hidden);
         }
         if tcx.sess.must_emit_unwind_tables() {
@@ -79,4 +80,36 @@ pub(crate) unsafe fn codegen(tcx: TyCtxt<'_>, mods: &mut GccContext, kind: Alloc
             block.end_with_void_return(None);
         }
     }
+
+    let types = [usize, usize];
+    let name = "__rust_alloc_error_handler".to_string();
+    let args: Vec<_> = types.iter().enumerate()
+        .map(|(index, typ)| context.new_parameter(None, *typ, &format!("param{}", index)))
+        .collect();
+    let func = context.new_function(None, FunctionType::Exported, void, &args, name, false);
+
+    let kind =
+        if has_alloc_error_handler {
+            AllocatorKind::Global
+        }
+        else {
+            AllocatorKind::Default
+        };
+    let callee = kind.fn_name(sym::oom);
+    let args: Vec<_> = types.iter().enumerate()
+        .map(|(index, typ)| context.new_parameter(None, *typ, &format!("param{}", index)))
+        .collect();
+    let callee = context.new_function(None, FunctionType::Extern, void, &args, callee, false);
+    //llvm::LLVMRustSetVisibility(callee, llvm::Visibility::Hidden);
+
+    let block = func.new_block("entry");
+
+    let args = args
+        .iter()
+        .enumerate()
+        .map(|(i, _)| func.get_param(i as i32).to_rvalue())
+        .collect::<Vec<_>>();
+    let ret = context.new_call(None, callee, &args);
+    //llvm::LLVMSetTailCall(ret, True);
+    block.end_with_void_return(None);
 }

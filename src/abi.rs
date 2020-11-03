@@ -5,12 +5,12 @@ use rustc_middle::ty::Ty;
 use rustc_target::abi::call::{CastTarget, FnAbi, PassMode, Reg, RegKind};
 
 use crate::builder::Builder;
-use crate::context::{CodegenCx, FuncSig};
+use crate::context::CodegenCx;
 use crate::intrinsic::ArgAbiExt;
 use crate::type_of::LayoutGccExt;
 
 impl<'a, 'gcc, 'tcx> AbiBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
-    fn apply_attrs_callsite(&mut self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, callsite: Self::Value) {
+    fn apply_attrs_callsite(&mut self, _fn_abi: &FnAbi<'tcx, Ty<'tcx>>, _callsite: Self::Value) {
         // TODO
         //fn_abi.apply_attrs_callsite(self, callsite)
     }
@@ -148,7 +148,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     argument_tys.push(ptr_layout.scalar_pair_element_gcc_type(cx, 0, true));
                     argument_tys.push(ptr_layout.scalar_pair_element_gcc_type(cx, 1, true));*/
                     unimplemented!();
-                    continue;
+                    //continue;
                 }
                 PassMode::Cast(cast) => cast.gcc_type(cx),
                 PassMode::Indirect(_, None) => cx.type_ptr_to(arg.memory_ty(cx)),

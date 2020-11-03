@@ -9,7 +9,7 @@ use rustc_span::fatal_error::FatalError;
 
 use crate::{GccCodegenBackend, GccContext};
 
-pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, diag_handler: &Handler, module: ModuleCodegen<GccContext>, config: &ModuleConfig) -> Result<CompiledModule, FatalError> {
+pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_handler: &Handler, module: ModuleCodegen<GccContext>, config: &ModuleConfig) -> Result<CompiledModule, FatalError> {
     let _timer = cgcx.prof.generic_activity_with_arg("LLVM_module_codegen", &module.name[..]);
     {
         let context = &module.module_llvm.context;
@@ -48,7 +48,7 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, diag_hand
         // - If we don't have the integrated assembler then we need to emit
         //   asm from LLVM and use `gcc` to create the object file.
 
-        let bc_out = cgcx.output_filenames.temp_path(OutputType::Bitcode, module_name);
+        let _bc_out = cgcx.output_filenames.temp_path(OutputType::Bitcode, module_name);
         let obj_out = cgcx.output_filenames.temp_path(OutputType::Object, module_name);
 
         if config.bitcode_needed() {
@@ -170,7 +170,7 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, diag_hand
                     .generic_activity_with_arg("LLVM_module_codegen_emit_obj", &module.name[..]);
                 //with_codegen(tm, llmod, config.no_builtins, |cpm| {
                     if module.name == "coretests.dwfyi7m8-cgu.14" {
-                        fs::create_dir("/tmp/reproducers");
+                        let _ = fs::create_dir("/tmp/reproducers");
                         // FIXME: segfault in dump_reproducer_to_file() might be caused by
                         // transmuting an rvalue to an lvalue.
                         // TODO: add checks everytime I transmute.
@@ -207,4 +207,26 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, diag_hand
         config.emit_bc,
         &cgcx.output_filenames,
     ))
+}
+
+pub(crate) fn link(_cgcx: &CodegenContext<GccCodegenBackend>, _diag_handler: &Handler, mut _modules: Vec<ModuleCodegen<GccContext>>) -> Result<ModuleCodegen<GccContext>, FatalError> {
+    unimplemented!();
+    /*use super::lto::{Linker, ModuleBuffer};
+    // Sort the modules by name to ensure to ensure deterministic behavior.
+    modules.sort_by(|a, b| a.name.cmp(&b.name));
+    let (first, elements) =
+        modules.split_first().expect("Bug! modules must contain at least one module.");
+
+    let mut linker = Linker::new(first.module_llvm.llmod());
+    for module in elements {
+        let _timer =
+            cgcx.prof.generic_activity_with_arg("LLVM_link_module", format!("{:?}", module.name));
+        let buffer = ModuleBuffer::new(module.module_llvm.llmod());
+        linker.add(&buffer.data()).map_err(|()| {
+            let msg = format!("failed to serialize module {:?}", module.name);
+            llvm_err(&diag_handler, &msg)
+        })?;
+    }
+    drop(linker);
+    Ok(modules.remove(0))*/
 }

@@ -125,7 +125,7 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
     (module, cost)
 }
 
-pub fn write_compressed_metadata<'tcx>(tcx: TyCtxt<'tcx>, metadata: &EncodedMetadata, gcc_module: &mut GccContext) {
+pub fn write_compressed_metadata<'tcx>(_tcx: TyCtxt<'tcx>, _metadata: &EncodedMetadata, _gcc_module: &mut GccContext) {
     // TODO
 
     /*use flate2::write::DeflateEncoder;

@@ -4,7 +4,7 @@
 //   status: 0
 //   stdout: 1
 
-#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
+#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
@@ -29,6 +29,8 @@ impl Copy for isize {}
 impl Copy for usize {}
 impl Copy for i32 {}
 impl Copy for u8 {}
+impl Copy for i8 {}
+impl Copy for i16 {}
 
 #[lang = "receiver"]
 trait Receiver {

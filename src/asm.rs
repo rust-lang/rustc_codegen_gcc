@@ -9,7 +9,7 @@ use crate::builder::Builder;
 use crate::context::CodegenCx;
 
 impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
-    fn codegen_llvm_inline_asm(&mut self, ia: &LlvmInlineAsmInner, outputs: Vec<PlaceRef<'tcx, RValue<'gcc>>>, mut inputs: Vec<RValue<'gcc>>, span: Span) -> bool {
+    fn codegen_llvm_inline_asm(&mut self, _ia: &LlvmInlineAsmInner, _outputs: Vec<PlaceRef<'tcx, RValue<'gcc>>>, mut _inputs: Vec<RValue<'gcc>>, _span: Span) -> bool {
         // TODO
         return true;
 
@@ -112,7 +112,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         true*/
     }
 
-    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: Span) {
+    fn codegen_inline_asm(&mut self, _template: &[InlineAsmTemplatePiece], _operands: &[InlineAsmOperandRef<'tcx, Self>], _options: InlineAsmOptions, _span: &[Span]) {
         unimplemented!();
         /*let asm_arch = self.tcx.sess.asm_arch.unwrap();
 

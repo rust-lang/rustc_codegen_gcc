@@ -8,7 +8,7 @@
 //     Int argument: 2
 //     Both args: 11
 
-#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller,
+#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics,
     unboxed_closures)]
 
 #![no_std]
@@ -34,6 +34,8 @@ impl Copy for isize {}
 impl Copy for usize {}
 impl Copy for i32 {}
 impl Copy for u32 {}
+impl Copy for u8 {}
+impl Copy for i8 {}
 
 #[lang = "receiver"]
 trait Receiver {
@@ -117,6 +119,7 @@ impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<*mut U> for *mut T {}
 #[lang = "fn_once"]
 #[rustc_paren_sugar]
 pub trait FnOnce<Args> {
+    #[lang = "fn_once_output"]
     type Output;
 
     extern "rust-call" fn call_once(self, args: Args) -> Self::Output;

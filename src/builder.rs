@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
-use std::iter::TrustedLen;
 
 use gccjit::{
     BinaryOp,
@@ -15,7 +14,6 @@ use gccjit::{
     UnaryOp,
 };
 use rustc_codegen_ssa::MemFlags;
-use rustc_codegen_ssa::base::to_immediate;
 use rustc_codegen_ssa::common::{AtomicOrdering, AtomicRmwBinOp, IntPredicate, RealPredicate, SynchronizationScope};
 use rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
@@ -31,6 +29,7 @@ use rustc_codegen_ssa::traits::{
 };
 use rustc_middle::ty::{ParamEnv, Ty, TyCtxt};
 use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, TyAndLayout};
+use rustc_span::Span;
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{
     self,
@@ -58,7 +57,7 @@ pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
 }
 
 impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
-    fn assign(&self, lvalue: LValue<'gcc>, value: RValue<'gcc>) {
+    pub fn assign(&self, lvalue: LValue<'gcc>, value: RValue<'gcc>) {
         self.llbb().add_assignment(None, lvalue, value);
     }
 
@@ -253,7 +252,7 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
         }
     }
 
-    fn function_ptr_call(&mut self, mut func_ptr: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
+    fn function_ptr_call(&mut self, func_ptr: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
         //debug!("func ptr call {:?} with args ({:?})", func, args);
 
         let args = self.check_ptr_call("call", func_ptr, args);
@@ -341,6 +340,7 @@ impl<'gcc, 'tcx> BackendTypes for Builder<'_, 'gcc, 'tcx> {
     type Funclet = <CodegenCx<'gcc, 'tcx> as BackendTypes>::Funclet;
 
     type DIScope = <CodegenCx<'gcc, 'tcx> as BackendTypes>::DIScope;
+    type DILocation = <CodegenCx<'gcc, 'tcx> as BackendTypes>::DILocation;
     type DIVariable = <CodegenCx<'gcc, 'tcx> as BackendTypes>::DIVariable;
 }
 
@@ -392,7 +392,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.llbb().end_with_conditional(None, cond, then_block, else_block)
     }
 
-    fn switch(&mut self, value: RValue<'gcc>, default_block: Block<'gcc>, cases: impl ExactSizeIterator<Item = (u128, Block<'gcc>)> + TrustedLen) {
+    fn switch(&mut self, value: RValue<'gcc>, default_block: Block<'gcc>, cases: impl ExactSizeIterator<Item = (u128, Block<'gcc>)>) {
         let mut gcc_cases = vec![];
         let typ = self.val_ty(value);
         for (on_val, dest) in cases {
@@ -479,6 +479,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn exactsdiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO: posion if not exact.
+        // FIXME: rustc_codegen_ssa::mir::intrinsic uses different types for a and b but they
+        // should be the same.
+        let a = self.context.new_cast(None, a, b.get_type());
         a / b
     }
 
@@ -680,10 +683,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         use rustc_middle::ty::{Int, Uint};
 
         let new_kind =
-            match typ.kind {
-                Int(t @ Isize) => Int(t.normalize(self.tcx.sess.target.ptr_width)),
-                Uint(t @ Usize) => Uint(t.normalize(self.tcx.sess.target.ptr_width)),
-                ref t @ (Uint(_) | Int(_)) => t.clone(),
+            match typ.kind() {
+                Int(t @ Isize) => Int(t.normalize(self.tcx.sess.target.pointer_width)),
+                Uint(t @ Usize) => Uint(t.normalize(self.tcx.sess.target.pointer_width)),
+                t @ (Uint(_) | Int(_)) => t.clone(),
                 _ => panic!("tried to get overflow intrinsic for op applied to non-int type"),
             };
 
@@ -853,7 +856,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                     }
                     load
                 });
-                OperandValue::Immediate(to_immediate(self, llval, place.layout))
+                OperandValue::Immediate(self.to_immediate(llval, place.layout))
             }
             else if let abi::Abi::ScalarPair(ref a, ref b) = place.layout.abi {
                 let b_offset = a.value.size(self).align_to(b.value.align(self).abi);
@@ -1366,7 +1369,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.context.new_call(None, compare_exchange, &[dst, cmp, src, weak, order, failure_order]);*/
         // FIXME: return the result of the call instead of a dummy value. Bug in libgccjit makes
         // __atomic_compare_exchange_n return void instead of bool.
-        self.context.new_rvalue_from_int(self.bool_type, 1)
+
+        let pair_type = self.cx.type_struct(&[src.get_type(), self.bool_type], false);
+        let result = self.current_func().new_local(None, pair_type, "atomic_cmpxchg_result");
+        let success = self.context.new_rvalue_from_int(self.bool_type, 1); // TODO: use real success.
+        let align = Align::from_bits(64).expect("align"); // TODO: use good align.
+        self.store(success, result.get_address(None), align);
+        result.to_rvalue()
     }
 
     fn atomic_rmw(&mut self, op: AtomicRmwBinOp, dst: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering) -> RValue<'gcc> {
@@ -1405,7 +1414,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn atomic_fence(&mut self, order: AtomicOrdering, scope: SynchronizationScope) {
         let name =
             match scope {
-                SynchronizationScope::Other => "__atomic_thread_fence", // FIXME: not sure about this one.
                 SynchronizationScope::SingleThread => "__atomic_signal_fence",
                 SynchronizationScope::CrossThread => "__atomic_thread_fence",
             };
@@ -1472,13 +1480,64 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         unimplemented!();
         //llvm::Attribute::NoInline.apply_callsite(llvm::AttributePlace::Function, llret);
     }
+
+    fn set_span(&mut self, _span: Span) {}
+
+    fn from_immediate(&mut self, val: Self::Value) -> Self::Value {
+        if self.cx().val_ty(val) == self.cx().type_i1() {
+            self.zext(val, self.cx().type_i8())
+        }
+        else {
+            val
+        }
+    }
+
+    fn to_immediate_scalar(&mut self, val: Self::Value, scalar: &abi::Scalar) -> Self::Value {
+        if scalar.is_bool() {
+            return self.trunc(val, self.cx().type_i1());
+        }
+        val
+    }
+
+    fn fptoui_sat(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+        None
+    }
+
+    fn fptosi_sat(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+        None
+    }
+
+    fn fptosui_may_trap(&self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> bool {
+        false
+    }
+
+    fn instrprof_increment(&mut self, fn_name: RValue<'gcc>, hash: RValue<'gcc>, num_counters: RValue<'gcc>, index: RValue<'gcc>) {
+        unimplemented!();
+        /*debug!(
+            "instrprof_increment() with args ({:?}, {:?}, {:?}, {:?})",
+            fn_name, hash, num_counters, index
+        );
+
+        let llfn = unsafe { llvm::LLVMRustGetInstrProfIncrementIntrinsic(self.cx().llmod) };
+        let args = &[fn_name, hash, num_counters, index];
+        let args = self.check_call("call", llfn, args);
+
+        unsafe {
+            let _ = llvm::LLVMRustBuildCall(
+                self.llbuilder,
+                llfn,
+                args.as_ptr() as *const &llvm::Value,
+                args.len() as c_uint,
+                None,
+            );
+        }*/
+    }
 }
 
 impl<'a, 'gcc, 'tcx> StaticBuilderMethods for Builder<'a, 'gcc, 'tcx> {
     fn get_static(&mut self, def_id: DefId) -> RValue<'gcc> {
-        unimplemented!();
         // Forward to the `get_static` method of `CodegenCx`
-        //self.cx().get_static(def_id)
+        self.cx().get_static(def_id)
     }
 }
 
@@ -1540,6 +1599,7 @@ impl ToGccComp for RealPredicate {
 }
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 enum MemOrdering {
     __ATOMIC_RELAXED,
     __ATOMIC_CONSUME,

@@ -5,7 +5,7 @@
 //   stdout: true
 //     1
 
-#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
+#![feature(arbitrary_self_types, optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
@@ -33,6 +33,7 @@ impl Copy for i32 {}
 impl Copy for u32 {}
 impl Copy for bool {}
 impl Copy for u16 {}
+impl Copy for i16 {}
 impl Copy for char {}
 impl Copy for i8 {}
 impl Copy for u8 {}

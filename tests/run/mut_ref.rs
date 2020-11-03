@@ -31,6 +31,10 @@ trait Copy {
 
 impl Copy for isize {}
 impl Copy for *mut i32 {}
+impl Copy for usize {}
+impl Copy for u8 {}
+impl Copy for i8 {}
+impl Copy for i32 {}
 
 #[lang = "receiver"]
 trait Receiver {

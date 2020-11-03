@@ -1,5 +1,5 @@
 use gccjit::{FunctionType, RValue};
-use rustc_codegen_ssa::traits::{BaseTypeMethods, DeclareMethods};
+use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::{Instance, TypeFoldable};
 use rustc_middle::ty::layout::{FnAbiExt, HasTyCtxt};
 use rustc_target::abi::call::FnAbi;
@@ -27,7 +27,7 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
         return func;
     }
 
-    let sym = tcx.symbol_name(instance).name.as_str();
+    let sym = tcx.symbol_name(instance).name;
     //debug!("get_fn({:?}: {:?}) => {}", instance, instance.monomorphic_ty(cx.tcx()), sym);
 
     let fn_abi = FnAbi::of_instance(cx, instance, &[]);

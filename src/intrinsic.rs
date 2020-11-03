@@ -1,69 +1,70 @@
-use gccjit::{BinaryOp, ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
+use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
 use rustc_ast::ast;
-use rustc_codegen_ssa::{MemFlags, glue};
-use rustc_codegen_ssa::base::{to_immediate, wants_msvc_seh};
+use rustc_codegen_ssa::MemFlags;
+use rustc_codegen_ssa::base::wants_msvc_seh;
 use rustc_codegen_ssa::common::span_invalid_monomorphization_error;
 use rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{ArgAbiMethods, BaseTypeMethods, BuilderMethods, ConstMethods, IntrinsicCallMethods};
 use rustc_middle::bug;
 use rustc_middle::ty::{self, Instance, Ty};
-use rustc_span::Span;
+use rustc_span::{Span, Symbol, symbol::kw, sym};
 use rustc_target::abi::{self, LayoutOf, Primitive};
 use rustc_target::abi::call::{ArgAbi, FnAbi, PassMode};
 use rustc_target::spec::PanicStrategy;
 
 use crate::abi::GccType;
 use crate::builder::Builder;
-use crate::common::{SignType, TypeReflection};
+use crate::common::TypeReflection;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
+use crate::va_arg::emit_va_arg;
 
-fn get_simple_intrinsic<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, name: &str) -> Option<Function<'gcc>> {
+fn get_simple_intrinsic<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, name: Symbol) -> Option<Function<'gcc>> {
     let gcc_name = match name {
-        "sqrtf32" => "sqrtf",
-        "sqrtf64" => "sqrt",
-        "powif32" => "__builtin_powif",
-        "powif64" => "__builtin_powi",
-        "sinf32" => "sinf",
-        "sinf64" => "sin",
-        "cosf32" => "cosf",
-        "cosf64" => "cos",
-        "powf32" => "powf",
-        "powf64" => "pow",
-        "expf32" => "expf",
-        "expf64" => "exp",
-        "exp2f32" => "exp2f",
-        "exp2f64" => "exp2",
-        "logf32" => "logf",
-        "logf64" => "log",
-        "log10f32" => "log10f",
-        "log10f64" => "log10",
-        "log2f32" => "log2f",
-        "log2f64" => "log2",
-        "fmaf32" => "fmaf",
-        "fmaf64" => "fma",
-        "fabsf32" => "fabsf",
-        "fabsf64" => "fabs",
-        "minnumf32" => "fminf",
-        "minnumf64" => "fmin",
-        "maxnumf32" => "fmaxf",
-        "maxnumf64" => "fmax",
-        "copysignf32" => "copysignf",
-        "copysignf64" => "copysign",
-        "floorf32" => "floorf",
-        "floorf64" => "floor",
-        "ceilf32" => "ceilf",
-        "ceilf64" => "ceil",
-        "truncf32" => "truncf",
-        "truncf64" => "trunc",
-        "rintf32" => "rintf",
-        "rintf64" => "rint",
-        "nearbyintf32" => "nearbyintf",
-        "nearbyintf64" => "nearbyint",
-        "roundf32" => "roundf",
-        "roundf64" => "round",
-        "abort" => "abort",
+        sym::sqrtf32 => "sqrtf",
+        sym::sqrtf64 => "sqrt",
+        sym::powif32 => "__builtin_powif",
+        sym::powif64 => "__builtin_powi",
+        sym::sinf32 => "sinf",
+        sym::sinf64 => "sin",
+        sym::cosf32 => "cosf",
+        sym::cosf64 => "cos",
+        sym::powf32 => "powf",
+        sym::powf64 => "pow",
+        sym::expf32 => "expf",
+        sym::expf64 => "exp",
+        sym::exp2f32 => "exp2f",
+        sym::exp2f64 => "exp2",
+        sym::logf32 => "logf",
+        sym::logf64 => "log",
+        sym::log10f32 => "log10f",
+        sym::log10f64 => "log10",
+        sym::log2f32 => "log2f",
+        sym::log2f64 => "log2",
+        sym::fmaf32 => "fmaf",
+        sym::fmaf64 => "fma",
+        sym::fabsf32 => "fabsf",
+        sym::fabsf64 => "fabs",
+        sym::minnumf32 => "fminf",
+        sym::minnumf64 => "fmin",
+        sym::maxnumf32 => "fmaxf",
+        sym::maxnumf64 => "fmax",
+        sym::copysignf32 => "copysignf",
+        sym::copysignf64 => "copysign",
+        sym::floorf32 => "floorf",
+        sym::floorf64 => "floor",
+        sym::ceilf32 => "ceilf",
+        sym::ceilf64 => "ceil",
+        sym::truncf32 => "truncf",
+        sym::truncf64 => "trunc",
+        sym::rintf32 => "rintf",
+        sym::rintf64 => "rint",
+        sym::nearbyintf32 => "nearbyintf",
+        sym::nearbyintf64 => "nearbyint",
+        sym::roundf32 => "roundf",
+        sym::roundf64 => "round",
+        sym::abort => "abort",
         _ => return None,
     };
     Some(cx.context.get_builtin_function(&gcc_name))
@@ -72,9 +73,9 @@ fn get_simple_intrinsic<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, name: &str) -> O
 impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn codegen_intrinsic_call(&mut self, instance: Instance<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, args: &[OperandRef<'tcx, RValue<'gcc>>], llresult: RValue<'gcc>, span: Span) {
         let tcx = self.tcx;
-        let callee_ty = instance.monomorphic_ty(tcx);
+        let callee_ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
 
-        let (def_id, substs) = match callee_ty.kind {
+        let (def_id, substs) = match *callee_ty.kind() {
             ty::FnDef(def_id, substs) => (def_id, substs),
             _ => bug!("expected fn item type, found {}", callee_ty),
         };
@@ -83,7 +84,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         let sig = tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), &sig);
         let arg_tys = sig.inputs();
         let ret_ty = sig.output();
-        let name = &*tcx.item_name(def_id).as_str();
+        let name = tcx.item_name(def_id);
+        let name_str = &*name.as_str();
 
         let llret_ty = self.layout_of(ret_ty).gcc_type(self, true);
         let result = PlaceRef::new_sized(llresult, fn_abi.ret.layout);
@@ -96,184 +98,68 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     let func = unsafe { std::mem::transmute(simple.expect("simple")) };
                     self.call(func, &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(), None)
                 },
-                "assume" => {
-                    debug_assert_eq!(args.len(), 1);
-                    let value = args[0].immediate();
-                    self.assume(value);
-                    value
-                },
-                "unreachable" => {
-                    return;
-                }
-                "likely" => {
+                sym::likely => {
                     self.expect(args[0].immediate(), true)
                 }
-                "unlikely" => {
+                sym::unlikely => {
                     self.expect(args[0].immediate(), false)
                 }
-                "try" => {
-                    try_intrinsic(self, args[0].immediate(), args[1].immediate(), args[2].immediate(), llresult);
+                kw::Try => {
+                    try_intrinsic(
+                        self,
+                        args[0].immediate(),
+                        args[1].immediate(),
+                        args[2].immediate(),
+                        llresult,
+                    );
                     return;
                 }
-                "breakpoint" => {
+                sym::breakpoint => {
                     unimplemented!();
                     /*let llfn = self.get_intrinsic(&("llvm.debugtrap"));
-                      self.call(llfn, &[], None)*/
+                    self.call(llfn, &[], None)*/
                 }
-                "va_start" => self.va_start(args[0].immediate()),
-                "va_end" => self.va_end(args[0].immediate()),
-                "va_copy" => {
+                sym::va_copy => {
                     unimplemented!();
                     /*let intrinsic = self.cx().get_intrinsic(&("llvm.va_copy"));
-                      self.call(intrinsic, &[args[0].immediate(), args[1].immediate()], None)*/
+                    self.call(intrinsic, &[args[0].immediate(), args[1].immediate()], None)*/
                 }
-                "va_arg" => {
+                sym::va_arg => {
                     unimplemented!();
                     /*match fn_abi.ret.layout.abi {
-                      abi::Abi::Scalar(ref scalar) => {
-                      match scalar.value {
-                      Primitive::Int(..) => {
-                      if self.cx().size_of(ret_ty).bytes() < 4 {
-                    // `va_arg` should not be called on a integer type
-                    // less than 4 bytes in length. If it is, promote
-                    // the integer to a `i32` and truncate the result
-                    // back to the smaller type.
-                    let promoted_result = emit_va_arg(self, args[0], tcx.types.i32);
-                    self.trunc(promoted_result, llret_ty)
-                    } else {
-                    emit_va_arg(self, args[0], ret_ty)
-                    }
-                    }
-                    Primitive::F64 | Primitive::Pointer => {
-                    emit_va_arg(self, args[0], ret_ty)
-                    }
-                    // `va_arg` should never be used with the return type f32.
-                    Primitive::F32 => bug!("the va_arg intrinsic does not work with `f32`"),
-                    }
-                    }
-                    _ => bug!("the va_arg intrinsic does not work with non-scalar types"),
+                        abi::Abi::Scalar(ref scalar) => {
+                            match scalar.value {
+                                Primitive::Int(..) => {
+                                    if self.cx().size_of(ret_ty).bytes() < 4 {
+                                        // `va_arg` should not be called on a integer type
+                                        // less than 4 bytes in length. If it is, promote
+                                        // the integer to a `i32` and truncate the result
+                                        // back to the smaller type.
+                                        let promoted_result = emit_va_arg(self, args[0], tcx.types.i32);
+                                        self.trunc(promoted_result, llret_ty)
+                                    } else {
+                                        emit_va_arg(self, args[0], ret_ty)
+                                    }
+                                }
+                                Primitive::F64 | Primitive::Pointer => {
+                                    emit_va_arg(self, args[0], ret_ty)
+                                }
+                                // `va_arg` should never be used with the return type f32.
+                                Primitive::F32 => bug!("the va_arg intrinsic does not work with `f32`"),
+                            }
+                        }
+                        _ => bug!("the va_arg intrinsic does not work with non-scalar types"),
                     }*/
                 }
-                "size_of_val" => {
-                    let tp_ty = substs.type_at(0);
-                    if let OperandValue::Pair(_, meta) = args[0].val {
-                        let (llsize, _) = glue::size_and_align_of_dst(self, tp_ty, Some(meta));
-                        llsize
-                    } else {
-                        self.const_usize(self.size_of(tp_ty).bytes())
-                    }
-                }
-                "min_align_of_val" => {
-                    let tp_ty = substs.type_at(0);
-                    if let OperandValue::Pair(_, meta) = args[0].val {
-                        let (_, llalign) = glue::size_and_align_of_dst(self, tp_ty, Some(meta));
-                        llalign
-                    } else {
-                        self.const_usize(self.align_of(tp_ty).bytes())
-                    }
-                }
-                "size_of" | "pref_align_of" | "min_align_of" | "needs_drop" | "type_id"
-                    | "type_name" => {
-                        let ty_name = self
-                            .tcx
-                            .const_eval_instance(ty::ParamEnv::reveal_all(), instance, None)
-                            .unwrap();
-                        OperandRef::from_const(self, ty_name, ret_ty).immediate_or_packed_pair(self)
-                    }
-                // Effectively no-op
-                "forget" => {
-                    return;
-                }
-                "offset" => {
-                    let ptr = args[0].immediate();
-                    let offset = args[1].immediate();
-                    self.inbounds_gep(ptr, &[offset])
-                }
-                "arith_offset" => {
-                    let ptr = args[0].immediate();
-                    let offset = args[1].immediate();
-                    self.gep(ptr, &[offset])
-                }
 
-                "copy_nonoverlapping" => {
-                    copy_intrinsic(
-                        self,
-                        false,
-                        false,
-                        substs.type_at(0),
-                        args[1].immediate(),
-                        args[0].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-                "copy" => {
-                    copy_intrinsic(
-                        self,
-                        true,
-                        false,
-                        substs.type_at(0),
-                        args[1].immediate(),
-                        args[0].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-                "write_bytes" => {
-                    memset_intrinsic(
-                        self,
-                        false,
-                        substs.type_at(0),
-                        args[0].immediate(),
-                        args[1].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-
-                "volatile_copy_nonoverlapping_memory" => {
-                    copy_intrinsic(
-                        self,
-                        false,
-                        true,
-                        substs.type_at(0),
-                        args[0].immediate(),
-                        args[1].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-                "volatile_copy_memory" => {
-                    copy_intrinsic(
-                        self,
-                        true,
-                        true,
-                        substs.type_at(0),
-                        args[0].immediate(),
-                        args[1].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-                "volatile_set_memory" => {
-                    memset_intrinsic(
-                        self,
-                        true,
-                        substs.type_at(0),
-                        args[0].immediate(),
-                        args[1].immediate(),
-                        args[2].immediate(),
-                    );
-                    return;
-                }
-                "volatile_load" | "unaligned_volatile_load" => {
+                sym::volatile_load | sym::unaligned_volatile_load => {
                     let tp_ty = substs.type_at(0);
                     let mut ptr = args[0].immediate();
                     if let PassMode::Cast(ty) = fn_abi.ret.mode {
                         ptr = self.pointercast(ptr, self.type_ptr_to(ty.gcc_type(self)));
                     }
                     let load = self.volatile_load(ptr);
-                    let align = if name == "unaligned_volatile_load" {
+                    let align = if name == sym::unaligned_volatile_load {
                         1
                     } else {
                         self.align_of(tp_ty).bytes() as u32
@@ -282,52 +168,57 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     /*unsafe {
                       llvm::LLVMSetAlignment(load, align);
                       }*/
-                    to_immediate(self, load, self.layout_of(tp_ty))
+                    self.to_immediate(load, self.layout_of(tp_ty))
                 }
-                "volatile_store" => {
+                sym::volatile_store => {
                     let dst = args[0].deref(self.cx());
                     args[1].val.volatile_store(self, dst);
                     return;
                 }
-                "unaligned_volatile_store" => {
+                sym::unaligned_volatile_store => {
                     let dst = args[0].deref(self.cx());
                     args[1].val.unaligned_volatile_store(self, dst);
                     return;
                 }
-                "prefetch_read_data"
-                    | "prefetch_write_data"
-                    | "prefetch_read_instruction"
-                    | "prefetch_write_instruction" => {
+                sym::prefetch_read_data
+                    | sym::prefetch_write_data
+                    | sym::prefetch_read_instruction
+                    | sym::prefetch_write_instruction => {
                         unimplemented!();
                         /*let expect = self.get_intrinsic(&("llvm.prefetch"));
-                          let (rw, cache_type) = match name {
-                          "prefetch_read_data" => (0, 1),
-                          "prefetch_write_data" => (1, 1),
-                          "prefetch_read_instruction" => (0, 0),
-                          "prefetch_write_instruction" => (1, 0),
-                          _ => bug!(),
-                          };
-                          self.call(
-                          expect,
-                          &[
-                          args[0].immediate(),
-                          self.const_i32(rw),
-                          args[1].immediate(),
-                          self.const_i32(cache_type),
-                          ],
-                          None,
-                          )*/
+                        let (rw, cache_type) = match name {
+                            sym::prefetch_read_data => (0, 1),
+                            sym::prefetch_write_data => (1, 1),
+                            sym::prefetch_read_instruction => (0, 0),
+                            sym::prefetch_write_instruction => (1, 0),
+                            _ => bug!(),
+                        };
+                        self.call(
+                            expect,
+                            &[
+                            args[0].immediate(),
+                            self.const_i32(rw),
+                            args[1].immediate(),
+                            self.const_i32(cache_type),
+                            ],
+                            None,
+                        )*/
                     }
-                "ctlz" | "ctlz_nonzero" | "cttz" | "cttz_nonzero" | "ctpop" | "bswap"
-                    | "bitreverse" | "add_with_overflow" | "sub_with_overflow" | "mul_with_overflow"
-                    | "wrapping_add" | "wrapping_sub" | "wrapping_mul" | "unchecked_div"
-                    | "unchecked_rem" | "unchecked_shl" | "unchecked_shr" | "unchecked_add"
-                    | "unchecked_sub" | "unchecked_mul" | "exact_div" | "rotate_left" | "rotate_right"
-                    | "saturating_add" | "saturating_sub" => {
+                sym::ctlz
+                    | sym::ctlz_nonzero
+                    | sym::cttz
+                    | sym::cttz_nonzero
+                    | sym::ctpop
+                    | sym::bswap
+                    | sym::bitreverse
+                    | sym::rotate_left
+                    | sym::rotate_right
+                    | sym::saturating_add
+                    | sym::saturating_sub => {
                         let ty = arg_tys[0];
                         match int_type_width_signed(ty, self) {
                             Some((width, signed)) => match name {
-                                "ctlz" | "cttz" => {
+                                sym::ctlz | sym::cttz => {
                                     let func = self.current_func.borrow().expect("func");
                                     let then_block = func.new_block("then");
                                     let else_block = func.new_block("else");
@@ -346,8 +237,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 
                                     let zeros =
                                         match name {
-                                            "ctlz" => self.count_leading_zeroes(width, arg),
-                                            "cttz" => self.count_trailing_zeroes(width, arg),
+                                            sym::ctlz => self.count_leading_zeroes(width, arg),
+                                            sym::cttz => self.count_trailing_zeroes(width, arg),
                                             _ => unreachable!(),
                                         };
                                     else_block.add_assignment(None, result, zeros);
@@ -364,16 +255,14 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     let llfn = self.get_intrinsic(&format!("llvm.{}.i{}", name, width));
                                     self.call(llfn, &[args[0].immediate(), y], None)*/
                                 }
-                                "ctlz_nonzero" => {
+                                sym::ctlz_nonzero => {
                                     self.count_leading_zeroes(width, args[0].immediate())
                                 },
-                                "cttz_nonzero" => {
+                                sym::cttz_nonzero => {
                                     self.count_trailing_zeroes(width, args[0].immediate())
                                 }
-                                "ctpop" => {
-                                    self.pop_count(args[0].immediate())
-                                }
-                                "bswap" => {
+                                sym::ctpop => self.pop_count(args[0].immediate()),
+                                sym::bswap => {
                                     if width == 8 {
                                         args[0].immediate() // byte swap a u8/i8 is just a no-op
                                     }
@@ -401,144 +290,13 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                             },
                                         }
                                     }
-                                }
-                                "bitreverse" => self.bit_reverse(width, args[0].immediate()),
-                                "add_with_overflow" => {
-                                    let func_name =
-                                        if signed {
-                                            match width {
-                                                8 => "__builtin_add_overflow",
-                                                16 => "__builtin_add_overflow",
-                                                32 => "__builtin_sadd_overflow",
-                                                64 => "__builtin_saddll_overflow",
-                                                128 => "__builtin_saddll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        }
-                                        else {
-                                            match width {
-                                                8 => "__builtin_add_overflow",
-                                                16 => "__builtin_add_overflow",
-                                                32 => "__builtin_uadd_overflow",
-                                                64 => "__builtin_uaddll_overflow",
-                                                128 => "__builtin_uaddll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        };
-                                    self.overflow_intrinsic_call(func_name, args[0].immediate(), args[1].immediate(), &result);
-                                    return;
                                 },
-                                "sub_with_overflow" => {
-                                    let func_name =
-                                        if signed {
-                                            match width {
-                                                8 => "__builtin_sub_overflow",
-                                                16 => "__builtin_sub_overflow",
-                                                32 => "__builtin_ssub_overflow",
-                                                64 => "__builtin_ssubll_overflow",
-                                                128 => "__builtin_ssubll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        }
-                                        else {
-                                            match width {
-                                                8 => "__builtin_sub_overflow",
-                                                16 => "__builtin_sub_overflow",
-                                                32 => "__builtin_usub_overflow",
-                                                64 => "__builtin_usubll_overflow",
-                                                128 => "__builtin_usubll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        };
-                                    self.overflow_intrinsic_call(func_name, args[0].immediate(), args[1].immediate(), &result);
-                                    return;
-                                },
-                                "mul_with_overflow" => {
-                                    let func_name =
-                                        if signed {
-                                            match width {
-                                                8 => "__builtin_mul_overflow",
-                                                16 => "__builtin_mul_overflow",
-                                                32 => "__builtin_smul_overflow",
-                                                64 => "__builtin_smulll_overflow",
-                                                128 => "__builtin_smulll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        }
-                                        else {
-                                            match width {
-                                                8 => "__builtin_mul_overflow",
-                                                16 => "__builtin_mul_overflow",
-                                                32 => "__builtin_umul_overflow",
-                                                64 => "__builtin_umulll_overflow",
-                                                128 => "__builtin_umulll_overflow",
-                                                _ => unreachable!(),
-                                            }
-                                        };
-                                    self.overflow_intrinsic_call(func_name, args[0].immediate(), args[1].immediate(), &result);
-                                    return;
-                                },
-                                "wrapping_add" => self.add(args[0].immediate(), args[1].immediate()),
-                                "wrapping_sub" => self.sub(args[0].immediate(), args[1].immediate()),
-                                "wrapping_mul" => self.mul(args[0].immediate(), args[1].immediate()),
-                                "exact_div" => {
-                                    if signed {
-                                        self.exactsdiv(args[0].immediate(), args[1].immediate())
-                                    } else {
-                                        self.exactudiv(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_div" => {
-                                    if signed {
-                                        self.sdiv(args[0].immediate(), args[1].immediate())
-                                    } else {
-                                        self.udiv(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_rem" => {
-                                    if signed {
-                                        self.srem(args[0].immediate(), args[1].immediate())
-                                    } else {
-                                        self.urem(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_shl" => self.shl(args[0].immediate(), args[1].immediate()),
-                                "unchecked_shr" => {
-                                    if signed {
-                                        self.ashr(args[0].immediate(), args[1].immediate())
-                                    } else {
-                                        self.lshr(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_add" => {
-                                    if signed {
-                                        self.unchecked_sadd(args[0].immediate(), args[1].immediate())
-                                    }
-                                    else {
-                                        self.unchecked_uadd(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_sub" => {
-                                    if signed {
-                                        self.unchecked_ssub(args[0].immediate(), args[1].immediate())
-                                    }
-                                    else {
-                                        self.unchecked_usub(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "unchecked_mul" => {
-                                    if signed {
-                                        self.unchecked_smul(args[0].immediate(), args[1].immediate())
-                                    }
-                                    else {
-                                        self.unchecked_umul(args[0].immediate(), args[1].immediate())
-                                    }
-                                }
-                                "rotate_left" | "rotate_right" => {
+                                sym::bitreverse => self.bit_reverse(width, args[0].immediate()),
+                                sym::rotate_left | sym::rotate_right => {
                                     // TODO: implement using algorithm from:
                                     // https://blog.regehr.org/archives/1063
                                     // for other platforms.
-                                    let is_left = name == "rotate_left";
+                                    let is_left = name == sym::rotate_left;
                                     let val = args[0].immediate();
                                     let raw_shift = args[1].immediate();
                                     if is_left {
@@ -553,13 +311,13 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                             _ => unimplemented!("rotate for integer of size {}", width),
                                         }
                                     }
-                                }
-                                "saturating_add" => {
+                                },
+                                sym::saturating_add => {
                                     self.saturating_add(args[0].immediate(), args[1].immediate(), signed, width)
                                 },
-                                "saturating_sub" => {
+                                sym::saturating_sub => {
                                     self.saturating_sub(args[0].immediate(), args[1].immediate(), signed, width)
-                                }
+                                },
                                 _ => bug!(),
                             },
                             None => {
@@ -568,245 +326,21 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     span,
                                     &format!(
                                         "invalid monomorphization of `{}` intrinsic: \
-                                expected basic integer type, found `{}`",
-                                name, ty
+                                      expected basic integer type, found `{}`",
+                                      name, ty
                                     ),
                                 );
                                 return;
                             }
                         }
                     }
-                "fadd_fast" | "fsub_fast" | "fmul_fast" | "fdiv_fast" | "frem_fast" => {
-                    match float_type_width(arg_tys[0]) {
-                        Some(_width) => match name {
-                            "fadd_fast" => self.fadd_fast(args[0].immediate(), args[1].immediate()),
-                            "fsub_fast" => self.fsub_fast(args[0].immediate(), args[1].immediate()),
-                            "fmul_fast" => self.fmul_fast(args[0].immediate(), args[1].immediate()),
-                            "fdiv_fast" => self.fdiv_fast(args[0].immediate(), args[1].immediate()),
-                            "frem_fast" => self.frem_fast(args[0].immediate(), args[1].immediate()),
-                            _ => bug!(),
-                        },
-                        None => {
-                            span_invalid_monomorphization_error(
-                                tcx.sess,
-                                span,
-                                &format!(
-                                    "invalid monomorphization of `{}` intrinsic: \
-                                      expected basic float type, found `{}`",
-                                      name, arg_tys[0]
-                                ),
-                            );
-                            return;
-                        }
-                    }
-                }
 
-                "float_to_int_unchecked" => {
-                    if float_type_width(arg_tys[0]).is_none() {
-                        span_invalid_monomorphization_error(
-                            tcx.sess,
-                            span,
-                            &format!(
-                                "invalid monomorphization of `float_to_int_unchecked` \
-                                  intrinsic: expected basic float type, \
-                                  found `{}`",
-                                  arg_tys[0]
-                            ),
-                        );
-                        return;
-                    }
-                    match int_type_width_signed(ret_ty, self.cx) {
-                        Some((width, signed)) => {
-                            if signed {
-                                self.fptosi(args[0].immediate(), self.cx.type_ix(width))
-                            } else {
-                                self.fptoui(args[0].immediate(), self.cx.type_ix(width))
-                            }
-                        }
-                        None => {
-                            span_invalid_monomorphization_error(
-                                tcx.sess,
-                                span,
-                                &format!(
-                                    "invalid monomorphization of `float_to_int_unchecked` \
-                                      intrinsic:  expected basic integer type, \
-                                      found `{}`",
-                                      ret_ty
-                                ),
-                            );
-                            return;
-                        }
-                    }
-                }
-
-                "discriminant_value" => args[0].deref(self.cx()).codegen_get_discr(self, ret_ty),
-
-                name if name.starts_with("simd_") => {
+                _ if name_str.starts_with("simd_") => {
                     unimplemented!();
                     /*match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {
-                      Ok(llval) => llval,
-                      Err(()) => return,
-                      }*/
-                }
-                // This requires that atomic intrinsics follow a specific naming pattern:
-                // "atomic_<operation>[_<ordering>]", and no ordering means SeqCst
-                name if name.starts_with("atomic_") => {
-                    use rustc_codegen_ssa::common::AtomicOrdering::*;
-                    use rustc_codegen_ssa::common::{AtomicRmwBinOp, SynchronizationScope};
-
-                    let split: Vec<&str> = name.split('_').collect();
-
-                    let is_cxchg = split[1] == "cxchg" || split[1] == "cxchgweak";
-                    let (order, failorder) =
-                        match split.len() {
-                            2 => (SequentiallyConsistent, SequentiallyConsistent),
-                            3 => match split[2] {
-                                "unordered" => (Unordered, Unordered),
-                                "relaxed" => (Monotonic, Monotonic),
-                                "acq" => (Acquire, Acquire),
-                                "rel" => (Release, Monotonic),
-                                "acqrel" => (AcquireRelease, Acquire),
-                                "failrelaxed" if is_cxchg => (SequentiallyConsistent, Monotonic),
-                                "failacq" if is_cxchg => (SequentiallyConsistent, Acquire),
-                                _ => self.sess().fatal("unknown ordering in atomic intrinsic"),
-                            },
-                            4 => match (split[2], split[3]) {
-                                ("acq", "failrelaxed") if is_cxchg => (Acquire, Monotonic),
-                                ("acqrel", "failrelaxed") if is_cxchg => (AcquireRelease, Monotonic),
-                                _ => self.sess().fatal("unknown ordering in atomic intrinsic"),
-                            },
-                            _ => self.sess().fatal("Atomic intrinsic not in correct format"),
-                        };
-
-                    let invalid_monomorphization = |ty| {
-                        span_invalid_monomorphization_error(
-                            tcx.sess,
-                            span,
-                            &format!(
-                                "invalid monomorphization of `{}` intrinsic: \
-                                  expected basic integer type, found `{}`",
-                                  name, ty
-                            ),
-                        );
-                    };
-
-                    match split[1] {
-                        "cxchg" | "cxchgweak" => {
-                            let ty = substs.type_at(0);
-                            if int_type_width_signed(ty, self).is_some() {
-                                let weak = split[1] == "cxchgweak";
-                                let expected = args[1].immediate();
-                                let expected_value = self.current_func().new_local(None, expected.get_type(), "expected");
-                                self.llbb().add_assignment(None, expected_value, expected);
-                                let success = self.atomic_cmpxchg(
-                                    args[0].immediate(),
-                                    expected_value.get_address(None),
-                                    args[2].immediate(),
-                                    order,
-                                    failorder,
-                                    weak,
-                                );
-
-                                let dest = result.project_field(self, 0);
-                                self.store(expected_value.to_rvalue(), dest.llval, dest.align);
-                                let dest = result.project_field(self, 1);
-                                self.store(success, dest.llval, dest.align);
-                                return;
-                            } else {
-                                return invalid_monomorphization(ty);
-                            }
-                        }
-
-                        "load" => {
-                            let ty = substs.type_at(0);
-                            if int_type_width_signed(ty, self).is_some() {
-                                let size = self.size_of(ty);
-                                self.atomic_load(args[0].immediate(), order, size)
-                            } else {
-                                return invalid_monomorphization(ty);
-                            }
-                        }
-
-                        "store" => {
-                            let ty = substs.type_at(0);
-                            if int_type_width_signed(ty, self).is_some() {
-                                let size = self.size_of(ty);
-                                self.atomic_store(
-                                    args[1].immediate(),
-                                    args[0].immediate(),
-                                    order,
-                                    size,
-                                );
-                                return;
-                            } else {
-                                return invalid_monomorphization(ty);
-                            }
-                        }
-
-                        "fence" => {
-                            self.atomic_fence(order, SynchronizationScope::CrossThread);
-                            return;
-                        }
-
-                        "singlethreadfence" => {
-                            self.atomic_fence(order, SynchronizationScope::SingleThread);
-                            return;
-                        }
-
-                        // These are all AtomicRMW ops
-                        op => {
-                            let atom_op =
-                                match op {
-                                    "xchg" => AtomicRmwBinOp::AtomicXchg,
-                                    "xadd" => AtomicRmwBinOp::AtomicAdd,
-                                    "xsub" => AtomicRmwBinOp::AtomicSub,
-                                    "and" => AtomicRmwBinOp::AtomicAnd,
-                                    "nand" => AtomicRmwBinOp::AtomicNand,
-                                    "or" => AtomicRmwBinOp::AtomicOr,
-                                    "xor" => AtomicRmwBinOp::AtomicXor,
-                                    "max" => AtomicRmwBinOp::AtomicMax,
-                                    "min" => AtomicRmwBinOp::AtomicMin,
-                                    "umax" => AtomicRmwBinOp::AtomicUMax,
-                                    "umin" => AtomicRmwBinOp::AtomicUMin,
-                                    _ => self.sess().fatal("unknown atomic operation"),
-                                };
-
-                            let ty = substs.type_at(0);
-                            if int_type_width_signed(ty, self).is_some() {
-                                self.atomic_rmw(
-                                    atom_op,
-                                    args[0].immediate(),
-                                    args[1].immediate(),
-                                    order,
-                                )
-                            } else {
-                                return invalid_monomorphization(ty);
-                            }
-                        }
-                    }
-                }
-
-                "nontemporal_store" => {
-                    let dst = args[0].deref(self.cx());
-                    args[1].val.nontemporal_store(self, dst);
-                    return;
-                }
-
-                "ptr_offset_from" => {
-                    let ty = substs.type_at(0);
-                    let pointee_size = self.size_of(ty);
-
-                    // This is the same sequence that Clang emits for pointer subtraction.
-                    // It can be neither `nsw` nor `nuw` because the input is treated as
-                    // unsigned but then the output is treated as signed, so neither works.
-                    let a = args[0].immediate();
-                    let b = args[1].immediate();
-                    let a = self.ptrtoint(a, self.type_isize());
-                    let b = self.ptrtoint(b, self.type_isize());
-                    let d = self.sub(a, b);
-                    let pointee_size = self.const_isize(pointee_size.bytes() as i64);
-                    // this is where the signed magic happens (notice the `s` in `exactsdiv`)
-                    self.exactsdiv(d, pointee_size)
+                        Ok(llval) => llval,
+                        Err(()) => return,
+                    }*/
                 }
 
                 _ => bug!("unknown intrinsic '{}'", name),
@@ -847,7 +381,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         cond
     }
 
-    fn sideeffect(&mut self) {
+    fn sideeffect(&mut self, unconditional: bool) {
         // TODO
         /*if self.tcx().sess.opts.debugging_opts.insert_sideeffect {
             let fnname = self.get_intrinsic(&("llvm.sideeffect"));
@@ -983,10 +517,10 @@ impl<'gcc, 'tcx> ArgAbiExt<'gcc, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
 }
 
 fn int_type_width_signed<'gcc, 'tcx>(ty: Ty<'tcx>, cx: &CodegenCx<'gcc, 'tcx>) -> Option<(u64, bool)> {
-    match ty.kind {
+    match ty.kind() {
         ty::Int(t) => Some((
             match t {
-                ast::IntTy::Isize => u64::from(cx.tcx.sess.target.ptr_width),
+                ast::IntTy::Isize => u64::from(cx.tcx.sess.target.pointer_width),
                 ast::IntTy::I8 => 8,
                 ast::IntTy::I16 => 16,
                 ast::IntTy::I32 => 32,
@@ -997,7 +531,7 @@ fn int_type_width_signed<'gcc, 'tcx>(ty: Ty<'tcx>, cx: &CodegenCx<'gcc, 'tcx>) -
         )),
         ty::Uint(t) => Some((
             match t {
-                ast::UintTy::Usize => u64::from(cx.tcx.sess.target.ptr_width),
+                ast::UintTy::Usize => u64::from(cx.tcx.sess.target.pointer_width),
                 ast::UintTy::U8 => 8,
                 ast::UintTy::U16 => 16,
                 ast::UintTy::U32 => 32,
@@ -1042,7 +576,7 @@ fn memset_intrinsic<'cx, 'gcc, 'tcx>(bx: &mut Builder<'cx, 'gcc, 'tcx>, volatile
 // Returns the width of a float Ty
 // Returns None if the type is not a float
 fn float_type_width(ty: Ty<'_>) -> Option<u64> {
-    match ty.kind {
+    match ty.kind() {
         ty::Float(t) => Some(t.bit_width()),
         _ => None,
     }
@@ -1433,11 +967,11 @@ fn try_intrinsic<'gcc, 'tcx>(bx: &mut Builder<'_, 'gcc, 'tcx>, try_func: RValue<
     }
     else if wants_msvc_seh(bx.sess()) {
         unimplemented!();
-        codegen_msvc_try(bx, try_func, data, catch_func, dest);
+        //codegen_msvc_try(bx, try_func, data, catch_func, dest);
     }
     else {
         unimplemented!();
-        codegen_gnu_try(bx, try_func, data, catch_func, dest);
+        //codegen_gnu_try(bx, try_func, data, catch_func, dest);
     }
 }
 

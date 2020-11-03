@@ -6,7 +6,7 @@
 //     10
 
 #![allow(unused_attributes)]
-#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller, arbitrary_self_types)]
+#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, arbitrary_self_types)]
 
 #![no_std]
 #![no_core]
@@ -29,6 +29,11 @@ trait Copy {
 
 impl Copy for isize {}
 impl Copy for *mut i32 {}
+impl Copy for usize {}
+impl Copy for u8 {}
+impl Copy for i8 {}
+impl Copy for i16 {}
+impl Copy for i32 {}
 
 #[lang = "deref"]
 pub trait Deref {

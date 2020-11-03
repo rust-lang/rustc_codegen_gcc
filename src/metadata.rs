@@ -5,7 +5,7 @@ use std::path::Path;
 use rustc_middle::middle::cstore::MetadataLoader;
 use rustc_codegen_ssa::METADATA_FILENAME;
 use rustc_data_structures::sync::MetadataRef;
-use rustc_data_structures::owning_ref::{self, OwningRef};
+use rustc_data_structures::owning_ref::OwningRef;
 use rustc_data_structures::rustc_erase_owner;
 use rustc_target::spec::Target;
 

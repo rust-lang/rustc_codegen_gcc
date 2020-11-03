@@ -5,7 +5,7 @@
 //   status: signal
 
 #![allow(unused_attributes)]
-#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
+#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
@@ -28,6 +28,10 @@ trait Copy {
 
 impl Copy for isize {}
 impl Copy for *mut i32 {}
+impl Copy for usize {}
+impl Copy for i32 {}
+impl Copy for u8 {}
+impl Copy for i8 {}
 
 #[lang = "receiver"]
 trait Receiver {

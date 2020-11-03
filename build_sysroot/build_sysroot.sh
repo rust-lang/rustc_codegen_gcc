@@ -11,12 +11,12 @@ popd >/dev/null
 
 # Cleanup for previous run
 #     v Clean target dir except for build scripts and incremental cache
-rm -r target/*/{debug,release}/{build,deps,examples,libsysroot*,native} || true
+rm -r target/*/{debug,release}/{build,deps,examples,libsysroot*,native} 2>/dev/null || true
 rm Cargo.lock test_target/Cargo.lock 2>/dev/null || true
 rm -r sysroot/ 2>/dev/null || true
 
 # Build libs
-export RUSTFLAGS="$RUSTFLAGS -Z force-unstable-if-unmarked"
+export RUSTFLAGS="$RUSTFLAGS -Z force-unstable-if-unmarked -Cpanic=abort"
 if [[ "$1" == "--release" ]]; then
     sysroot_channel='release'
     RUSTFLAGS="$RUSTFLAGS -Zmir-opt-level=3" cargo build --target $TARGET_TRIPLE --release
