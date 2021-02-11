@@ -113,7 +113,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn codegen_inline_asm(&mut self, _template: &[InlineAsmTemplatePiece], _operands: &[InlineAsmOperandRef<'tcx, Self>], _options: InlineAsmOptions, _span: &[Span]) {
-        unimplemented!();
+        //unimplemented!();
         /*let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
         // Collect the types of output operands

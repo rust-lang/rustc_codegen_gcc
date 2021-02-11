@@ -11,7 +11,7 @@ use rustc_codegen_ssa::traits::{
 };
 use rustc_middle::bug;
 use rustc_middle::mir::Mutability;
-use rustc_middle::ty::layout::TyAndLayout;
+use rustc_middle::ty::{layout::TyAndLayout, ScalarInt};
 use rustc_mir::interpret::{Allocation, GlobalAlloc, Scalar};
 use rustc_span::Symbol;
 use rustc_target::abi::{self, HasDataLayout, LayoutOf, Pointer, Size};
@@ -207,27 +207,17 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn scalar_to_backend(&self, cv: Scalar, layout: &abi::Scalar, ty: Type<'gcc>) -> RValue<'gcc> {
         let bitsize = if layout.is_bool() { 1 } else { layout.value.size(self).bits() };
         match cv {
-            Scalar::Raw { size: 0, .. } => {
-                unimplemented!();
-                /*assert_eq!(0, layout.value.size(self).bytes());
-                self.const_undef(self.type_ix(0))*/
+            Scalar::Int(ScalarInt::ZST) => {
+                assert_eq!(0, layout.value.size(self).bytes());
+                self.const_undef(self.type_ix(0))
             }
-            Scalar::Raw { data, size } => {
-                assert_eq!(size as u64, layout.value.size(self).bytes());
-                if ty.is_f32(self) {
-                    self.context.new_rvalue_from_double(ty, f32::from_bits(data as u32) as f64)
-                }
-                else if ty.is_f64(self) {
-                    self.context.new_rvalue_from_double(ty, f64::from_bits(data as u64))
-                }
-                else {
-                    let value = self.const_uint_big(self.type_ix(bitsize), data);
-                    if layout.value == Pointer {
-                        self.inttoptr(self.current_block.borrow().expect("block"), value, ty)
-                    }
-                    else {
-                        self.const_bitcast(value, ty)
-                    }
+            Scalar::Int(int) => {
+                let data = int.assert_bits(layout.value.size(self));
+                let value = self.const_uint_big(self.type_ix(bitsize), data);
+                if layout.value == Pointer {
+                    self.inttoptr(self.current_block.borrow().expect("block"), value, ty)
+                } else {
+                    self.const_bitcast(value, ty)
                 }
             }
             Scalar::Ptr(ptr) => {

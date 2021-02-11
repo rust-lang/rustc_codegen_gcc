@@ -111,6 +111,14 @@ fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llv
     /*let llfn = unsafe {
         llvm::LLVMRustGetOrInsertFunction(cx.llmod, name.as_ptr().cast(), name.len(), ty)
     };*/
+    if name == "llvm.x86.xgetbv" {
+        // TODO: support other LLVM intrinsics.
+        let void = cx.context.new_type::<()>();
+
+        let func = cx.context.get_builtin_function("__builtin_trap");
+        cx.functions.borrow_mut().insert(name.to_string(), func);
+        return func;
+    }
     let func =
         if cx.functions.borrow().contains_key(name) {
             *cx.functions.borrow().get(name).expect("function")

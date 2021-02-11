@@ -8,11 +8,11 @@ export GCC_PATH=$(cat gcc_path)
 export LD_LIBRARY_PATH="$GCC_PATH"
 if [[ "$1" == "--release" ]]; then
     export CHANNEL='release'
-    CARGO_INCREMENTAL=1 cargo rustc --release -- -Zrun_dsymutil=no
+    CARGO_INCREMENTAL=1 cargo rustc --release
 else
     echo $LD_LIBRARY_PATH
     export CHANNEL='debug'
-    cargo rustc -- -Zrun_dsymutil=no
+    cargo rustc
 fi
 
 source config.sh

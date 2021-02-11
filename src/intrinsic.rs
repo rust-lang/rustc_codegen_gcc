@@ -81,7 +81,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         };
 
         let sig = callee_ty.fn_sig(tcx);
-        let sig = tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), &sig);
+        let sig = tcx.normalize_erasing_late_bound_regions(ty::ParamEnv::reveal_all(), sig);
         let arg_tys = sig.inputs();
         let ret_ty = sig.output();
         let name = tcx.item_name(def_id);
@@ -505,10 +505,10 @@ impl<'gcc, 'tcx> ArgAbiExt<'gcc, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
             PassMode::Pair(..) => {
                 OperandValue::Pair(next(), next()).store(bx, dst);
             }
-            PassMode::Indirect(_, Some(_)) => {
+            PassMode::Indirect { extra_attrs: Some(_), .. } => {
                 OperandValue::Ref(next(), Some(next()), self.layout.align.abi).store(bx, dst);
             }
-            PassMode::Direct(_) | PassMode::Indirect(_, None) | PassMode::Cast(_) => {
+            PassMode::Direct(_) | PassMode::Indirect { extra_attrs: None, .. } | PassMode::Cast(_) => {
                 let next_arg = next();
                 self.store(bx, next_arg.to_rvalue(), dst);
             }
@@ -520,23 +520,23 @@ fn int_type_width_signed<'gcc, 'tcx>(ty: Ty<'tcx>, cx: &CodegenCx<'gcc, 'tcx>) -
     match ty.kind() {
         ty::Int(t) => Some((
             match t {
-                ast::IntTy::Isize => u64::from(cx.tcx.sess.target.pointer_width),
-                ast::IntTy::I8 => 8,
-                ast::IntTy::I16 => 16,
-                ast::IntTy::I32 => 32,
-                ast::IntTy::I64 => 64,
-                ast::IntTy::I128 => 128,
+                rustc_middle::ty::IntTy::Isize => u64::from(cx.tcx.sess.target.pointer_width),
+                rustc_middle::ty::IntTy::I8 => 8,
+                rustc_middle::ty::IntTy::I16 => 16,
+                rustc_middle::ty::IntTy::I32 => 32,
+                rustc_middle::ty::IntTy::I64 => 64,
+                rustc_middle::ty::IntTy::I128 => 128,
             },
             true,
         )),
         ty::Uint(t) => Some((
             match t {
-                ast::UintTy::Usize => u64::from(cx.tcx.sess.target.pointer_width),
-                ast::UintTy::U8 => 8,
-                ast::UintTy::U16 => 16,
-                ast::UintTy::U32 => 32,
-                ast::UintTy::U64 => 64,
-                ast::UintTy::U128 => 128,
+                rustc_middle::ty::UintTy::Usize => u64::from(cx.tcx.sess.target.pointer_width),
+                rustc_middle::ty::UintTy::U8 => 8,
+                rustc_middle::ty::UintTy::U16 => 16,
+                rustc_middle::ty::UintTy::U32 => 32,
+                rustc_middle::ty::UintTy::U64 => 64,
+                rustc_middle::ty::UintTy::U128 => 128,
             },
             false,
         )),

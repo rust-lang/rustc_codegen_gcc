@@ -50,7 +50,7 @@ impl GccType for CastTarget {
             .prefix
             .iter()
             .flat_map(|option_kind| {
-                option_kind.map(|kind| Reg { kind, size: self.prefix_chunk }.gcc_type(cx))
+                option_kind.map(|kind| Reg { kind, size: self.prefix_chunk_size }.gcc_type(cx))
             })
             .chain((0..rest_count).map(|_| rest_gcc_unit))
             .collect();
@@ -109,7 +109,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             }
         ).sum();
         let mut argument_tys = Vec::with_capacity(
-            if let PassMode::Indirect(..) = self.ret.mode {
+            if let PassMode::Indirect { .. } = self.ret.mode {
                 1
             }
             else {
@@ -122,7 +122,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                 PassMode::Ignore => cx.type_void(),
                 PassMode::Direct(_) | PassMode::Pair(..) => self.ret.layout.immediate_gcc_type(cx),
                 PassMode::Cast(cast) => cast.gcc_type(cx),
-                PassMode::Indirect(..) => {
+                PassMode::Indirect { .. } => {
                     argument_tys.push(cx.type_ptr_to(self.ret.memory_ty(cx)));
                     cx.type_void()
                 }
@@ -142,7 +142,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     argument_tys.push(arg.layout.scalar_pair_element_gcc_type(cx, 1, true));
                     continue;
                 }
-                PassMode::Indirect(_, Some(_)) => {
+                PassMode::Indirect { extra_attrs: Some(_), .. } => {
                     /*let ptr_ty = cx.tcx.mk_mut_ptr(arg.layout.ty);
                     let ptr_layout = cx.layout_of(ptr_ty);
                     argument_tys.push(ptr_layout.scalar_pair_element_gcc_type(cx, 0, true));
@@ -151,7 +151,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     //continue;
                 }
                 PassMode::Cast(cast) => cast.gcc_type(cx),
-                PassMode::Indirect(_, None) => cx.type_ptr_to(arg.memory_ty(cx)),
+                PassMode::Indirect { extra_attrs: None, .. } => cx.type_ptr_to(arg.memory_ty(cx)),
             };
             argument_tys.push(arg_ty);
         }

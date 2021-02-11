@@ -4,6 +4,7 @@ use rustc_middle::mir::coverage::{
     CounterValueReference,
     ExpressionOperandId,
     InjectedExpressionIndex,
+    InjectedExpressionId,
     Op,
 };
 use rustc_middle::ty::Instance;
@@ -23,7 +24,30 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         unsafe { llvm::LLVMRustCoverageCreatePGOFuncNameVar(llfn, mangled_fn_name.as_ptr()) }*/
     }
 
-    fn add_counter_region(&mut self, instance: Instance<'tcx>, function_source_hash: u64, id: CounterValueReference, region: CodeRegion) -> bool {
+    fn set_function_source_hash(
+        &mut self,
+        instance: Instance<'tcx>,
+        function_source_hash: u64,
+    ) -> bool {
+        unimplemented!();
+        /*if let Some(coverage_context) = self.coverage_context() {
+            debug!(
+                "ensuring function source hash is set for instance={:?}; function_source_hash={}",
+                instance, function_source_hash,
+            );
+            let mut coverage_map = coverage_context.function_coverage_map.borrow_mut();
+            coverage_map
+                .entry(instance)
+                .or_insert_with(|| FunctionCoverage::new(self.tcx, instance))
+                .set_function_source_hash(function_source_hash);
+            true
+        } else {
+            false
+        }*/
+        false
+    }
+
+    fn add_coverage_counter(&mut self, instance: Instance<'tcx>, id: CounterValueReference, region: CodeRegion) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding counter to coverage_regions: instance={:?}, function_source_hash={}, id={:?}, \
@@ -43,7 +67,7 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         false
     }
 
-    fn add_counter_expression_region(&mut self, instance: Instance<'tcx>, id: InjectedExpressionIndex, lhs: ExpressionOperandId, op: Op, rhs: ExpressionOperandId, region: CodeRegion) -> bool {
+    fn add_coverage_counter_expression(&mut self, instance: Instance<'tcx>, id: InjectedExpressionId, lhs: ExpressionOperandId, op: Op, rhs: ExpressionOperandId, region: Option<CodeRegion>) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding counter expression to coverage_regions: instance={:?}, id={:?}, {:?} {:?} {:?}, \
@@ -63,7 +87,7 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         false
     }
 
-    fn add_unreachable_region(&mut self, instance: Instance<'tcx>, region: CodeRegion) -> bool {
+    fn add_coverage_unreachable(&mut self, instance: Instance<'tcx>, region: CodeRegion) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding unreachable code to coverage_regions: instance={:?}, at {:?}",

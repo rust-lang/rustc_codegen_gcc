@@ -274,7 +274,13 @@ impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
             result.to_rvalue()
         }
         else {
-            current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
+            if gcc_func.get_param_count() == 0 {
+                // As a temporary workaround for unsupported LLVM intrinsics.
+                current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &[]));
+            }
+            else {
+                current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
+            }
             // Return dummy value when not having return value.
             self.context.new_rvalue_from_long(self.isize_type, 0)
         }
@@ -678,9 +684,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn checked_binop(&mut self, oop: OverflowOp, typ: Ty<'_>, lhs: Self::Value, rhs: Self::Value) -> (Self::Value, Self::Value) {
-        use rustc_ast::ast::IntTy::*;
-        use rustc_ast::ast::UintTy::*;
-        use rustc_middle::ty::{Int, Uint};
+        use rustc_middle::ty::{Int, IntTy::*, Uint, UintTy::*};
 
         let new_kind =
             match typ.kind() {
@@ -1452,6 +1456,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             self.function_call(func, args, funclet)
         }
         else {
+            // If it's a not function that was defined, it's a function pointer.
             self.function_ptr_call(func, args, funclet)
         }
     }

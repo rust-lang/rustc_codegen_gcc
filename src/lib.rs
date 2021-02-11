@@ -60,7 +60,7 @@ use gccjit::{Block, Context, FunctionType, OptimizationLevel};
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
-use rustc_codegen_ssa::back::write::{CodegenContext, FatLTOInput, ModuleConfig};
+use rustc_codegen_ssa::back::write::{CodegenContext, FatLTOInput, ModuleConfig, TargetMachineFactoryFn};
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule};
 use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, ModuleBufferMethods, ThinBufferMethods, WriteBackendMethods};
 use rustc_data_structures::fx::FxHashMap;
@@ -163,9 +163,9 @@ impl ExtraBackendMethods for GccCodegenBackend {
         base::compile_codegen_unit(tcx, cgu_name)
     }
 
-    fn target_machine_factory(&self, _sess: &Session, _opt_level: OptLevel) -> Arc<dyn Fn() -> Result<Self::TargetMachine, String> + Send + Sync> {
+    fn target_machine_factory(&self, _sess: &Session, _opt_level: OptLevel) -> TargetMachineFactoryFn<Self> {
         // TODO: set opt level.
-        Arc::new(|| {
+        Arc::new(|_| {
             Ok(())
         })
     }

@@ -6,6 +6,7 @@ use rustc_codegen_ssa::back::write::{CodegenContext, EmitObj, ModuleConfig};
 use rustc_errors::Handler;
 use rustc_session::config::OutputType;
 use rustc_span::fatal_error::FatalError;
+use rustc_target::spec::SplitDebuginfo;
 
 use crate::{GccCodegenBackend, GccContext};
 
@@ -204,6 +205,7 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
 
     Ok(module.into_compiled_module(
         config.emit_obj != EmitObj::None,
+        cgcx.target_can_use_split_dwarf && cgcx.split_debuginfo == SplitDebuginfo::Unpacked,
         config.emit_bc,
         &cgcx.output_filenames,
     ))
