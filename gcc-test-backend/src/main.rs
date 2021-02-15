@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+//#![feature(intrinsics)]
 
 /*use deflate::deflate_bytes_conf;
 use deflate::CompressionOptions;*/
@@ -40,95 +41,44 @@ pub fn example_c() -> [T; N] {
     }
 }*/
 
+/*extern "rust-intrinsic" {
+    pub fn atomic_xchg<T: Copy>(dst: *mut T, src: T) -> T;
+}*/
+
 pub struct Node {
     value: u32,
     symbol: u16,
 }
 
 fn main() {
-    //let mut result = vec![];
-    //let state = DeflateState::new(CompressionOptions::high(), &mut result);
-    //compress_data_dynamic_n(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], state, Flush::Finish);
-    // TODO: determine exactly what are the parameters sent to vec.extend() to reproduce the issue.
+    //use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    /*let num = AtomicBool::new(false);
+    //num.store(true, Ordering::SeqCst);
+    num.swap(true, Ordering::SeqCst);*/
 
-    /*leaves.extend(vec![
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-        Node {
-            value: 12,
-            symbol: 42,
-        },
-    ]);
+    /*{
+        /*let num = AtomicUsize::new(0);
+        num.compare_and_swap(0, 10, Ordering::SeqCst);*/
 
-    println!("{}", leaves.capacity());*/
+        let mut value = 10;
+        unsafe { atomic_xchg(&mut value, 2) };
 
-    unsafe { printf("Hello\n\0" as *const str as *const i8) };
+        /*if num.load(Ordering::SeqCst) == 10 {
+            unsafe { printf("10\n\0" as *const str as *const i8) };
+        }*/
+
+        if value == 2 {
+            unsafe { printf("2\n\0" as *const str as *const i8) };
+        }
+    }*/
+
+    println!("Hello {}", 12);
+
+    //println!("Test");
+
+    /*if num.load(Ordering::SeqCst) {
+        unsafe { printf("Hello\n\0" as *const str as *const i8) };
+    }*/
     //println!("Hello, world!");
 
     /*let mut leaves: Vec<Node> = Vec::with_capacity(286);

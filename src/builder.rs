@@ -1365,6 +1365,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     // Atomic Operations
     fn atomic_cmpxchg(&mut self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
         // TODO
+        let temp = dst.dereference(None).to_rvalue();
+        let old_value = self.current_func().new_local(None, temp.get_type(), "atomic_cmpxchg_result");
+        self.llbb().add_assignment(None, old_value, temp);
+
         self.llbb().add_assignment(None, dst.dereference(None), src);
         /*let compare_exchange = self.context.get_builtin_function("__atomic_compare_exchange_n"); // TODO: replace n with number?
         let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
@@ -1378,14 +1382,27 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let result = self.current_func().new_local(None, pair_type, "atomic_cmpxchg_result");
         let success = self.context.new_rvalue_from_int(self.bool_type, 1); // TODO: use real success.
         let align = Align::from_bits(64).expect("align"); // TODO: use good align.
-        self.store(success, result.get_address(None), align);
+
+        let value_type = result.to_rvalue().get_type();
+        if let Some(struct_type) = value_type.is_struct() {
+            self.store(old_value.to_rvalue(), result.access_field(None, struct_type.get_field(0)).get_address(None), align);
+            self.store(success, result.access_field(None, struct_type.get_field(1)).get_address(None), align);
+        }
+
         result.to_rvalue()
     }
 
     fn atomic_rmw(&mut self, op: AtomicRmwBinOp, dst: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering) -> RValue<'gcc> {
         let name =
             match op {
-                AtomicRmwBinOp::AtomicXchg => "__atomic_exchange_n",
+                AtomicRmwBinOp::AtomicXchg => {
+                    // TODO: implement using "__atomic_exchange_n" or something working.
+                    let temp = dst.dereference(None).to_rvalue();
+                    let result = self.current_func().new_local(None, temp.get_type(), "atomic_xchg_result");
+                    self.llbb().add_assignment(None, result, temp);
+                    self.llbb().add_assignment(None, dst.dereference(None), src);
+                    return result.to_rvalue();
+                },
                 AtomicRmwBinOp::AtomicAdd => {
                     // TODO: implement using atomics.
                     let temp = dst.dereference(None).to_rvalue();
