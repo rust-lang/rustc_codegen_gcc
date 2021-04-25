@@ -13,7 +13,6 @@ path = "tests/lib.rs"
 harness = false
 
 [dependencies]
-#gccjit = "1.0.0"
 gccjit = { git = "https://github.com/antoyo/gccjit.rs", branch = "feature/rustc" }
 
 target-lexicon = "0.10.0"

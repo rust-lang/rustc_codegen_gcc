@@ -387,6 +387,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn ret(&mut self, value: RValue<'gcc>) {
+        let value =
+            if self.structs_as_pointer.borrow().contains(&value) {
+                // NOTE: hack to workaround a limitation of the rustc API: see comment on
+                // CodegenCx.structs_as_pointer
+                value.dereference(None).to_rvalue()
+            }
+            else {
+                value
+            };
         self.llbb().end_with_return(None, value);
     }
 
@@ -504,7 +513,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn frem(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        a % b
+        if a.get_type() == self.cx.float_type {
+            let fmodf = self.context.get_builtin_function("fmodf");
+            // FIXME: this seems to produce the wrong result.
+            return self.context.new_call(None, fmodf, &[a, b]);
+        }
+        assert_eq!(a.get_type(), self.cx.double_type);
+
+        let fmod = self.context.get_builtin_function("fmod");
+        return self.context.new_call(None, fmod, &[a, b]);
     }
 
     fn shl(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -1266,8 +1283,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             else if value_type.is_vector().is_some() {
                 panic!();
             }
-            else if let Some(struct_type) = value_type.is_struct() {
-                aggregate_value.access_field(None, struct_type.get_field(idx as i32))
+            else if let Some(pointer_type) = value_type.get_pointee() {
+                if let Some(struct_type) = pointer_type.is_struct() {
+                    // NOTE: hack to workaround a limitation of the rustc API: see comment on
+                    // CodegenCx.structs_as_pointer
+                    aggregate_value.dereference_field(None, struct_type.get_field(idx as i32))
+                }
+                else {
+                    panic!("Unexpected type {:?}", value_type);
+                }
             }
             else {
                 panic!("Unexpected type {:?}", value_type);
@@ -1470,6 +1494,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // FIXME: remove when having a proper API.
         let gcc_func = unsafe { std::mem::transmute(func) };
         if self.functions.borrow().values().find(|value| **value == gcc_func).is_some() {
+            let gcc_func = self.cx.rvalue_as_function(func);
             self.function_call(func, args, funclet)
         }
         else {

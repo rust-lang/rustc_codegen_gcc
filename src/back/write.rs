@@ -170,12 +170,22 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
                     .prof
                     .generic_activity_with_arg("LLVM_module_codegen_emit_obj", &module.name[..]);
                 //with_codegen(tm, llmod, config.no_builtins, |cpm| {
-                    if module.name == "coretests.dwfyi7m8-cgu.14" {
-                        let _ = fs::create_dir("/tmp/reproducers");
-                        // FIXME: segfault in dump_reproducer_to_file() might be caused by
-                        // transmuting an rvalue to an lvalue.
-                        // TODO: add checks everytime I transmute.
-                        context.dump_reproducer_to_file(&format!("/tmp/reproducers/{}.c", module.name));
+                    //println!("1: {}", module.name);
+                    match &*module.name {
+                        "coretests.4ywh8hhw-cgu.12" | "coretests.4ywh8hhw-cgu.15" | "coretests.4ywh8hhw-cgu.14" => {
+                            println!("Dumping reproducer {}", module.name);
+                            let _ = fs::create_dir("/tmp/reproducers");
+                            // FIXME: segfault in dump_reproducer_to_file() might be caused by
+                            // transmuting an rvalue to an lvalue.
+                            // Segfault is actually in gcc::jit::reproducer::get_identifier_as_lvalue
+                            // TODO: use heaptrack (or dhat-rs) to find out where the memory is
+                            // allocated (or maybe even jemalloc?).
+                            // Or efence (electronic fence)?
+                            // Or gdb reverse debugging.
+                            context.dump_reproducer_to_file(&format!("/tmp/reproducers/{}.c", module.name));
+                            println!("Dumped reproducer {}", module.name);
+                        },
+                        _ => (),
                     }
                     //println!("Compile module {}", module.name);
                     context.compile_to_file(OutputKind::ObjectFile, obj_out.to_str().expect("path to str"));

@@ -8,6 +8,8 @@ edition = "2018"
 #depth1 = { path = "depth1" }
 #mini_core = { path = "mini_core" }
 #deflate = "0.7.19"
+#backtrace = "0.3.57"
+mylib = { path = "mylib" }
 
 [profile.dev]
 panic = "abort"

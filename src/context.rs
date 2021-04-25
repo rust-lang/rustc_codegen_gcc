@@ -76,6 +76,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub ulonglong_type: Type<'gcc>,
     pub sizet_type: Type<'gcc>,
 
+    pub float_type: Type<'gcc>,
+    pub double_type: Type<'gcc>,
+
     pub linkage: Cell<FunctionType>,
     pub scalar_types: RefCell<FxHashMap<Ty<'tcx>, Type<'gcc>>>,
     pub types: RefCell<FxHashMap<(Ty<'tcx>, Option<VariantIdx>), Type<'gcc>>>,
@@ -108,6 +111,13 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
+    /// NOTE: a hack is used because the rustc API is not suitable to libgccjit and as such,
+    /// `const_undef()` returns struct as pointer so that they can later be assigned a value.
+    /// As such, this set remembers which of these pointers were returned by this function so that
+    /// they can be derefered later.
+    /// FIXME: fix the rustc API to avoid having this hack.
+    pub structs_as_pointer: RefCell<FxHashSet<RValue<'gcc>>>,
+
     /// Store the pointer of different types for safety.
     /// When casting the values back to their original types, check that they are indeed that type
     /// with these sets.
@@ -135,6 +145,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u32_type = context.new_type::<u32>();
         let u64_type = context.new_c_type(CType::ULongLong);
         let u128_type = context.new_c_type(CType::ULongLong); // TODO: change to u128.
+
+        let float_type = context.new_type::<f32>();
+        let double_type = context.new_type::<f64>();
 
         let int_type = context.new_c_type(CType::Int);
         let uint_type = context.new_c_type(CType::UInt);
@@ -196,6 +209,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             ulonglong_type,
             sizet_type,
 
+            float_type,
+            double_type,
+
             linkage: Cell::new(FunctionType::Internal),
             #[cfg(debug_assertions)]
             lvalues: Default::default(),
@@ -214,6 +230,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             global_gen_sym_counter: Cell::new(0),
             eh_personality: Cell::new(None),
             pointee_infos: Default::default(),
+            structs_as_pointer: Default::default(),
         }
     }
 
@@ -236,8 +253,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     pub fn rvalue_as_lvalue(&self, value: RValue<'gcc>) -> LValue<'gcc> {
         let lvalue: LValue<'gcc> = unsafe { std::mem::transmute(value) };
-        #[cfg(debug_assertions)]
-        debug_assert!(self.lvalues.borrow().contains(&lvalue), "{:?} is not an lvalue", value);
+        //debug_assert!(self.lvalues.borrow().contains(&lvalue), "{:?} is not an lvalue", value);
         lvalue
     }
 

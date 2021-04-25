@@ -44,7 +44,7 @@ pub fn linkage_to_gcc(linkage: Linkage) -> FunctionType {
         Linkage::AvailableExternally => FunctionType::Extern,
         Linkage::LinkOnceAny => unimplemented!(),
         Linkage::LinkOnceODR => unimplemented!(),
-        Linkage::WeakAny => unimplemented!(),
+        Linkage::WeakAny => FunctionType::Exported, // FIXME: should be similar to linkonce.
         Linkage::WeakODR => unimplemented!(),
         Linkage::Appending => unimplemented!(),
         Linkage::Internal => FunctionType::Internal,

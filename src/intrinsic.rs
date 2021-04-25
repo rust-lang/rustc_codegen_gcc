@@ -224,14 +224,13 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     let else_block = func.new_block("else");
                                     let after_block = func.new_block("after");
 
-                                    let result = func.new_local(None, self.int_type, "zeros");
-
                                     let arg = args[0].immediate();
+                                    let result = func.new_local(None, arg.get_type(), "zeros");
                                     let zero = self.cx.context.new_rvalue_zero(arg.get_type());
                                     let cond = self.cx.context.new_comparison(None, ComparisonOp::Equals, arg, zero);
                                     self.block.expect("block").end_with_conditional(None, cond, then_block, else_block);
 
-                                    let zero_result = self.cx.context.new_rvalue_from_long(self.int_type, width as i64);
+                                    let zero_result = self.cx.context.new_rvalue_from_long(arg.get_type(), width as i64);
                                     then_block.add_assignment(None, result, zero_result);
                                     then_block.end_with_jump(None, after_block);
 
@@ -723,6 +722,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 step5
             },
+            128 => {
+                // TODO
+                value
+            },
             _ => {
                 panic!("cannot bit reverse with width = {}", width);
             },
@@ -746,10 +749,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let arg = self.context.new_cast(None, arg, self.uint_type);
                 let diff = self.int_width(self.uint_type) - self.int_width(arg_type);
                 let diff = self.context.new_rvalue_from_long(self.int_type, diff);
-                return self.context.new_call(None, count_leading_zeroes, &[arg]) - diff;
+                let res = self.context.new_call(None, count_leading_zeroes, &[arg]) - diff;
+                return self.context.new_cast(None, res, arg_type);
             };
         let count_leading_zeroes = self.context.get_builtin_function(count_leading_zeroes);
-        self.context.new_call(None, count_leading_zeroes, &[arg])
+        let res = self.context.new_call(None, count_leading_zeroes, &[arg]);
+        self.context.new_cast(None, res, arg_type)
     }
 
     fn count_trailing_zeroes(&self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
@@ -776,7 +781,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             else {
                 arg
             };
-        self.context.new_call(None, count_trailing_zeroes, &[arg])
+        let res = self.context.new_call(None, count_trailing_zeroes, &[arg]);
+        self.context.new_cast(None, res, arg_type)
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
@@ -883,8 +889,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             else {
                 let res = lhs + rhs;
                 let res_type = res.get_type();
-                let res = func.new_local(None, res_type, "saturating_sum");
                 let cond = self.context.new_comparison(None, ComparisonOp::LessThan, res, lhs);
+                // FIXME: use another name than `res` since it's already used. Check if they're
+                // mixed up.
+                let res = func.new_local(None, res_type, "saturating_sum");
 
                 let then_block = func.new_block("then");
                 let else_block = func.new_block("else");
@@ -929,6 +937,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
+            let width =
+                // TODO: support 128-bit integers.
+                if width == 128 {
+                    64
+                }
+                else {
+                    width
+                };
             let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
             let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
             let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,

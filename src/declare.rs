@@ -145,7 +145,8 @@ fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llv
     //attributes::non_lazy_bind(cx.sess(), llfn);
 
     // FIXME: invalid cast.
-    cx.globals.borrow_mut().insert(name.to_string(), unsafe { std::mem::transmute(func) });
+    // TODO: is this line useful?
+    //cx.globals.borrow_mut().insert(name.to_string(), unsafe { std::mem::transmute(func) });
     func
 }
 

@@ -1,4 +1,9 @@
 #![allow(deprecated)]
+#![feature(asm, backtrace, core_intrinsics)]
+
+//use backtrace::Backtrace;
+use std::backtrace::Backtrace;
+
 //#![feature(intrinsics)]
 
 /*use deflate::deflate_bytes_conf;
@@ -45,9 +50,28 @@ pub fn example_c() -> [T; N] {
     pub fn atomic_xchg<T: Copy>(dst: *mut T, src: T) -> T;
 }*/
 
+fn rem(num: f32, other: f32) -> f32 {
+    num % other
+}
+
+fn rem2(num: f64, other: f64) -> f64 {
+    num % other
+}
+
 pub struct Node {
     value: u32,
     symbol: u16,
+}
+
+fn one_less_than_next_power_of_two(num: usize) -> usize {
+    if num <= 1 { return 0; }
+
+    let p = num - 1;
+    println!("p: {}", p);
+    let z = unsafe { std::intrinsics::ctlz_nonzero(p) };
+    println!("Max: {}", usize::MAX);
+    println!("z: {}", z);
+    usize::MAX >> z
 }
 
 fn main() {
@@ -72,7 +96,34 @@ fn main() {
         }
     }*/
 
-    println!("Hello {}", 12);
+    /*unsafe {
+        asm!("nop");
+    }
+
+    let x: u64;
+    unsafe {
+        asm!("mov $5, {}",
+            out(reg) x,
+            options(att_syntax)
+        );
+    }
+    assert_eq!(x, 5);
+
+    println!("Hello {}", x);*/
+
+    /*let bt = Backtrace::new();
+    println!("{:?}", bt);*/
+
+
+    //unsafe { println!("{}", std::intrinsics::ctlz_nonzero(8_usize)) };
+    println!("one less: {}", one_less_than_next_power_of_two(8));
+
+    /*let backtrace = Backtrace::capture();
+    println!("{}", backtrace);*/
+
+    //panic!("Test");
+    mylib::print();
+    println!("Hello, world!");
 
     //println!("Test");
 
