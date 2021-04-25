@@ -1,7 +1,7 @@
 use gccjit::RValue;
 use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::place::PlaceRef;
-use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, InlineAsmOperandRef};
+use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BuilderMethods, InlineAsmOperandRef};
 use rustc_hir::{GlobalAsm, LlvmInlineAsmInner};
 use rustc_span::Span;
 
@@ -112,8 +112,10 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         true*/
     }
 
-    fn codegen_inline_asm(&mut self, _template: &[InlineAsmTemplatePiece], _operands: &[InlineAsmOperandRef<'tcx, Self>], _options: InlineAsmOptions, _span: &[Span]) {
-        //unimplemented!();
+    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
+        /*
+        let extended_asm = self.llbb().add_extended_asm(None, &template_str);
+
         /*let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
         // Collect the types of output operands
@@ -186,10 +188,11 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
                 _ => {}
             }
-        }
+        }*/
 
         // Build the template string
         let mut template_str = String::new();
+        let mut operand_index = 0;
         for piece in template {
             match *piece {
                 InlineAsmTemplatePiece::String(ref s) => {
@@ -207,10 +210,14 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
                 InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span: _ } => {
                     match operands[operand_idx] {
+                        InlineAsmOperandRef::Out { reg, place: Some(place), .. } => {
+                            unimplemented!("Out");
+                            //extended_asm.add_output_operand(None, "=r", place);
+                        },
                         InlineAsmOperandRef::In { reg, .. }
-                        | InlineAsmOperandRef::Out { reg, .. }
                         | InlineAsmOperandRef::InOut { reg, .. } => {
-                            let modifier = modifier_to_llvm(asm_arch, reg.reg_class(), modifier);
+                            unimplemented!();
+                            /*let modifier = modifier_to_llvm(asm_arch, reg.reg_class(), modifier);
                             if let Some(modifier) = modifier {
                                 template_str.push_str(&format!(
                                     "${{{}:{}}}",
@@ -218,7 +225,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                 ));
                             } else {
                                 template_str.push_str(&format!("${{{}}}", op_idx[&operand_idx]));
-                            }
+                            }*/
                         }
                         InlineAsmOperandRef::Const { ref string } => {
                             // Const operands get injected directly into the template
@@ -234,7 +241,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
         }
 
-        if !options.contains(InlineAsmOptions::PRESERVES_FLAGS) {
+        /*if !options.contains(InlineAsmOptions::PRESERVES_FLAGS) {
             match asm_arch {
                 InlineAsmArch::AArch64 | InlineAsmArch::Arm => {
                     constraints.push("~{cc}".to_string());
@@ -269,8 +276,9 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 LlvmAsmDialect::Intel
             }
             _ => LlvmAsmDialect::Att,
-        };
-        let result = inline_asm_call(
+        };*/
+
+        /*let result = inline_asm_call(
             self,
             &template_str,
             &constraints.join(","),
@@ -312,6 +320,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 OperandValue::Immediate(value).store(self, place);
             }
         }*/
+        */
     }
 }
 
