@@ -126,6 +126,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         // variable after the extended asm expression causes a segfault:
         // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100380
         let mut output_vars = FxHashMap::default();
+        let mut operand_numbers = FxHashMap::default();
+        let mut current_number = 0;
         for (idx, op) in operands.iter().enumerate() {
             match *op {
                 InlineAsmOperandRef::Out { reg, late, place } => {
@@ -139,7 +141,9 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                 dummy_output_type(self.cx, reg.reg_class())
                             },
                         };
-                    let var = self.current_func().new_local(None, ty, "output register");
+                    let var = self.current_func().new_local(None, ty, "output_register");
+                    operand_numbers.insert(idx, current_number);
+                    current_number += 1;
                     output_vars.insert(idx, var);
                 }
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
@@ -149,32 +153,14 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
         }
 
-        // Collect input operands
-        //let mut constraints = vec![];
-        //let mut op_idx = FxHashMap::default();
-        let mut inputs = vec![];
+        // All output operands must come before the input operands, hence the 2 loops.
         for (idx, op) in operands.iter().enumerate() {
             match *op {
-                InlineAsmOperandRef::In { reg, value } => {
-                    inputs.push(value.immediate());
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push(reg_to_gcc(reg));
-                }
-                InlineAsmOperandRef::InOut { reg, late: _, in_value, out_place: _ } => {
-                    inputs.push(in_value.immediate());
-                    //constraints.push(format!("{}", op_idx[&idx]));
-                }
-                InlineAsmOperandRef::SymFn { instance } => {
-                    inputs.push(self.cx.get_fn(instance));
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push("s".to_string());
-                }
-                InlineAsmOperandRef::SymStatic { def_id } => {
-                    inputs.push(self.cx.get_static(def_id));
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push("s".to_string());
-                }
-                _ => {}
+                InlineAsmOperandRef::In { .. } => {
+                    operand_numbers.insert(idx, current_number);
+                    current_number += 1;
+                },
+                _ => (),
             }
         }
 
@@ -196,7 +182,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     op_idx[&operand_idx], modifier
                                 ));
                             } else {*/
-                                template_str.push_str(&format!("%{}", operand_idx));
+                                template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
                             //}
                             //extended_asm.add_output_operand(None, "=r", place);
                         },
@@ -206,16 +192,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         },
                         InlineAsmOperandRef::In { reg, .. }
                         | InlineAsmOperandRef::InOut { reg, .. } => {
-                            unimplemented!();
                             /*let modifier = modifier_to_llvm(asm_arch, reg.reg_class(), modifier);
                             if let Some(modifier) = modifier {
                                 template_str.push_str(&format!(
                                     "${{{}:{}}}",
                                     op_idx[&operand_idx], modifier
                                 ));
-                            } else {
-                                template_str.push_str(&format!("${{{}}}", op_idx[&operand_idx]));
-                            }*/
+                            } else {*/
+                                template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
+                            //}
                         }
                         InlineAsmOperandRef::Const { ref string } => {
                             // Const operands get injected directly into the template
@@ -268,6 +253,39 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     //op_idx.insert(idx, constraints.len());
                     let prefix = if late { "=" } else { "=&" };
                     //constraints.push(format!("{}{}", prefix, reg_to_gcc(reg)));
+                }
+                InlineAsmOperandRef::In { reg, value } => {
+                    let constraint = reg_to_gcc(reg);
+                    extended_asm.add_input_operand(None, &constraint, value.immediate());
+                }
+                _ => {}
+            }
+        }
+
+        // Collect input operands
+        //let mut constraints = vec![];
+        //let mut op_idx = FxHashMap::default();
+        //let mut inputs = vec![];
+        for (idx, op) in operands.iter().enumerate() {
+            match *op {
+                InlineAsmOperandRef::In { reg, value } => {
+                    //inputs.push(value.immediate());
+                    //op_idx.insert(idx, constraints.len());
+                    //constraints.push(reg_to_gcc(reg));
+                }
+                InlineAsmOperandRef::InOut { reg, late: _, in_value, out_place: _ } => {
+                    //inputs.push(in_value.immediate());
+                    //constraints.push(format!("{}", op_idx[&idx]));
+                }
+                InlineAsmOperandRef::SymFn { instance } => {
+                    //inputs.push(self.cx.get_fn(instance));
+                    //op_idx.insert(idx, constraints.len());
+                    //constraints.push("s".to_string());
+                }
+                InlineAsmOperandRef::SymStatic { def_id } => {
+                    //inputs.push(self.cx.get_static(def_id));
+                    //op_idx.insert(idx, constraints.len());
+                    //constraints.push("s".to_string());
                 }
                 _ => {}
             }

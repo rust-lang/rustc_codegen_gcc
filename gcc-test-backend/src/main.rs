@@ -114,7 +114,21 @@ fn main() {
     }
     assert_eq!(x, 5);
 
-    println!("Hello {}", x);
+    println!("Output {}", x);
+
+    let x: u64;
+    let input: u64 = 42;
+    unsafe {
+        asm!("mov {input}, {output}",
+             "add $1, {output}",
+            input = in(reg) input,
+            output = out(reg) x,
+            options(att_syntax)
+        );
+    }
+    assert_eq!(x, 43);
+
+    println!("Input + output {}", x);
 
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/
