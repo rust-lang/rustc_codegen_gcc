@@ -178,10 +178,6 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
                             // FIXME: segfault in dump_reproducer_to_file() might be caused by
                             // transmuting an rvalue to an lvalue.
                             // Segfault is actually in gcc::jit::reproducer::get_identifier_as_lvalue
-                            // TODO: use heaptrack (or dhat-rs) to find out where the memory is
-                            // allocated (or maybe even jemalloc?).
-                            // Or efence (electronic fence)?
-                            // Or gdb reverse debugging.
                             context.dump_reproducer_to_file(&format!("/tmp/reproducers/{}.c", module.name));
                             println!("Dumped reproducer {}", module.name);
                         },

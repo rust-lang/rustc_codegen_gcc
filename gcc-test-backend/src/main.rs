@@ -75,6 +75,11 @@ fn one_less_than_next_power_of_two(num: usize) -> usize {
 }
 
 fn main() {
+    /*println!("1");
+    let mutex = std::sync::Mutex::new(());
+    let _guard = mutex.lock().unwrap();
+    println!("2");*/
+
     //use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     /*let num = AtomicBool::new(false);
     //num.store(true, Ordering::SeqCst);
@@ -96,7 +101,7 @@ fn main() {
         }
     }*/
 
-    /*unsafe {
+    unsafe {
         asm!("nop");
     }
 
@@ -109,7 +114,7 @@ fn main() {
     }
     assert_eq!(x, 5);
 
-    println!("Hello {}", x);*/
+    println!("Hello {}", x);
 
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/
