@@ -35,8 +35,9 @@ fn main() {
             let mut compiler = Command::new("rustc");
             compiler.args(&[
                 &format!("-Zcodegen-backend={}/target/debug/librustc_codegen_gcc.so", current_dir),
-                "--sysroot", &format!("{}/build_sysroot/sysroot_src/", current_dir),
+                "--sysroot", &format!("{}/build_sysroot/sysroot/", current_dir),
                 "-Zno-parallel-llvm",
+                "-C", "panic=abort",
                 "-o", exe.to_str().expect("to_str"),
                 path.to_str().expect("to_str"),
             ]);

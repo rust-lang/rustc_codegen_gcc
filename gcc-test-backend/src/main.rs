@@ -163,7 +163,7 @@ fn main() {
     println!("{}", backtrace);*/
 
     //panic!("Test");
-    mylib::print();
+    //mylib::print();
     println!("Hello, world!");
 
     //println!("Test");
