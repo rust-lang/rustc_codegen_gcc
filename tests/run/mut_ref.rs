@@ -8,7 +8,7 @@
 //     11
 
 #![allow(unused_attributes)]
-#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
+#![feature(auto_traits, lang_items, link_args, no_core, start, intrinsics, track_caller)]
 
 #![no_std]
 #![no_core]

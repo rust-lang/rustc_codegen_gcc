@@ -6,7 +6,7 @@
 //     10
 
 #![allow(unused_attributes)]
-#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics, arbitrary_self_types)]
+#![feature(auto_traits, lang_items, link_args, no_core, start, intrinsics, arbitrary_self_types)]
 
 #![no_std]
 #![no_core]

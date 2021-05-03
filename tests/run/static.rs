@@ -9,7 +9,7 @@
 //      12
 //      1
 
-#![feature(optin_builtin_traits, lang_items, link_args, no_core, start, intrinsics)]
+#![feature(auto_traits, lang_items, link_args, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
