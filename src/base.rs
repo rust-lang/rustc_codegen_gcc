@@ -72,6 +72,8 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
         // Instantiate monomorphizations without filling out definitions yet...
         //let llvm_module = ModuleLlvm::new(tcx, &cgu_name.as_str());
         let context = Context::default();
+        // TODO: only set on x86 platforms.
+        context.add_command_line_option("-masm=intel");
         //context.set_dump_code_on_compile(true);
         //context.set_dump_initial_gimple(true);
         context.set_debug_info(true);

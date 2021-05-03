@@ -226,12 +226,13 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         let block = self.llbb();
         let template_str =
             if intel_dialect {
-                // FIXME: this might break the "m" memory constraint:
-                // https://stackoverflow.com/a/9347957/389119
-                format!(".intel_syntax noprefix\n\t{}\n\t.att_syntax noprefix", template_str)
+                template_str
             }
             else {
-                template_str
+                // FIXME: this might break the "m" memory constraint:
+                // https://stackoverflow.com/a/9347957/389119
+                // TODO: only set on x86 platforms.
+                format!(".att_syntax noprefix\n\t{}\n\t.intel_syntax noprefix", template_str)
             };
         let extended_asm = block.add_extended_asm(None, &template_str);
 
