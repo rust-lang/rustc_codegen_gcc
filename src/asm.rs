@@ -121,6 +121,12 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
         let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
+        let intel_dialect =
+            match asm_arch {
+                InlineAsmArch::X86 | InlineAsmArch::X86_64 if !options.contains(InlineAsmOptions::ATT_SYNTAX) => true,
+                _ => false,
+            };
+
         // Collect the types of output operands
         // FIXME: we do this here instead of later because of a bug in libgccjit where creating the
         // variable after the extended asm expression causes a segfault:
@@ -218,6 +224,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
 
         let block = self.llbb();
+        let template_str =
+            if intel_dialect {
+                // FIXME: this might break the "m" memory constraint:
+                // https://stackoverflow.com/a/9347957/389119
+                format!(".intel_syntax noprefix\n\t{}\n\t.att_syntax noprefix", template_str)
+            }
+            else {
+                template_str
+            };
         let extended_asm = block.add_extended_asm(None, &template_str);
 
         // Collect the types of output operands
@@ -318,14 +333,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             [] => self.type_void(),
             [ty] => ty,
             tys => self.type_struct(&tys, false),
-        };
-        let dialect = match asm_arch {
-            InlineAsmArch::X86 | InlineAsmArch::X86_64
-                if !options.contains(InlineAsmOptions::ATT_SYNTAX) =>
-            {
-                LlvmAsmDialect::Intel
-            }
-            _ => LlvmAsmDialect::Att,
         };*/
 
         /*let result = inline_asm_call(

@@ -130,6 +130,28 @@ fn main() {
 
     println!("Input + output {}", x);
 
+    let x: u64;
+    unsafe {
+        asm!("mov {}, 6",
+            out(reg) x,
+        );
+    }
+    assert_eq!(x, 6);
+    println!("Intel output: {}", x);
+
+    let x: u64;
+    let input: u64 = 42;
+    unsafe {
+        asm!("mov {output}, {input}",
+             "add {output}, 1",
+            input = in(reg) input,
+            output = out(reg) x,
+        );
+    }
+    assert_eq!(x, 43);
+
+    println!("Input + output (intel) {}", x);
+
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/
 
