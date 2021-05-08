@@ -1391,28 +1391,38 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     // Atomic Operations
     fn atomic_cmpxchg(&mut self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
-        // TODO
-        let temp = dst.dereference(None).to_rvalue();
-        let old_value = self.current_func().new_local(None, temp.get_type(), "atomic_cmpxchg_result");
-        self.llbb().add_assignment(None, old_value, temp);
-
-        self.llbb().add_assignment(None, dst.dereference(None), src);
-        /*let compare_exchange = self.context.get_builtin_function("__atomic_compare_exchange_n"); // TODO: replace n with number?
+        let size = self.cx.int_width(src.get_type());
+        let compare_exchange = self.context.get_builtin_function(&format!("__atomic_compare_exchange_{}", size / 8));
         let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
         let failure_order = self.context.new_rvalue_from_int(self.i32_type, failure_order.to_gcc());
         let weak = self.context.new_rvalue_from_int(self.bool_type, weak as i32);
-        self.context.new_call(None, compare_exchange, &[dst, cmp, src, weak, order, failure_order]);*/
-        // FIXME: return the result of the call instead of a dummy value. Bug in libgccjit makes
-        // __atomic_compare_exchange_n return void instead of bool.
+
+        let void_ptr_type = self.context.new_type::<*mut ()>();
+        let volatile_void_ptr_type = void_ptr_type.make_volatile();
+        let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
+        let expected = self.current_func().new_local(None, cmp.get_type(), "expected");
+        self.llbb().add_assignment(None, expected, cmp);
+        let expected = self.context.new_cast(None, expected.get_address(None), void_ptr_type);
+
+        // NOTE: not sure why, but we need to cast to the signed type.
+        let new_src_type =
+            if size == 64 {
+                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
+                self.cx.long_type
+            }
+            else {
+                src.get_type().to_signed(&self.cx)
+            };
+        let src = self.context.new_cast(None, src, new_src_type);
+        let success = self.context.new_call(None, compare_exchange, &[dst, expected, src, weak, order, failure_order]);
 
         let pair_type = self.cx.type_struct(&[src.get_type(), self.bool_type], false);
         let result = self.current_func().new_local(None, pair_type, "atomic_cmpxchg_result");
-        let success = self.context.new_rvalue_from_int(self.bool_type, 1); // TODO: use real success.
         let align = Align::from_bits(64).expect("align"); // TODO: use good align.
 
         let value_type = result.to_rvalue().get_type();
         if let Some(struct_type) = value_type.is_struct() {
-            self.store(old_value.to_rvalue(), result.access_field(None, struct_type.get_field(0)).get_address(None), align);
+            self.store(cmp, result.access_field(None, struct_type.get_field(0)).get_address(None), align);
             self.store(success, result.access_field(None, struct_type.get_field(1)).get_address(None), align);
         }
 

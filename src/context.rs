@@ -242,7 +242,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             1 => self.i8_type,
             2 => self.i16_type,
             4 => self.i32_type,
-            8 => self.long_type,
+            8 => self.long_type, // NOTE: for atomic_store.
             16 => self.i128_type,
             _ => unimplemented!(),
         }

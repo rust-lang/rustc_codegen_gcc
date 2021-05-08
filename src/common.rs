@@ -292,6 +292,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 pub trait SignType<'gcc, 'tcx> {
     fn is_signed(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
     fn is_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
+    fn to_signed(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc>;
 }
 
 impl<'gcc, 'tcx> SignType<'gcc, 'tcx> for Type<'gcc> {
@@ -301,6 +302,27 @@ impl<'gcc, 'tcx> SignType<'gcc, 'tcx> for Type<'gcc> {
 
     fn is_unsigned(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
         self.is_u8(cx) || self.is_u16(cx) || self.is_u32(cx) || self.is_u64(cx) || self.is_u128(cx)
+    }
+
+    fn to_signed(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc> {
+        if self.is_u8(cx) {
+            cx.i8_type
+        }
+        else if self.is_u16(cx) {
+            cx.i16_type
+        }
+        else if self.is_u32(cx) {
+            cx.i32_type
+        }
+        else if self.is_u64(cx) {
+            cx.i64_type
+        }
+        else if self.is_u128(cx) {
+            cx.i128_type
+        }
+        else {
+            self.clone()
+        }
     }
 }
 
