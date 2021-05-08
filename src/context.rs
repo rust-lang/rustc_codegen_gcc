@@ -72,6 +72,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub int_type: Type<'gcc>,
     pub uint_type: Type<'gcc>,
+    pub long_type: Type<'gcc>,
     pub ulong_type: Type<'gcc>,
     pub ulonglong_type: Type<'gcc>,
     pub sizet_type: Type<'gcc>,
@@ -151,6 +152,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         let int_type = context.new_c_type(CType::Int);
         let uint_type = context.new_c_type(CType::UInt);
+        let long_type = context.new_c_type(CType::Long);
         let ulong_type = context.new_c_type(CType::ULong);
         let ulonglong_type = context.new_c_type(CType::ULongLong);
         let sizet_type = context.new_c_type(CType::SizeT);
@@ -205,6 +207,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             u128_type,
             int_type,
             uint_type,
+            long_type,
             ulong_type,
             ulonglong_type,
             sizet_type,
@@ -231,6 +234,17 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             eh_personality: Cell::new(None),
             pointee_infos: Default::default(),
             structs_as_pointer: Default::default(),
+        }
+    }
+
+    pub fn int_type_from_size(&self, size: u64) -> Type<'gcc> {
+        match size {
+            1 => self.i8_type,
+            2 => self.i16_type,
+            4 => self.i32_type,
+            8 => self.long_type,
+            16 => self.i128_type,
+            _ => unimplemented!(),
         }
     }
 

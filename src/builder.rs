@@ -820,16 +820,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn atomic_load(&mut self, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) -> RValue<'gcc> {
-        ptr.dereference(None).to_rvalue()
-        // TODO: replace with following code when libgccjit supports __atomic_load types.
         // TODO: handle alignment.
-        /*let atomic_load = self.context.get_builtin_function("__atomic_load");
+        let atomic_load = self.context.get_builtin_function(&format!("__atomic_load_{}", size.bytes()));
         let ordering = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
-        let block = self.block.expect("block");
-        let result_type = ptr.dereference(None).to_rvalue().get_type();
-        let result = block.get_function().new_local(None, result_type, "atomic_load_result");
-        block.add_eval(None, self.context.new_call(None, atomic_load, &[ptr, result.get_address(None), ordering]));
-        result.to_rvalue()*/
+
+        let volatile_const_void_ptr_type = self.context.new_type::<*mut ()>().make_const().make_volatile();
+        let ptr = self.context.new_cast(None, ptr, volatile_const_void_ptr_type);
+        self.context.new_call(None, atomic_load, &[ptr, ordering])
     }
 
     fn load_operand(&mut self, place: PlaceRef<'tcx, RValue<'gcc>>) -> OperandRef<'tcx, RValue<'gcc>> {
@@ -998,13 +995,19 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn atomic_store(&mut self, value: RValue<'gcc>, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) {
-        self.llbb().add_assignment(None, ptr.dereference(None), value);
-        // TODO: replace with the following when atomic builtins are supported.
         // TODO: handle alignment.
-        /*let atomic_store = self.context.get_builtin_function("__atomic_store_n");
+        let atomic_store = self.context.get_builtin_function(&format!("__atomic_store_{}", size.bytes()));
         let ordering = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
+        let volatile_const_void_ptr_type = self.context.new_type::<*mut ()>().make_const().make_volatile();
+        let ptr = self.context.new_cast(None, ptr, volatile_const_void_ptr_type);
+
+        // FIXME: fix libgccjit to allow comparing an integer type with an aligned integer type because
+        // the following cast is required to avoid this error:
+        // gcc_jit_context_new_call: mismatching types for argument 2 of function "__atomic_store_4": assignment to param arg1 (type: int) from loadedValue3577 (type: unsigned int  __attribute__((aligned(4))))
+        let int_type = self.cx.int_type_from_size(size.bytes());
+        let value = self.context.new_cast(None, value, int_type);
         self.llbb()
-            .add_eval(None, self.context.new_call(None, atomic_store, &[ptr, value, ordering]));*/
+            .add_eval(None, self.context.new_call(None, atomic_store, &[ptr, value, ordering]));
     }
 
     fn gep(&mut self, ptr: RValue<'gcc>, indices: &[RValue<'gcc>]) -> RValue<'gcc> {
