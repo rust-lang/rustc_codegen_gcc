@@ -1430,29 +1430,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn atomic_rmw(&mut self, op: AtomicRmwBinOp, dst: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering) -> RValue<'gcc> {
+        let size = self.cx.int_width(src.get_type()) / 8;
         let name =
             match op {
-                AtomicRmwBinOp::AtomicXchg => {
-                    // TODO: implement using "__atomic_exchange_n" or something working.
-                    let temp = dst.dereference(None).to_rvalue();
-                    let result = self.current_func().new_local(None, temp.get_type(), "atomic_xchg_result");
-                    self.llbb().add_assignment(None, result, temp);
-                    self.llbb().add_assignment(None, dst.dereference(None), src);
-                    return result.to_rvalue();
-                },
-                AtomicRmwBinOp::AtomicAdd => {
-                    // TODO: implement using atomics.
-                    let temp = dst.dereference(None).to_rvalue();
-                    println!("{:?}", dst);
-                    self.llbb().add_assignment_op(None, dst.dereference(None), BinaryOp::Plus, src);
-                    return temp;
-                    //"__atomic_fetch_add" // TODO: try __atomic_fetch_add_N?
-                },
-                AtomicRmwBinOp::AtomicSub => "__atomic_fetch_sub",
-                AtomicRmwBinOp::AtomicAnd => "__atomic_fetch_and",
-                AtomicRmwBinOp::AtomicNand => "__atomic_fetch_nand",
-                AtomicRmwBinOp::AtomicOr => "__atomic_fetch_or",
-                AtomicRmwBinOp::AtomicXor => "__atomic_fetch_xor",
+                AtomicRmwBinOp::AtomicXchg => format!("__atomic_exchange_{}", size),
+                AtomicRmwBinOp::AtomicAdd => format!("__atomic_fetch_add_{}", size),
+                AtomicRmwBinOp::AtomicSub => format!("__atomic_fetch_sub_{}", size),
+                AtomicRmwBinOp::AtomicAnd => format!("__atomic_fetch_and_{}", size),
+                AtomicRmwBinOp::AtomicNand => format!("__atomic_fetch_nand_{}", size),
+                AtomicRmwBinOp::AtomicOr => format!("__atomic_fetch_or_{}", size),
+                AtomicRmwBinOp::AtomicXor => format!("__atomic_fetch_xor_{}", size),
                 AtomicRmwBinOp::AtomicMax => unimplemented!(),
                 AtomicRmwBinOp::AtomicMin => unimplemented!(),
                 AtomicRmwBinOp::AtomicUMax => unimplemented!(),
@@ -1462,11 +1449,22 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         let atomic_function = self.context.get_builtin_function(name);
         let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
+
+        let void_ptr_type = self.context.new_type::<*mut ()>();
+        let volatile_void_ptr_type = void_ptr_type.make_volatile();
+        let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
+        // NOTE: not sure why, but we need to cast to the signed type.
+        let new_src_type =
+            if size == 8 {
+                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
+                self.cx.long_type
+            }
+            else {
+                src.get_type().to_signed(&self.cx)
+            };
+        let src = self.context.new_cast(None, src, new_src_type);
         let res = self.context.new_call(None, atomic_function, &[dst, src, order]);
-        // FIXME: return the return value of the call (res) instead of dst when I can cast the result to
-        // the right type.
-        dst.dereference(None).to_rvalue()
-        //self.context.new_cast(None, res, src.get_type())
+        self.context.new_cast(None, res, src.get_type())
     }
 
     fn atomic_fence(&mut self, order: AtomicOrdering, scope: SynchronizationScope) {
