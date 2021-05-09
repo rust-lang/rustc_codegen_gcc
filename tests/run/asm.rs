@@ -3,7 +3,17 @@
 // Run-time:
 //   status: 0
 
-#![feature(asm)]
+#![feature(asm, global_asm)]
+
+global_asm!("add_asm:",
+     "mov $rax, $rdi",
+     "add $rax, $rsi",
+     "ret"
+);
+
+extern "C" {
+    fn add_asm(a: i64, b: i64) -> i64;
+}
 
 fn main() {
     unsafe {
@@ -49,4 +59,6 @@ fn main() {
         );
     }
     assert_eq!(x, 43);
+
+    assert_eq!(unsafe { add_asm(40, 2) }, 42);
 }

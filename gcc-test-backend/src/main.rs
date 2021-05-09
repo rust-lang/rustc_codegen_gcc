@@ -1,8 +1,27 @@
 #![allow(deprecated)]
-#![feature(asm, backtrace, core_intrinsics)]
+#![feature(asm, backtrace, core_intrinsics, global_asm)]
 
 //use backtrace::Backtrace;
 use std::backtrace::Backtrace;
+
+/*global_asm!("
+    .global add_asm
+add_asm:
+     mov $rax, $rdi
+     add $rax, $rsi
+     ret"
+);*/
+
+global_asm!("
+.global toto
+toto:
+     ret"
+);
+
+extern "C" {
+    fn add_asm(a: i64, b: i64) -> i64;
+    fn toto();
+}
 
 //#![feature(intrinsics)]
 
@@ -75,6 +94,9 @@ fn one_less_than_next_power_of_two(num: usize) -> usize {
 }
 
 fn main() {
+    //unsafe { toto() };
+    //assert_eq!(unsafe { add_asm(40, 2) }, 42);
+
     /*println!("1");
     let mutex = std::sync::Mutex::new(());
     let _guard = mutex.lock().unwrap();
@@ -151,6 +173,45 @@ fn main() {
     assert_eq!(x, 43);
 
     println!("Input + output (intel) {}", x);
+
+    let buf = "Hello from asm!\n";
+    let ret: i32;
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") 1, // syscall number
+            in("rdi") 1, // fd (stdout)
+            in("rsi") buf.as_ptr(),
+            in("rdx") buf.len(),
+            out("rcx") _, // clobbered by syscalls
+            out("r11") _, // clobbered by syscalls
+            lateout("rax") ret,
+        );
+    }
+    println!("write returned: {}", ret);
+
+    /*let mut bits = [0u8; 64];
+    for value in 0..=1024u64 {
+        let popcnt;
+        unsafe {
+            asm!(
+                "popcnt {popcnt}, {v}",
+                "2:",
+                "blsi rax, {v}",
+                "jz 1f",
+                "xor {v}, rax",
+                "tzcnt rax, rax",
+                "stosb",
+                "jmp 2b",
+                "1:",
+                v = inout(reg) value => _,
+                popcnt = out(reg) popcnt,
+                out("rax") _, // scratch
+                inout("rdi") bits.as_mut_ptr() => _,
+            );
+        }
+        println!("bits of {}: {:?}", value, &bits[0..popcnt]);
+    }*/
 
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/

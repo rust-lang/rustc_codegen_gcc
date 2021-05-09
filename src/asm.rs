@@ -119,7 +119,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
-        let asm_arch = self.tcx.sess.asm_arch.unwrap();
+        /*let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
         let intel_dialect =
             match asm_arch {
@@ -190,11 +190,9 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             } else {*/
                                 template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
                             //}
-                            //extended_asm.add_output_operand(None, "=r", place);
                         },
                         InlineAsmOperandRef::Out { reg, place: None, .. } => {
                             unimplemented!("Out None");
-                            //extended_asm.add_output_operand(None, "=r", place);
                         },
                         InlineAsmOperandRef::In { reg, .. }
                         | InlineAsmOperandRef::InOut { reg, .. } => {
@@ -267,6 +265,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         };
                     output_types.push(ty);
                     //op_idx.insert(idx, constraints.len());
+                    // TODO: prefix of "+" for reading and writing?
                     let prefix = if late { "=" } else { "=&" };
                     //constraints.push(format!("{}{}", prefix, reg_to_gcc(reg)));
                 }
@@ -371,7 +370,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             {
                 OperandValue::Immediate(output_vars[&idx].to_rvalue()).store(self, place);
             }
-        }
+        }*/
     }
 }
 
@@ -379,7 +378,25 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
     match reg {
         // For vector registers LLVM wants the register name to match the type size.
-        InlineAsmRegOrRegClass::Reg(reg) => unimplemented!(),
+        InlineAsmRegOrRegClass::Reg(reg) => {
+            // TODO: add support for vector register.
+            let constraint =
+                match reg.name() {
+                    "ax" => "a",
+                    "bx" => "b",
+                    "cx" => "c",
+                    "dx" => "d",
+                    "si" => "S",
+                    "di" => "D",
+                    // TODO: for registers like r11, we have to create a register variable: https://stackoverflow.com/a/31774784/389119
+                    // TODO: in this case though, it's a clobber, so it should work as r11.
+                    // Recent nightly supports clobber() syntax, so update to it. It does not seem
+                    // like it's implemented yet.
+                    name => name, // FIXME: probably wrong.
+                };
+            println!("Constraint {}", constraint);
+            constraint.to_string()
+        },
         InlineAsmRegOrRegClass::RegClass(reg) => match reg {
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => unimplemented!(),
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg) => unimplemented!(),
@@ -463,10 +480,9 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
 
 impl<'gcc, 'tcx> AsmMethods for CodegenCx<'gcc, 'tcx> {
     fn codegen_global_asm(&self, ga: &GlobalAsm) {
+        /*println!("Global asm: {:?}", ga);
         let asm = ga.asm.as_str();
-        // TODO
-        //unsafe {
-            //llvm::LLVMRustAppendModuleInlineAsm(self.llmod, asm.as_ptr().cast(), asm.len());
-        //}
+        println!("Template: {}", asm);
+        self.context.add_top_level_asm(None, &*asm);*/
     }
 }
