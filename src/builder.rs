@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
 
@@ -54,6 +55,7 @@ static mut RETURN_VALUE_COUNT: usize = 0;
 pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
     pub cx: &'a CodegenCx<'gcc, 'tcx>,
     pub block: Option<Block<'gcc>>,
+    stack_var_count: Cell<usize>,
 }
 
 impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
@@ -363,6 +365,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         Builder {
             cx,
             block: None,
+            stack_var_count: Cell::new(0),
         }
     }
 
@@ -720,13 +723,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                         Int(I16) => "__builtin_add_overflow",
                         Int(I32) => "__builtin_sadd_overflow",
                         Int(I64) => "__builtin_saddll_overflow",
-                        Int(I128) => "__builtin_saddll_overflow",
+                        Int(I128) => "__builtin_add_overflow",
 
                         Uint(U8) => "__builtin_add_overflow",
                         Uint(U16) => "__builtin_add_overflow",
                         Uint(U32) => "__builtin_uadd_overflow",
                         Uint(U64) => "__builtin_uaddll_overflow",
-                        Uint(U128) => "__builtin_uaddll_overflow",
+                        Uint(U128) => "__builtin_add_overflow",
 
                         _ => unreachable!(),
                     },
@@ -736,13 +739,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                         Int(I16) => "__builtin_sub_overflow",
                         Int(I32) => "__builtin_ssub_overflow",
                         Int(I64) => "__builtin_ssubll_overflow",
-                        Int(I128) => "__builtin_ssubll_overflow",
+                        Int(I128) => "__builtin_sub_overflow",
 
                         Uint(U8) => "__builtin_sub_overflow",
                         Uint(U16) => "__builtin_sub_overflow",
                         Uint(U32) => "__builtin_usub_overflow",
                         Uint(U64) => "__builtin_usubll_overflow",
-                        Uint(U128) => "__builtin_usubll_overflow",
+                        Uint(U128) => "__builtin_sub_overflow",
 
                         _ => unreachable!(),
                     },
@@ -752,13 +755,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                         Int(I16) => "__builtin_mul_overflow",
                         Int(I32) => "__builtin_smul_overflow",
                         Int(I64) => "__builtin_smulll_overflow",
-                        Int(I128) => "__builtin_smulll_overflow",
+                        Int(I128) => "__builtin_mul_overflow",
 
                         Uint(U8) => "__builtin_mul_overflow",
                         Uint(U16) => "__builtin_mul_overflow",
                         Uint(U32) => "__builtin_umul_overflow",
                         Uint(U64) => "__builtin_umulll_overflow",
-                        Uint(U128) => "__builtin_umulll_overflow",
+                        Uint(U128) => "__builtin_mul_overflow",
 
                         _ => unreachable!(),
                     },
@@ -776,7 +779,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {
         let aligned_type = ty.get_aligned(align.bytes());
         // TODO: It might be better to return a LValue, but fixing the rustc API is non-trivial.
-        self.current_func().new_local(None, aligned_type, "stack_var").get_address(None)
+        self.stack_var_count.set(self.stack_var_count.get() + 1);
+        self.current_func().new_local(None, aligned_type, &format!("stack_var_{}", self.stack_var_count.get())).get_address(None)
     }
 
     fn dynamic_alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {

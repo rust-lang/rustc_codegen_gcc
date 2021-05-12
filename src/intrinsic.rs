@@ -745,6 +745,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 "__builtin_clzll"
             }
             else {
+                // TODO: implement for 128-bit integers.
                 let count_leading_zeroes = self.context.get_builtin_function("__builtin_clz");
                 let arg = self.context.new_cast(None, arg, self.uint_type);
                 let diff = self.int_width(self.uint_type) - self.int_width(arg_type);
@@ -768,6 +769,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 ("__builtin_ctzl", self.cx.ulong_type)
             }
             else if arg_type.is_ulonglong(&self.cx) {
+                ("__builtin_ctzll", self.cx.ulonglong_type)
+            }
+            else if arg_type.is_u128(&self.cx) {
+                // FIXME: actually implement the real function for u128.
                 ("__builtin_ctzll", self.cx.ulonglong_type)
             }
             else {
@@ -821,8 +826,18 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             else if value_type.is_ulonglong(&self.cx) {
                 ("__builtin_popcountll", self.cx.ulonglong_type)
             }
+            else if value_type.is_u128(&self.cx) {
+                // TODO: maybe there's a more efficient implementation.
+                let popcount = self.context.get_builtin_function("__builtin_popcountll");
+                let sixty_four = self.context.new_rvalue_from_long(value_type, 64);
+                let high = self.context.new_cast(None, value >> sixty_four, self.cx.ulonglong_type);
+                let high = self.context.new_call(None, popcount, &[high]);
+                let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
+                let low = self.context.new_call(None, popcount, &[low]);
+                return high + low;
+            }
             else {
-                unimplemented!("popcount for type {:?}", value_type);
+                unimplemented!("popcount for {:?}", value_type);
             };
 
         let popcount = self.context.get_builtin_function(popcount);
@@ -852,67 +867,51 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn saturating_add(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>, signed: bool, width: u64) -> RValue<'gcc> {
         let func = self.current_func.borrow().expect("func");
 
-        let after_block = func.new_block("after");
+        if signed {
+            // Algorithm from: https://stackoverflow.com/a/56531252/389119
+            let after_block = func.new_block("after");
+            let func_name =
+                match width {
+                    8 => "__builtin_add_overflow",
+                    16 => "__builtin_add_overflow",
+                    32 => "__builtin_sadd_overflow",
+                    64 => "__builtin_saddll_overflow",
+                    128 => "__builtin_add_overflow",
+                    _ => unreachable!(),
+                };
+            let overflow_func = self.context.get_builtin_function(func_name);
+            let result_type = lhs.get_type();
+            let res = func.new_local(None, result_type, "saturating_sum");
+            let overflow = self.overflow_call(overflow_func, &[lhs, rhs, res.get_address(None)], None);
 
-        let result =
-            if signed {
-                // Algorithm from: https://stackoverflow.com/a/56531252/389119
-                let func_name =
-                    match width {
-                        8 => "__builtin_add_overflow",
-                        16 => "__builtin_add_overflow",
-                        32 => "__builtin_sadd_overflow",
-                        64 => "__builtin_saddll_overflow",
-                        128 => "__builtin_saddll_overflow",
-                        _ => unreachable!(),
-                    };
-                let overflow_func = self.context.get_builtin_function(func_name);
-                let result_type = lhs.get_type();
-                let res = func.new_local(None, result_type, "saturating_sum");
-                let overflow = self.overflow_call(overflow_func, &[lhs, rhs, res.get_address(None)], None);
+            let then_block = func.new_block("then");
 
-                let then_block = func.new_block("then");
+            let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
+            let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
+            let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
+                self.context.new_rvalue_from_int(unsigned_type, 0)
+            );
+            let int_max = uint_max >> self.context.new_rvalue_one(unsigned_type);
+            then_block.add_assignment(None, res, self.context.new_cast(None, shifted + int_max, result_type));
+            then_block.end_with_jump(None, after_block);
 
-                let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
-                let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
-                let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
-                    self.context.new_rvalue_from_int(unsigned_type, 0)
-                );
-                let int_max = uint_max >> self.context.new_rvalue_one(unsigned_type);
-                then_block.add_assignment(None, res, self.context.new_cast(None, shifted + int_max, result_type));
-                then_block.end_with_jump(None, after_block);
+            self.block.expect("block").end_with_conditional(None, overflow, then_block, after_block);
 
-                self.block.expect("block").end_with_conditional(None, overflow, then_block, after_block);
+            // NOTE: since jumps were added in a place rustc does not
+            // expect, the current blocks in the state need to be updated.
+            *self.current_block.borrow_mut() = Some(after_block);
+            self.block = Some(after_block);
 
-                res.to_rvalue()
-            }
-            else {
-                let res = lhs + rhs;
-                let res_type = res.get_type();
-                let cond = self.context.new_comparison(None, ComparisonOp::LessThan, res, lhs);
-                // FIXME: use another name than `res` since it's already used. Check if they're
-                // mixed up.
-                let res = func.new_local(None, res_type, "saturating_sum");
-
-                let then_block = func.new_block("then");
-                let else_block = func.new_block("else");
-
-                then_block.add_assignment(None, res, self.context.new_rvalue_from_long(res_type, 1));
-                then_block.end_with_jump(None, after_block);
-
-                else_block.end_with_jump(None, after_block);
-
-                self.block.expect("block").end_with_conditional(None, cond, then_block, else_block);
-
-                res.to_rvalue()
-            };
-
-        // NOTE: since jumps were added in a place rustc does not
-        // expect, the current blocks in the state need to be updated.
-        *self.current_block.borrow_mut() = Some(after_block);
-        self.block = Some(after_block);
-
-        result
+            res.to_rvalue()
+        }
+        else {
+            // Algorithm from: http://locklessinc.com/articles/sat_arithmetic/
+            let res = lhs + rhs;
+            let res_type = res.get_type();
+            let cond = self.context.new_comparison(None, ComparisonOp::LessThan, res, lhs);
+            let value = self.context.new_unary_op(None, UnaryOp::Minus, res_type, self.context.new_cast(None, cond, res_type));
+            res | value
+        }
     }
 
     // Algorithm from: https://locklessinc.com/articles/sat_arithmetic/
@@ -925,7 +924,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     16 => "__builtin_sub_overflow",
                     32 => "__builtin_ssub_overflow",
                     64 => "__builtin_ssubll_overflow",
-                    128 => "__builtin_ssubll_overflow",
+                    128 => "__builtin_sub_overflow",
                     _ => unreachable!(),
                 };
             let overflow_func = self.context.get_builtin_function(func_name);

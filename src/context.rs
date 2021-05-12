@@ -140,12 +140,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let i16_type = context.new_type::<i16>();
         let i32_type = context.new_type::<i32>();
         let i64_type = context.new_c_type(CType::LongLong);
-        let i128_type = context.new_c_type(CType::LongLong); // TODO: change to i128.
+        let i128_type = context.new_c_type(CType::Int128t);
         let u8_type = context.new_type::<u8>();
         let u16_type = context.new_type::<u16>();
         let u32_type = context.new_type::<u32>();
         let u64_type = context.new_c_type(CType::ULongLong);
-        let u128_type = context.new_c_type(CType::ULongLong); // TODO: change to u128.
+        let u128_type = context.new_c_type(CType::UInt128t);
 
         let float_type = context.new_type::<f32>();
         let double_type = context.new_type::<f64>();
