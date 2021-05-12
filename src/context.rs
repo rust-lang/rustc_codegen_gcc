@@ -27,7 +27,7 @@ use rustc_session::Session;
 use rustc_span::{Span, Symbol, DUMMY_SP};
 use rustc_target::abi::{HasDataLayout, LayoutOf, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_target::abi::call::FnAbi;
-use rustc_target::spec::{HasTargetSpec, Target};
+use rustc_target::spec::{HasTargetSpec, Target, TlsModel};
 
 use crate::abi::FnAbiGccExt;
 use crate::callee::get_fn;
@@ -54,6 +54,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub global_init_block: Block<'gcc>,
 
     pub functions: RefCell<FxHashMap<String, Function<'gcc>>>,
+
+    pub tls_model: gccjit::TlsModel,
 
     pub bool_type: Type<'gcc>,
     pub i8_type: Type<'gcc>,
@@ -147,6 +149,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u64_type = context.new_c_type(CType::ULongLong);
         let u128_type = context.new_c_type(CType::UInt128t);
 
+        let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());
+
         let float_type = context.new_type::<f32>();
         let double_type = context.new_type::<f64>();
 
@@ -191,6 +195,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             functions: RefCell::new(functions),
             global_init_func,
             global_init_block,
+
+            tls_model,
 
             bool_type,
             i8_type,
@@ -484,4 +490,13 @@ impl<'b, 'tcx> CodegenCx<'b, 'tcx> {
 pub fn unit_name<'tcx>(codegen_unit: &CodegenUnit<'tcx>) -> String {
     let name = &codegen_unit.name().to_string();
     mangle_name(&name.replace('-', "_"))
+}
+
+fn to_gcc_tls_mode(tls_model: TlsModel) -> gccjit::TlsModel {
+    match tls_model {
+        TlsModel::GeneralDynamic => gccjit::TlsModel::GlobalDynamic,
+        TlsModel::LocalDynamic => gccjit::TlsModel::LocalDynamic,
+        TlsModel::InitialExec => gccjit::TlsModel::InitialExec,
+        TlsModel::LocalExec => gccjit::TlsModel::LocalExec,
+    }
 }

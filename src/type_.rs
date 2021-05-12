@@ -219,16 +219,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     pub fn set_struct_body(&self, typ: Struct<'gcc>, fields: &[Type<'gcc>], packed: bool) {
         // TODO: use packed.
-        let fields: Vec<_> = fields.iter()
-            .map(|field| self.context.new_field(None, *field, "field"))
+        let fields: Vec<_> = fields.iter().enumerate()
+            .map(|(index, field)| self.context.new_field(None, *field, &format!("field_{}", index)))
             .collect();
         typ.set_fields(None, &fields);
     }
 
     fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
         // TODO: use packed.
-        let fields: Vec<_> = fields.iter()
-            .map(|field| self.context.new_field(None, *field, "field"))
+        let fields: Vec<_> = fields.iter().enumerate()
+            .map(|(index, field)| self.context.new_field(None, *field, &format!("field_{}", index)))
             .collect();
         return self.context.new_struct_type(None, "unnamedStruct", &fields).as_type();
     }

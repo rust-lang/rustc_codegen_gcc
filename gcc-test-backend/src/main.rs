@@ -93,7 +93,106 @@ fn one_less_than_next_power_of_two(num: usize) -> usize {
     usize::MAX >> z
 }
 
+use std::mem;
+use std::sync::Mutex;
+
+struct Mem {
+    f1: u8,
+    f2: u8,
+    f3: u8,
+    f4: u8,
+    f5: u8,
+    f6: u8,
+    f7: u8,
+}
+
+use std::cell::Cell;
+
+thread_local! {
+    pub static FOO: Cell<u32> = Cell::new(12);
+}
+
+use std::os::raw::{c_int, c_void};
+
+type pthread_t = *mut c_void;
+
+extern "C" {
+    fn pthread_create(thread: *mut pthread_t, attr: *mut c_void, start_routine: fn(*mut c_void) -> *mut c_void, arg: *mut c_void) -> c_int;
+    fn pthread_join(thread: pthread_t, value_ptr: *mut *mut c_void) -> c_int;
+}
+
+fn thread_func(_arg: *mut c_void) -> *mut c_void {
+    FOO.with(|foo| {
+        println!("Thread Foo: {}", foo.get());
+        foo.set(24);
+        println!("Set thread foo to: {}", foo.get());
+    });
+
+    std::ptr::null_mut()
+}
+
 fn main() {
+    FOO.with(|foo| {
+        println!("Foo: {}", foo.get());
+        foo.set(42);
+        println!("Set foo to: {}", foo.get());
+    });
+
+    let mut thread: pthread_t = std::ptr::null_mut();
+    unsafe {
+        pthread_create(&mut thread, std::ptr::null_mut(), thread_func, std::ptr::null_mut());
+        pthread_join(thread, std::ptr::null_mut());
+    }
+
+    FOO.with(|foo| {
+        println!("Foo: {}", foo.get());
+    });
+
+    let thread = std::thread::spawn(|| {
+        FOO.with(|foo| {
+            println!("Rust Thread foo: {}", foo.get());
+        });
+    });
+    thread.join();
+
+
+    let lower = 0_usize;
+    println!("{}", lower.saturating_add(1));
+
+    let mut size = 10_usize;
+    let res = size.checked_mul(52);
+    println!("{:?}", res);
+
+    let args: Vec<_> = std::env::args().collect();
+    println!("Args: {:?}", args);
+
+    /*println!("u64: {}", mem::size_of::<Mutex<u64>>()); // Size: 24 bytes
+    println!("Mem: {}", mem::size_of::<Mutex<Mem>>()); // Size: 16 bytes */
+
+    /*let mutex = Mutex::new(());
+    /*let mutex = std::sync::Mutex::new(Mem {
+        f1: 0,
+        f2: 0,
+        f3: 0,
+        f4: 0,
+        f5: 0,
+        f6: 0,
+        f7: 0,
+    });*/
+    //let mutex = Mutex::new(42_u64);
+    println!("Poisoned: {}", mutex.is_poisoned());
+    let _guard = mutex.lock().unwrap();*/
+}
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+/*fn main() {
+    println!("Global panic count: {}", GLOBAL_PANIC_COUNT.load(Ordering::Relaxed));
+
+    let mutex = std::sync::Mutex::new(());
+    println!("Poisoned: {}", mutex.is_poisoned());
+    let _guard = mutex.lock().unwrap();
+
     //unsafe { toto() };
     //assert_eq!(unsafe { add_asm(40, 2) }, 42);
 
@@ -123,11 +222,11 @@ fn main() {
         }
     }*/
 
-    unsafe {
+    /*unsafe {
         asm!("nop");
-    }
+    }*/
 
-    let x: u64;
+    /*let x: u64;
     unsafe {
         asm!("mov $5, {}",
             out(reg) x,
@@ -136,7 +235,7 @@ fn main() {
     }
     assert_eq!(x, 5);
 
-    println!("Output {}", x);
+    println!("Output {}", x);*/
 
     let x: u64;
     let input: u64 = 42;
@@ -256,7 +355,7 @@ fn main() {
     //example_a();
     //example_b();
     //example_c();
-}
+}*/
 
 //#![feature(maybe_uninit_slice)]
 

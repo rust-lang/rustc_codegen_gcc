@@ -76,6 +76,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                     Err(_) => return,
                 };
 
+            let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
             let global = self.get_static(def_id);
 
             // boolean SSA values are i1, but they have to be stored in i8 slots,
@@ -94,6 +95,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             let instance = Instance::mono(self.tcx, def_id);
             let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
             let gcc_type = self.layout_of(ty).gcc_type(self, true);
+
             let global =
                 if val_llty == gcc_type {
                     global
@@ -108,7 +110,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                     let linkage = llvm::LLVMRustGetLinkage(global);
                     let visibility = llvm::LLVMRustGetVisibility(global);*/
 
-                    let new_global = self.get_or_insert_global(&name, val_llty);
+                    let new_global = self.get_or_insert_global(&name, val_llty, is_tls);
 
                     /*llvm::LLVMRustSetLinkage(new_global, linkage);
                       llvm::LLVMRustSetVisibility(new_global, visibility);*/
@@ -147,9 +149,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             //debuginfo::create_global_var_metadata(&self, def_id, global);
 
             if attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL) {
-                // TODO
-                //llvm::set_thread_local_mode(global, self.tls_model);
-
                 // Do not allow LLVM to change the alignment of a TLS on macOS.
                 //
                 // By default a global's alignment can be freely increased.
@@ -258,7 +257,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             match kind {
                 Some(kind) if !self.tcx.sess.fewer_names() => {
                     let name = self.generate_local_symbol_name(kind);
-                    let gv = self.define_global(&name[..], self.val_ty(cv)).unwrap_or_else(|| {
+                    // TODO: check if it's okay that TLS is off here.
+                    let gv = self.define_global(&name[..], self.val_ty(cv), false).unwrap_or_else(|| {
                         bug!("symbol `{}` is already defined", name);
                     });
                     //llvm::LLVMRustSetLinkage(gv, llvm::Linkage::PrivateLinkage);
@@ -328,7 +328,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                             }
                         }
 
-                        let global = self.declare_global(&sym, llty);
+                        let is_tls = attrs.iter().any(|attr| self.tcx.sess.check_name(attr, sym::thread_local));
+                        let global = self.declare_global(&sym, llty, is_tls);
 
                         if !self.tcx.is_reachable_non_generic(def_id) {
                             /*unsafe {
@@ -354,12 +355,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
                 //debug!("get_static: sym={} attrs={:?}", sym, attrs);
 
-                for attr in attrs {
-                    if self.tcx.sess.check_name(attr, sym::thread_local) {
-                        //llvm::set_thread_local_mode(global, self.tls_model);
-                    }
-                }
-
                 global
             }
             else {
@@ -369,17 +364,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let attrs = self.tcx.codegen_fn_attrs(def_id);
                 let span = self.tcx.def_span(def_id);
                 let global = check_and_apply_linkage(&self, &attrs, ty, sym, span);
-
-                // Thread-local statics in some other crate need to *always* be linked
-                // against in a thread-local fashion, so we need to be sure to apply the
-                // thread-local attribute locally if it was present remotely. If we
-                // don't do this then linker errors can be generated where the linker
-                // complains that one object files has a thread local version of the
-                // symbol and another one doesn't.
-                if attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL) {
-                    unimplemented!();
-                    //llvm::set_thread_local_mode(global, self.tls_model);
-                }
 
                 let needs_dll_storage_attr = false; /*self.use_dll_storage_attrs && !self.tcx.is_foreign_item(def_id) &&
                 // ThinLTO can't handle this workaround in all cases, so we don't
@@ -485,6 +469,7 @@ pub fn codegen_static_initializer<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, def_id
 }
 
 fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &CodegenFnAttrs, ty: Ty<'tcx>, sym: &str, span: Span) -> RValue<'gcc> {
+    let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
     let llty = cx.layout_of(ty).gcc_type(cx, true);
     if let Some(linkage) = attrs.linkage {
         //debug!("get_static: sym={} linkage={:?}", sym, linkage);
@@ -516,7 +501,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         let mut real_name = "_rust_extern_with_linkage_".to_string();
         real_name.push_str(&sym);
         let global2 =
-            cx.define_global(&real_name, llty).unwrap_or_else(|| {
+            cx.define_global(&real_name, llty, is_tls).unwrap_or_else(|| {
                 cx.sess().span_fatal(span, &format!("symbol `{}` is already defined", &sym))
             });
         //llvm::LLVMRustSetLinkage(global2, llvm::Linkage::InternalLinkage);
@@ -528,6 +513,13 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
     else {
         // Generate an external declaration.
         // FIXME(nagisa): investigate whether it can be changed into define_global
-        cx.declare_global(&sym, llty)
+
+        // Thread-local statics in some other crate need to *always* be linked
+        // against in a thread-local fashion, so we need to be sure to apply the
+        // thread-local attribute locally if it was present remotely. If we
+        // don't do this then linker errors can be generated where the linker
+        // complains that one object files has a thread local version of the
+        // symbol and another one doesn't.
+        cx.declare_global(&sym, llty, is_tls)
     }
 }

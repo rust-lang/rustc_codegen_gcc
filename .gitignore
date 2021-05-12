@@ -11,3 +11,4 @@ perf.data.old
 /build_sysroot/test_target/Cargo.lock
 /rust
 /regex
+gimple*

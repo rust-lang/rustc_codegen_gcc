@@ -1,4 +1,4 @@
-use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
+use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::Ty;
 use rustc_target::abi::call::FnAbi;
@@ -7,14 +7,17 @@ use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>) -> RValue<'gcc> {
+    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> RValue<'gcc> {
         if self.globals.borrow().contains_key(name) {
             let typ = self.globals.borrow().get(name).expect("global").get_type();
-            self.context.new_global(None, GlobalKind::Imported, typ, name)
-                .get_address(None)
+            let global = self.context.new_global(None, GlobalKind::Imported, typ, name);
+            if is_tls {
+                global.set_tls_model(self.tls_model);
+            }
+            global.get_address(None)
         }
         else {
-            self.declare_global(name, ty)
+            self.declare_global(name, ty, is_tls)
         }
     }
 
@@ -43,10 +46,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn declare_global(&self, name: &str, ty: Type<'gcc>) -> RValue<'gcc> {
+    pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> RValue<'gcc> {
         //debug!("declare_global(name={:?})", name);
-        let global = self.context.new_global(None, GlobalKind::Exported, ty, name)
-            .get_address(None);
+        let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
+        if is_tls {
+            global.set_tls_model(self.tls_model);
+        }
+        let global = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global);
         // NOTE: global seems to only be global in a module. So save the name instead of the value
         // to import it later.
@@ -77,8 +83,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn define_global(&self, name: &str, ty: Type<'gcc>) -> Option<RValue<'gcc>> {
-        Some(self.get_or_insert_global(name, ty))
+    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> Option<RValue<'gcc>> {
+        Some(self.get_or_insert_global(name, ty, is_tls))
     }
 
     pub fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
@@ -126,7 +132,6 @@ fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llv
             let params: Vec<_> = param_types.into_iter().enumerate()
                 .map(|(index, param)| cx.context.new_parameter(None, *param, &format!("param{}", index))) // TODO: set name.
                 .collect();
-            //println!("Func {}({:?})", name, param_types);
             let func = cx.context.new_function(None, cx.linkage.get(), return_type, &params, mangle_name(name), variadic);
             cx.functions.borrow_mut().insert(name.to_string(), func);
             func

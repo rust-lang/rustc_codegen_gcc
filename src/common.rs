@@ -40,7 +40,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // TODO: handle non-null-terminated strings.
         let string = self.context.new_string_literal(&*string);
         let sym = self.generate_local_symbol_name("str");
-        let global = self.define_global(&sym, self.val_ty(string))
+        // NOTE: TLS is always off for a string litteral.
+        let global = self.define_global(&sym, self.val_ty(string), false)
             .unwrap_or_else(|| bug!("symbol `{}` is already defined", sym));
         self.global_init_block.add_assignment(None, global.dereference(None), string);
         global.to_rvalue()
