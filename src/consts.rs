@@ -69,6 +69,9 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         unsafe {
             let attrs = self.tcx.codegen_fn_attrs(def_id);
 
+            let instance = Instance::mono(self.tcx, def_id);
+            let name = &*self.tcx.symbol_name(instance).name;
+
             let (value, alloc) =
                 match codegen_static_initializer(&self, def_id) {
                     Ok(value) => value,
@@ -130,12 +133,22 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             let dest_typ = global.get_type();
             let value = self.context.new_cast(None, value, dest_typ);
 
-            // TODO: switch to set_initializer when libgccjit supports that.
-            let memcpy = self.context.get_builtin_function("memcpy");
-            let dst = self.context.new_cast(None, global, self.type_i8p());
-            let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
-            let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size.bytes() as i64);
-            self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
+            // NOTE: do not init the variables related to argc/argv because it seems we cannot
+            // overwrite those variables.
+            // FIXME: correctly support global variable initialization.
+            let skip_init = [
+                "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY17h6d5a1c8046e3c889E",
+                "_ZN3std3sys4unix4args3imp4ARGC17h8c5dd779873fb856E",
+                "_ZN3std3sys4unix4args3imp4ARGV17hf9e65532da2fd64dE",
+            ];
+            if !skip_init.contains(&name) {
+                // TODO: switch to set_initializer when libgccjit supports that.
+                let memcpy = self.context.get_builtin_function("memcpy");
+                let dst = self.context.new_cast(None, global, self.type_i8p());
+                let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
+                let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size.bytes() as i64);
+                self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
+            }
 
             // As an optimization, all shared statics which do not have interior
             // mutability are placed into read-only memory.

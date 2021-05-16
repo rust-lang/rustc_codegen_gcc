@@ -52,9 +52,29 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
         //debug!("declare_global(name={:?})", name);
+        let mut initializer = None;
+        // NOTE: hack to initialize ARGC_INIT_ARRAY before libc tries to call the function it
+        // points to.
+        // FIXME: correctly support global variable initialization.
+        if name == "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY17h6d5a1c8046e3c889E" {
+            let return_type = self.type_void();
+            let params = [
+                self.context.new_parameter(None, self.int_type, "argc"),
+                self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "argv"),
+                self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "envp"),
+            ];
+            let function = self.context.new_function(None, FunctionType::Extern, return_type, &params, "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY12init_wrapper17hbb5be70f6e8d1248E", false);
+            initializer = Some(function.get_address(None));
+        }
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
         if is_tls {
             global.set_tls_model(self.tls_model);
+        }
+        if let Some(link_section) = link_section {
+            global.set_link_section(&link_section.as_str());
+        }
+        if let Some(initializer) = initializer {
+            global.global_set_initializer_value(initializer);
         }
         let global = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global);
