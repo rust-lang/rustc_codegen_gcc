@@ -41,7 +41,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let string = self.context.new_string_literal(&*string);
         let sym = self.generate_local_symbol_name("str");
         // NOTE: TLS is always off for a string litteral.
-        let global = self.define_global(&sym, self.val_ty(string), false)
+        // NOTE: string litterals do not have a link section.
+        let global = self.define_global(&sym, self.val_ty(string), false, None)
             .unwrap_or_else(|| bug!("symbol `{}` is already defined", sym));
         self.global_init_block.add_assignment(None, global.dereference(None), string);
         global.to_rvalue()

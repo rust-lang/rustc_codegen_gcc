@@ -1,23 +1,27 @@
 use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::Ty;
+use rustc_span::Symbol;
 use rustc_target::abi::call::FnAbi;
 
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> RValue<'gcc> {
+    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
         if self.globals.borrow().contains_key(name) {
             let typ = self.globals.borrow().get(name).expect("global").get_type();
             let global = self.context.new_global(None, GlobalKind::Imported, typ, name);
             if is_tls {
                 global.set_tls_model(self.tls_model);
             }
+            if let Some(link_section) = link_section {
+                global.set_link_section(&link_section.as_str());
+            }
             global.get_address(None)
         }
         else {
-            self.declare_global(name, ty, is_tls)
+            self.declare_global(name, ty, is_tls, link_section)
         }
     }
 
@@ -46,7 +50,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> RValue<'gcc> {
+    pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
         //debug!("declare_global(name={:?})", name);
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
         if is_tls {
@@ -83,8 +87,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool) -> Option<RValue<'gcc>> {
-        Some(self.get_or_insert_global(name, ty, is_tls))
+    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> Option<RValue<'gcc>> {
+        Some(self.get_or_insert_global(name, ty, is_tls, link_section))
     }
 
     pub fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {

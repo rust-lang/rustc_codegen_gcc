@@ -110,7 +110,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                     let linkage = llvm::LLVMRustGetLinkage(global);
                     let visibility = llvm::LLVMRustGetVisibility(global);*/
 
-                    let new_global = self.get_or_insert_global(&name, val_llty, is_tls);
+                    let new_global = self.get_or_insert_global(&name, val_llty, is_tls, attrs.link_section);
 
                     /*llvm::LLVMRustSetLinkage(new_global, linkage);
                       llvm::LLVMRustSetVisibility(new_global, visibility);*/
@@ -258,7 +258,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 Some(kind) if !self.tcx.sess.fewer_names() => {
                     let name = self.generate_local_symbol_name(kind);
                     // TODO: check if it's okay that TLS is off here.
-                    let gv = self.define_global(&name[..], self.val_ty(cv), false).unwrap_or_else(|| {
+                    // TODO: check if it's okay that link_section is None here.
+                    let gv = self.define_global(&name[..], self.val_ty(cv), false, None).unwrap_or_else(|| {
                         bug!("symbol `{}` is already defined", name);
                     });
                     //llvm::LLVMRustSetLinkage(gv, llvm::Linkage::PrivateLinkage);
@@ -284,6 +285,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     pub fn get_static(&self, def_id: DefId) -> RValue<'gcc> {
         let instance = Instance::mono(self.tcx, def_id);
+        let fn_attrs = self.tcx.codegen_fn_attrs(def_id);
         if let Some(&global) = self.instances.borrow().get(&instance) {
             /*let attrs = self.tcx.codegen_fn_attrs(def_id);
             let name = &*self.tcx.symbol_name(instance).name;
@@ -329,7 +331,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                         }
 
                         let is_tls = attrs.iter().any(|attr| self.tcx.sess.check_name(attr, sym::thread_local));
-                        let global = self.declare_global(&sym, llty, is_tls);
+                        let global = self.declare_global(&sym, llty, is_tls, fn_attrs.link_section);
 
                         if !self.tcx.is_reachable_non_generic(def_id) {
                             /*unsafe {
@@ -501,7 +503,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         let mut real_name = "_rust_extern_with_linkage_".to_string();
         real_name.push_str(&sym);
         let global2 =
-            cx.define_global(&real_name, llty, is_tls).unwrap_or_else(|| {
+            cx.define_global(&real_name, llty, is_tls, attrs.link_section).unwrap_or_else(|| {
                 cx.sess().span_fatal(span, &format!("symbol `{}` is already defined", &sym))
             });
         //llvm::LLVMRustSetLinkage(global2, llvm::Linkage::InternalLinkage);
@@ -520,6 +522,6 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         // don't do this then linker errors can be generated where the linker
         // complains that one object files has a thread local version of the
         // symbol and another one doesn't.
-        cx.declare_global(&sym, llty, is_tls)
+        cx.declare_global(&sym, llty, is_tls, attrs.link_section)
     }
 }
