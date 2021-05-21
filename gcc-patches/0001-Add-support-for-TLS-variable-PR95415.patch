@@ -1,0 +1,374 @@
+From 5c781291423975de78d34e808d0ddbe28ea989d7 Mon Sep 17 00:00:00 2001
+From: Antoni Boucher <bouanto@zoho.com>
+Date: Tue, 11 May 2021 19:23:54 -0400
+Subject: [PATCH] Add support for TLS variable [PR95415]
+
+2021-05-18  Antoni Boucher  <bouanto@zoho.com>
+
+    gcc/jit/
+            PR target/95415
+            * docs/topics/compatibility.rst (LIBGCCJIT_ABI_17): New ABI
+            tag.
+            * docs/topics/expressions.rst: Add document for the function
+            gcc_jit_lvalue_set_tls_model.
+            * jit-playback.h: New function (set_tls_model) and make
+            rvalue::m_inner public.
+            * jit-recording.c: New function (set_tls_model), new
+            variables (tls_models and tls_model_enum_strings) and support
+            for setting the tls model.
+            * jit-recording.h: New function (set_tls_model) and new
+            field m_tls_model.
+            * libgccjit.c: New function (gcc_jit_lvalue_set_tls_model).
+            * libgccjit.h: New function (gcc_jit_lvalue_set_tls_model)
+            and new enum (gcc_jit_tls_model).
+            * libgccjit.map (LIBGCCJIT_ABI_17): New ABI tag.
+
+    gcc/testsuite/
+            PR target/95415
+            * jit.dg/all-non-failing-tests.h: Add test-tls.c.
+            * jit.dg/test-tls.c: New test.
+---
+ gcc/jit/docs/topics/compatibility.rst        |  9 +++++
+ gcc/jit/docs/topics/expressions.rst          | 28 +++++++++++++
+ gcc/jit/jit-playback.h                       |  8 ++++
+ gcc/jit/jit-recording.c                      | 41 ++++++++++++++++++--
+ gcc/jit/jit-recording.h                      |  7 +++-
+ gcc/jit/libgccjit.c                          | 18 +++++++++
+ gcc/jit/libgccjit.h                          | 21 ++++++++++
+ gcc/jit/libgccjit.map                        |  5 +++
+ gcc/testsuite/jit.dg/all-non-failing-tests.h |  7 ++++
+ gcc/testsuite/jit.dg/test-tls.c              | 29 ++++++++++++++
+ 10 files changed, 169 insertions(+), 4 deletions(-)
+ create mode 100644 gcc/testsuite/jit.dg/test-tls.c
+
+diff --git a/gcc/jit/docs/topics/compatibility.rst b/gcc/jit/docs/topics/compatibility.rst
+index 239b6aa1a92..d10bc1df080 100644
+--- a/gcc/jit/docs/topics/compatibility.rst
++++ b/gcc/jit/docs/topics/compatibility.rst
+@@ -243,3 +243,12 @@ embedding assembler instructions:
+   * :func:`gcc_jit_extended_asm_add_input_operand`
+   * :func:`gcc_jit_extended_asm_add_clobber`
+   * :func:`gcc_jit_context_add_top_level_asm`
++
++.. _LIBGCCJIT_ABI_17:
++
++``LIBGCCJIT_ABI_17``
++-----------------------
++``LIBGCCJIT_ABI_17`` covers the addition of an API entrypoint to set the
++thread-local storage model of a variable:
++
++  * :func:`gcc_jit_lvalue_set_tls_model`
+diff --git a/gcc/jit/docs/topics/expressions.rst b/gcc/jit/docs/topics/expressions.rst
+index 396259ef07e..68defd6a311 100644
+--- a/gcc/jit/docs/topics/expressions.rst
++++ b/gcc/jit/docs/topics/expressions.rst
+@@ -539,6 +539,34 @@ where the rvalue is computed by reading from the storage area.
+ 
+    in C.
+ 
++.. function:: void\
++              gcc_jit_lvalue_set_tls_model (gcc_jit_lvalue *lvalue,\
++                                            enum gcc_jit_tls_model model)
++
++   Make a variable a thread-local variable.
++
++   The "model" parameter determines the thread-local storage model of the "lvalue":
++
++   .. type:: enum gcc_jit_tls_model
++
++   .. c:macro:: GCC_JIT_TLS_MODEL_GLOBAL_DYNAMIC
++
++   .. c:macro:: GCC_JIT_TLS_MODEL_LOCAL_DYNAMIC
++
++   .. c:macro:: GCC_JIT_TLS_MODEL_INITIAL_EXEC
++
++   .. c:macro:: GCC_JIT_TLS_MODEL_LOCAL_EXEC
++
++   .. c:macro:: GCC_JIT_TLS_MODEL_DEFAULT
++
++   This is analogous to:
++
++   .. code-block:: c
++
++     _Thread_local int foo;
++
++   in C.
++
+ Global variables
+ ****************
+ 
+diff --git a/gcc/jit/jit-playback.h b/gcc/jit/jit-playback.h
+index 825a3e172e9..654a9c472d4 100644
+--- a/gcc/jit/jit-playback.h
++++ b/gcc/jit/jit-playback.h
+@@ -650,6 +650,8 @@ public:
+ 
+ private:
+   context *m_ctxt;
++
++protected:
+   tree m_inner;
+ };
+ 
+@@ -670,6 +672,12 @@ public:
+   rvalue *
+   get_address (location *loc);
+ 
++  void
++  set_tls_model (enum tls_model tls_model)
++  {
++    set_decl_tls_model (m_inner, tls_model);
++  }
++
+ private:
+   bool mark_addressable (location *loc);
+ };
+diff --git a/gcc/jit/jit-recording.c b/gcc/jit/jit-recording.c
+index 117ff70114c..64f3ae2d8f9 100644
+--- a/gcc/jit/jit-recording.c
++++ b/gcc/jit/jit-recording.c
+@@ -3713,6 +3713,12 @@ recording::lvalue::get_address (recording::location *loc)
+   return result;
+ }
+ 
++void
++recording::lvalue::set_tls_model (enum gcc_jit_tls_model model)
++{
++    m_tls_model = model;
++}
++
+ /* The implementation of class gcc::jit::recording::param.  */
+ 
+ /* Implementation of pure virtual hook recording::memento::replay_into
+@@ -4539,6 +4545,15 @@ recording::block::dump_edges_to_dot (pretty_printer *pp)
+ #  pragma GCC diagnostic pop
+ #endif
+ 
++namespace recording {
++static const enum tls_model tls_models[] = {
++  TLS_MODEL_GLOBAL_DYNAMIC, /* GCC_JIT_TLS_MODEL_GLOBAL_DYNAMIC */
++  TLS_MODEL_LOCAL_DYNAMIC, /* GCC_JIT_TLS_MODEL_LOCAL_DYNAMIC */
++  TLS_MODEL_INITIAL_EXEC, /* GCC_JIT_TLS_MODEL_INITIAL_EXEC */
++  TLS_MODEL_LOCAL_EXEC, /* GCC_JIT_TLS_MODEL_LOCAL_EXEC */
++};
++} /* namespace recording */
++
+ /* The implementation of class gcc::jit::recording::global.  */
+ 
+ /* Implementation of pure virtual hook recording::memento::replay_into
+@@ -4547,8 +4562,7 @@ recording::block::dump_edges_to_dot (pretty_printer *pp)
+ void
+ recording::global::replay_into (replayer *r)
+ {
+-  set_playback_obj (
+-    m_initializer
++    playback::lvalue *global = m_initializer
+     ? r->new_global_initialized (playback_location (r, m_loc),
+ 				 m_kind,
+ 				 m_type->playback_type (),
+@@ -4560,7 +4574,12 @@ recording::global::replay_into (replayer *r)
+     : r->new_global (playback_location (r, m_loc),
+ 		     m_kind,
+ 		     m_type->playback_type (),
+-		     playback_string (m_name)));
++		     playback_string (m_name));
++  if (m_tls_model != GCC_JIT_TLS_MODEL_DEFAULT)
++  {
++      global->set_tls_model (recording::tls_models[m_tls_model]);
++  }
++  set_playback_obj (global);
+ }
+ 
+ /* Override the default implementation of
+@@ -4658,6 +4677,14 @@ recording::global::write_initializer_reproducer (const char *id, reproducer &r)
+ 
+ /* Implementation of recording::memento::write_reproducer for globals. */
+ 
++static const char * const tls_model_enum_strings[] = {
++  "GCC_JIT_TLS_MODEL_GLOBAL_DYNAMIC",
++  "GCC_JIT_TLS_MODEL_LOCAL_DYNAMIC",
++  "GCC_JIT_TLS_MODEL_INITIAL_EXEC",
++  "GCC_JIT_TLS_MODEL_LOCAL_EXEC",
++  "GCC_JIT_TLS_MODEL_DEFAULT",
++};
++
+ void
+ recording::global::write_reproducer (reproducer &r)
+ {
+@@ -4675,6 +4702,14 @@ recording::global::write_reproducer (reproducer &r)
+     r.get_identifier_as_type (get_type ()),
+     m_name->get_debug_string ());
+ 
++  if (m_tls_model)
++  {
++	r.write ("  gcc_jit_lvalue_set_tls_model (%s, /* gcc_jit_lvalue *lvalue */\n"
++	     "                                %s); /* enum gcc_jit_tls_model model */\n",
++    id,
++    tls_model_enum_strings[m_tls_model]);
++  }
++
+   if (m_initializer)
+     switch (m_type->dereference ()->get_size ())
+       {
+diff --git a/gcc/jit/jit-recording.h b/gcc/jit/jit-recording.h
+index 03fa1160cf0..893bf72dd31 100644
+--- a/gcc/jit/jit-recording.h
++++ b/gcc/jit/jit-recording.h
+@@ -1105,7 +1105,8 @@ public:
+   lvalue (context *ctxt,
+ 	  location *loc,
+ 	  type *type_)
+-    : rvalue (ctxt, loc, type_)
++    : rvalue (ctxt, loc, type_),
++    m_tls_model (GCC_JIT_TLS_MODEL_DEFAULT)
+     {}
+ 
+   playback::lvalue *
+@@ -1127,6 +1128,10 @@ public:
+   const char *access_as_rvalue (reproducer &r) OVERRIDE;
+   virtual const char *access_as_lvalue (reproducer &r);
+   virtual bool is_global () const { return false; }
++  void set_tls_model (enum gcc_jit_tls_model model);
++
++protected:
++  enum gcc_jit_tls_model m_tls_model;
+ };
+ 
+ class param : public lvalue
+diff --git a/gcc/jit/libgccjit.c b/gcc/jit/libgccjit.c
+index 0cc650f9810..768b99499cf 100644
+--- a/gcc/jit/libgccjit.c
++++ b/gcc/jit/libgccjit.c
+@@ -1953,6 +1953,24 @@ gcc_jit_lvalue_get_address (gcc_jit_lvalue *lvalue,
+   return (gcc_jit_rvalue *)lvalue->get_address (loc);
+ }
+ 
++/* Public entrypoint.  See description in libgccjit.h.
++
++   After error-checking, the real work is done by the
++   gcc::jit::recording::lvalue::set_tls_model method in jit-recording.c.  */
++
++void
++gcc_jit_lvalue_set_tls_model (gcc_jit_lvalue *lvalue,
++			    enum gcc_jit_tls_model model)
++{
++  RETURN_IF_FAIL (lvalue, NULL, NULL, "NULL lvalue");
++  JIT_LOG_FUNC (lvalue->get_context ()->get_logger ());
++  RETURN_IF_FAIL_PRINTF1 (lvalue->is_global (), NULL, NULL,
++			       "lvalue \"%s\" not a global",
++			       lvalue->get_debug_string ());
++
++  lvalue->set_tls_model (model);
++}
++
+ /* Public entrypoint.  See description in libgccjit.h.
+ 
+    After error-checking, the real work is done by the
+diff --git a/gcc/jit/libgccjit.h b/gcc/jit/libgccjit.h
+index 5c722c2c57f..2a52b351a49 100644
+--- a/gcc/jit/libgccjit.h
++++ b/gcc/jit/libgccjit.h
+@@ -722,6 +722,16 @@ enum gcc_jit_function_kind
+   GCC_JIT_FUNCTION_ALWAYS_INLINE
+ };
+ 
++/* Thread local storage model.  */
++enum gcc_jit_tls_model
++{
++  GCC_JIT_TLS_MODEL_GLOBAL_DYNAMIC,
++  GCC_JIT_TLS_MODEL_LOCAL_DYNAMIC,
++  GCC_JIT_TLS_MODEL_INITIAL_EXEC,
++  GCC_JIT_TLS_MODEL_LOCAL_EXEC,
++  GCC_JIT_TLS_MODEL_DEFAULT,
++};
++
+ /* Create a function.  */
+ extern gcc_jit_function *
+ gcc_jit_context_new_function (gcc_jit_context *ctxt,
+@@ -1072,6 +1082,17 @@ extern gcc_jit_rvalue *
+ gcc_jit_lvalue_get_address (gcc_jit_lvalue *lvalue,
+ 			    gcc_jit_location *loc);
+ 
++#define LIBGCCJIT_HAVE_gcc_jit_lvalue_set_tls_model
++
++/* Set the thread-local storage model of a global variable
++
++   This API entrypoint was added in LIBGCCJIT_ABI_17; you can test for its
++   presence using
++     #ifdef LIBGCCJIT_HAVE_gcc_jit_lvalue_set_tls_model  */
++extern void
++gcc_jit_lvalue_set_tls_model (gcc_jit_lvalue *lvalue,
++			    enum gcc_jit_tls_model model);
++
+ extern gcc_jit_lvalue *
+ gcc_jit_function_new_local (gcc_jit_function *func,
+ 			    gcc_jit_location *loc,
+diff --git a/gcc/jit/libgccjit.map b/gcc/jit/libgccjit.map
+index 337ea6c7fe4..601817ae6e2 100644
+--- a/gcc/jit/libgccjit.map
++++ b/gcc/jit/libgccjit.map
+@@ -205,3 +205,8 @@ LIBGCCJIT_ABI_15 {
+     gcc_jit_extended_asm_add_clobber;
+     gcc_jit_context_add_top_level_asm;
+ } LIBGCCJIT_ABI_14;
++
++LIBGCCJIT_ABI_17 {
++  global:
++    gcc_jit_lvalue_set_tls_model;
++} LIBGCCJIT_ABI_16;
+diff --git a/gcc/testsuite/jit.dg/all-non-failing-tests.h b/gcc/testsuite/jit.dg/all-non-failing-tests.h
+index 4202eb7798b..c2d87a30cca 100644
+--- a/gcc/testsuite/jit.dg/all-non-failing-tests.h
++++ b/gcc/testsuite/jit.dg/all-non-failing-tests.h
+@@ -181,6 +181,13 @@
+ #undef create_code
+ #undef verify_code
+ 
++/* test-tls.c */
++#define create_code create_code_tls
++#define verify_code verify_code_tls
++#include "test-tls.c"
++#undef create_code
++#undef verify_code
++
+ /* test-hello-world.c */
+ #define create_code create_code_hello_world
+ #define verify_code verify_code_hello_world
+diff --git a/gcc/testsuite/jit.dg/test-tls.c b/gcc/testsuite/jit.dg/test-tls.c
+new file mode 100644
+index 00000000000..d4508b16c1e
+--- /dev/null
++++ b/gcc/testsuite/jit.dg/test-tls.c
+@@ -0,0 +1,29 @@
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <time.h>
++
++#include "libgccjit.h"
++
++#include "harness.h"
++
++void
++create_code (gcc_jit_context *ctxt, void *user_data)
++{
++  /* Let's try to inject the equivalent of:
++
++     _Thread_local int foo;
++  */
++  gcc_jit_type *int_type =
++    gcc_jit_context_get_type (ctxt, GCC_JIT_TYPE_INT);
++
++  gcc_jit_lvalue *foo =
++    gcc_jit_context_new_global (
++      ctxt, NULL, GCC_JIT_GLOBAL_EXPORTED, int_type, "foo");
++  gcc_jit_lvalue_set_tls_model (foo, GCC_JIT_TLS_MODEL_GLOBAL_DYNAMIC);
++}
++
++void
++verify_code (gcc_jit_context *ctxt, gcc_jit_result *result)
++{
++}
+-- 
+2.31.1
+

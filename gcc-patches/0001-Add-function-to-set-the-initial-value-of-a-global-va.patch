@@ -1,0 +1,363 @@
+From 08830fb1c57882b197dce60658d87dba29067d3d Mon Sep 17 00:00:00 2001
+From: Antoni Boucher <bouanto@zoho.com>
+Date: Sat, 15 May 2021 10:54:36 -0400
+Subject: [PATCH] Add function to set the initial value of a global variable
+ [PR96089]
+
+2021-05-20  Antoni Boucher  <bouanto@zoho.com>
+
+    gcc/jit/
+            PR target/96089
+            * docs/topics/compatibility.rst (LIBGCCJIT_ABI_19): New ABI
+            tag.
+            * docs/topics/expressions.rst: Add documentation for the
+            function gcc_jit_global_set_initializer_value.
+            * jit-playback.c: New function (new_global_with_value).
+            * jit-playback.h: New function (new_global_with_value).
+            * jit-recording.c: Add support for setting a value to a
+            global variable.
+            * jit-recording.h: New function (set_initializer_value) and
+            new field m_initializer_value.
+            * libgccjit.c: New macro RETURN_IF_FAIL_PRINTF5 and new
+            function (gcc_jit_global_set_initializer_value).
+            * libgccjit.h: New function (gcc_jit_global_set_initializer_value).
+            * libgccjit.map (LIBGCCJIT_ABI_19): New ABI tag.
+
+    gcc/testsuite/
+            PR target/96089
+            * jit.dg/test-global-set-initializer.c: Add test for the new
+            function (gcc_jit_global_set_initializer_value).
+---
+ gcc/jit/docs/topics/compatibility.rst         |  9 ++++
+ gcc/jit/docs/topics/expressions.rst           | 14 ++++++
+ gcc/jit/jit-playback.c                        | 18 ++++++++
+ gcc/jit/jit-playback.h                        |  7 +++
+ gcc/jit/jit-recording.c                       | 34 ++++++++++++---
+ gcc/jit/jit-recording.h                       |  8 ++++
+ gcc/jit/libgccjit.c                           | 43 +++++++++++++++++++
+ gcc/jit/libgccjit.h                           | 13 ++++++
+ gcc/jit/libgccjit.map                         |  5 +++
+ .../jit.dg/test-global-set-initializer.c      | 15 +++++++
+ 10 files changed, 160 insertions(+), 6 deletions(-)
+
+diff --git a/gcc/jit/docs/topics/compatibility.rst b/gcc/jit/docs/topics/compatibility.rst
+index 239b6aa1a92..666eb3a1c51 100644
+--- a/gcc/jit/docs/topics/compatibility.rst
++++ b/gcc/jit/docs/topics/compatibility.rst
+@@ -243,3 +243,12 @@ embedding assembler instructions:
+   * :func:`gcc_jit_extended_asm_add_input_operand`
+   * :func:`gcc_jit_extended_asm_add_clobber`
+   * :func:`gcc_jit_context_add_top_level_asm`
++
++.. _LIBGCCJIT_ABI_19:
++
++``LIBGCCJIT_ABI_19``
++-----------------------
++``LIBGCCJIT_ABI_19`` covers the addition of an API entrypoint to set the value
++of a global variable:
++
++  * :func:`gcc_jit_global_set_initializer_value`
+diff --git a/gcc/jit/docs/topics/expressions.rst b/gcc/jit/docs/topics/expressions.rst
+index 396259ef07e..f638cb68fdd 100644
+--- a/gcc/jit/docs/topics/expressions.rst
++++ b/gcc/jit/docs/topics/expressions.rst
+@@ -603,6 +603,20 @@ Global variables
+ 
+       #ifdef LIBGCCJIT_HAVE_gcc_jit_global_set_initializer
+ 
++.. function:: void
++              gcc_jit_global_set_initializer_value (gcc_jit_lvalue *global,\
++                                                    gcc_jit_rvalue *value)
++
++   Set an initializer for ``global`` using the specified value.
++   ``global`` must be the same type as ``value``.
++
++   This entrypoint was added in :ref:`LIBGCCJIT_ABI_19`; you can test for
++   its presence using
++
++   .. code-block:: c
++
++      #ifdef LIBGCCJIT_HAVE_gcc_jit_global_set_initializer_value
++
+ Working with pointers, structs and unions
+ -----------------------------------------
+ 
+diff --git a/gcc/jit/jit-playback.c b/gcc/jit/jit-playback.c
+index c6136301243..d86701a8ae6 100644
+--- a/gcc/jit/jit-playback.c
++++ b/gcc/jit/jit-playback.c
+@@ -664,6 +664,24 @@ new_global_initialized (location *loc,
+   return global_finalize_lvalue (inner);
+ }
+ 
++playback::lvalue *
++playback::context::
++new_global_with_value (location *loc,
++		       enum gcc_jit_global_kind kind,
++		       type *type,
++		       playback::rvalue *value,
++		       const char *name)
++{
++  tree inner = global_new_decl (loc, kind, type, name);
++
++  tree inner_type = type->as_tree ();
++  tree initial = value->as_tree ();
++  gcc_assert (TREE_CONSTANT (initial));
++  DECL_INITIAL (inner) = initial;
++
++  return global_finalize_lvalue (inner);
++}
++
+ /* Implementation of the various
+       gcc::jit::playback::context::new_rvalue_from_const <HOST_TYPE>
+    methods.
+diff --git a/gcc/jit/jit-playback.h b/gcc/jit/jit-playback.h
+index 825a3e172e9..958284df539 100644
+--- a/gcc/jit/jit-playback.h
++++ b/gcc/jit/jit-playback.h
+@@ -120,6 +120,13 @@ public:
+                           const void *initializer,
+                           const char *name);
+ 
++  lvalue*
++  new_global_with_value (location *loc,
++			 enum gcc_jit_global_kind kind,
++			 type *type,
++			 rvalue *value,
++			 const char *name);
++
+   template <typename HOST_TYPE>
+   rvalue *
+   new_rvalue_from_const (type *type,
+diff --git a/gcc/jit/jit-recording.c b/gcc/jit/jit-recording.c
+index 117ff70114c..a26e4928084 100644
+--- a/gcc/jit/jit-recording.c
++++ b/gcc/jit/jit-recording.c
+@@ -4547,20 +4547,34 @@ recording::block::dump_edges_to_dot (pretty_printer *pp)
+ void
+ recording::global::replay_into (replayer *r)
+ {
+-  set_playback_obj (
+-    m_initializer
+-    ? r->new_global_initialized (playback_location (r, m_loc),
++  playback::lvalue * obj;
++  if (m_initializer)
++  {
++      obj = r->new_global_initialized (playback_location (r, m_loc),
+ 				 m_kind,
+ 				 m_type->playback_type (),
+ 				 m_type->dereference ()->get_size (),
+ 				 m_initializer_num_bytes
+ 				 / m_type->dereference ()->get_size (),
+ 				 m_initializer,
+-				 playback_string (m_name))
+-    : r->new_global (playback_location (r, m_loc),
++				 playback_string (m_name));
++  }
++  else if (m_initializer_value)
++  {
++      obj = r->new_global_with_value (playback_location (r, m_loc),
++				 m_kind,
++				 m_type->playback_type (),
++				 m_initializer_value->playback_rvalue (),
++				 playback_string (m_name));
++  }
++  else
++  {
++      obj = r->new_global (playback_location (r, m_loc),
+ 		     m_kind,
+ 		     m_type->playback_type (),
+-		     playback_string (m_name)));
++		     playback_string (m_name));
++  }
++  set_playback_obj (obj);
+ }
+ 
+ /* Override the default implementation of
+@@ -4675,6 +4689,14 @@ recording::global::write_reproducer (reproducer &r)
+     r.get_identifier_as_type (get_type ()),
+     m_name->get_debug_string ());
+ 
++  if (m_initializer_value)
++  {
++    r.write ("  gcc_jit_global_set_initializer_value (%s, /* gcc_jit_lvalue *global */\n"
++      "    %s/* gcc_jit_rvalue *value */);\n",
++    id,
++    r.get_identifier_as_rvalue (m_initializer_value));
++  }
++
+   if (m_initializer)
+     switch (m_type->dereference ()->get_size ())
+       {
+diff --git a/gcc/jit/jit-recording.h b/gcc/jit/jit-recording.h
+index 03fa1160cf0..61de2e1dcd4 100644
+--- a/gcc/jit/jit-recording.h
++++ b/gcc/jit/jit-recording.h
+@@ -1360,6 +1360,7 @@ public:
+     m_name (name)
+   {
+     m_initializer = NULL;
++    m_initializer_value = NULL;
+     m_initializer_num_bytes = 0;
+   }
+   ~global ()
+@@ -1386,6 +1387,12 @@ public:
+     m_initializer_num_bytes = num_bytes;
+   }
+ 
++  void
++  set_initializer_value (rvalue* value)
++  {
++    m_initializer_value = value;
++  }
++
+ private:
+   string * make_debug_string () FINAL OVERRIDE { return m_name; }
+   template <typename T>
+@@ -1400,6 +1407,7 @@ private:
+   enum gcc_jit_global_kind m_kind;
+   string *m_name;
+   void *m_initializer;
++  rvalue *m_initializer_value;
+   size_t m_initializer_num_bytes;
+ };
+ 
+diff --git a/gcc/jit/libgccjit.c b/gcc/jit/libgccjit.c
+index 7fa948007ad..b7fd4d9bebb 100644
+--- a/gcc/jit/libgccjit.c
++++ b/gcc/jit/libgccjit.c
+@@ -269,6 +269,17 @@ struct gcc_jit_extended_asm : public gcc::jit::recording::extended_asm
+       }								\
+   JIT_END_STMT
+ 
++#define RETURN_IF_FAIL_PRINTF5(TEST_EXPR, CTXT, LOC, ERR_FMT, A0, A1, A2, A3, \
++			       A4) \
++  JIT_BEGIN_STMT							\
++    if (!(TEST_EXPR))							\
++      {								\
++	jit_error ((CTXT), (LOC), "%s: " ERR_FMT,			\
++		   __func__, (A0), (A1), (A2), (A3), (A4));		\
++	return;							\
++      }								\
++  JIT_END_STMT
++
+ /* Check that BLOCK is non-NULL, and that it's OK to add statements to
+    it.  This will fail if BLOCK has already been terminated by some
+    kind of jump or a return.  */
+@@ -1161,6 +1172,38 @@ gcc_jit_global_set_initializer (gcc_jit_lvalue *global,
+   return global;
+ }
+ 
++/* Public entrypoint.  See description in libgccjit.h.
++
++   After error-checking, the real work is done by the
++   gcc::jit::recording::global::set_initializer_value method, in
++   jit-recording.c.  */
++
++void
++gcc_jit_global_set_initializer_value (gcc_jit_lvalue *global,
++				gcc_jit_rvalue *value)
++{
++  RETURN_IF_FAIL (global, NULL, NULL, "NULL global");
++  RETURN_IF_FAIL (value, NULL, NULL, "NULL value");
++  RETURN_IF_FAIL_PRINTF1 (global->is_global (), NULL, NULL,
++			       "lvalue \"%s\" not a global",
++			       global->get_debug_string ());
++
++      RETURN_IF_FAIL_PRINTF5 (
++	compatible_types (global->get_type (),
++			  value->get_type ()),
++	NULL, NULL,
++	"mismatching types for global \"%s\":"
++	" assignment to global %s (type: %s) from %s (type: %s)",
++	global->get_debug_string (),
++	global->get_debug_string (),
++	global->get_type ()->get_debug_string (),
++	value->get_debug_string (),
++	value->get_type ()->get_debug_string ());
++
++  reinterpret_cast <gcc::jit::recording::global *> (global)
++    ->set_initializer_value (value);
++}
++
+ /* Public entrypoint.  See description in libgccjit.h.
+ 
+    After error-checking, this calls the trivial
+diff --git a/gcc/jit/libgccjit.h b/gcc/jit/libgccjit.h
+index 5c722c2c57f..98762d05271 100644
+--- a/gcc/jit/libgccjit.h
++++ b/gcc/jit/libgccjit.h
+@@ -810,6 +810,19 @@ gcc_jit_global_set_initializer (gcc_jit_lvalue *global,
+ 				const void *blob,
+ 				size_t num_bytes);
+ 
++#define LIBGCCJIT_HAVE_gcc_jit_global_set_initializer_value
++
++/* Set an initial value for a global, which must be a constant.
++
++   This API entrypoint was added in LIBGCCJIT_ABI_19; you can test for its
++   presence using
++     #ifdef LIBGCCJIT_HAVE_gcc_jit_global_set_initializer_value
++*/
++
++extern void
++gcc_jit_global_set_initializer_value (gcc_jit_lvalue *global,
++				gcc_jit_rvalue *value);
++
+ /* Upcasting.  */
+ extern gcc_jit_object *
+ gcc_jit_lvalue_as_object (gcc_jit_lvalue *lvalue);
+diff --git a/gcc/jit/libgccjit.map b/gcc/jit/libgccjit.map
+index 337ea6c7fe4..69b3e79578b 100644
+--- a/gcc/jit/libgccjit.map
++++ b/gcc/jit/libgccjit.map
+@@ -205,3 +205,8 @@ LIBGCCJIT_ABI_15 {
+     gcc_jit_extended_asm_add_clobber;
+     gcc_jit_context_add_top_level_asm;
+ } LIBGCCJIT_ABI_14;
++
++LIBGCCJIT_ABI_19 {
++  global:
++    gcc_jit_global_set_initializer_value;
++} LIBGCCJIT_ABI_18;
+diff --git a/gcc/testsuite/jit.dg/test-global-set-initializer.c b/gcc/testsuite/jit.dg/test-global-set-initializer.c
+index d38aba7d73f..418ed7dcf3f 100644
+--- a/gcc/testsuite/jit.dg/test-global-set-initializer.c
++++ b/gcc/testsuite/jit.dg/test-global-set-initializer.c
+@@ -21,6 +21,7 @@ create_code (gcc_jit_context *ctxt, void *user_data)
+      signed char bin_blob1[] = { 0xc, 0xa, 0xf, 0xf, 0xe };
+      unsigned bin_blob2[] = { 0x3, 0x2, 0x1, 0x0, 0x1, 0x2, 0x3 };
+      unsigned char bin_blob3[4096]...
++     unsigned int integer = 42;
+   */
+   gcc_jit_type *unsigned_char_type =
+     gcc_jit_context_get_type (ctxt, GCC_JIT_TYPE_UNSIGNED_CHAR);
+@@ -56,6 +57,16 @@ create_code (gcc_jit_context *ctxt, void *user_data)
+ 				      sizeof (test_blob3)),
+       "bin_blob3");
+   gcc_jit_global_set_initializer (glob, test_blob3, sizeof (test_blob3));
++
++  gcc_jit_rvalue *forty_two = gcc_jit_context_new_rvalue_from_int (
++      ctxt, unsigned_type, 42);
++
++  glob =
++    gcc_jit_context_new_global (
++      ctxt, NULL, GCC_JIT_GLOBAL_EXPORTED,
++      unsigned_type,
++      "integer");
++  gcc_jit_global_set_initializer_value (glob, forty_two);
+ }
+ 
+ void
+@@ -75,4 +86,8 @@ verify_code (gcc_jit_context *ctxt, gcc_jit_result *result)
+   CHECK_NON_NULL (glob);
+   CHECK_VALUE (memcmp (test_blob3, glob, sizeof (test_blob3)), 0);
+ 
++  glob = gcc_jit_result_get_global (result, "integer");
++  CHECK_NON_NULL (glob);
++  int *value = glob;
++  CHECK_VALUE (*value, 42);
+ }
+-- 
+2.31.1
+
