@@ -10,7 +10,8 @@ A secondary goal is to check if using the gcc backend will provide any compilati
 ## Building
 
 **This requires a patched libgccjit in order to work.
-The patches in the folder gcc-patches need to be applied.**
+The patches in the folder gcc-patches need to be applied.
+(Those patches should work when applied on master, but in case it doesn't work, they are known to work when applied on 56103737f1731616dfbe500fad2c0bb3cc084238.)**
 
 **Put the path to your custom build of libgccjit in the file `gcc_path`.**
 
