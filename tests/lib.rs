@@ -38,6 +38,7 @@ fn main() {
                 "--sysroot", &format!("{}/build_sysroot/sysroot/", current_dir),
                 "-Zno-parallel-llvm",
                 "-C", "panic=abort",
+                "-C", "link-arg=-lc",
                 "-o", exe.to_str().expect("to_str"),
                 path.to_str().expect("to_str"),
             ]);

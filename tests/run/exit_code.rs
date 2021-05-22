@@ -3,14 +3,10 @@
 // Run-time:
 //   status: 1
 
-#![feature(auto_traits, lang_items, link_args, no_core, start)]
+#![feature(auto_traits, lang_items, no_core, start)]
 
 #![no_std]
 #![no_core]
-
-#[link_args="-lc"]
-extern {
-}
 
 /*
  * Core

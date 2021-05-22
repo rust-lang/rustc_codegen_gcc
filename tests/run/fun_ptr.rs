@@ -4,14 +4,10 @@
 //   status: 0
 //   stdout: 1
 
-#![feature(arbitrary_self_types, auto_traits, lang_items, link_args, no_core, start, intrinsics)]
+#![feature(arbitrary_self_types, auto_traits, lang_items, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
-
-#[link_args="-lc"]
-extern {
-}
 
 /*
  * Core
