@@ -1,9 +1,10 @@
+use gccjit::RValue;
 use rustc_codegen_ssa::traits::{CoverageInfoBuilderMethods, CoverageInfoMethods};
+use rustc_hir::def_id::DefId;
 use rustc_middle::mir::coverage::{
     CodeRegion,
     CounterValueReference,
     ExpressionOperandId,
-    InjectedExpressionIndex,
     InjectedExpressionId,
     Op,
 };
@@ -13,17 +14,6 @@ use crate::builder::Builder;
 use crate::context::CodegenCx;
 
 impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
-    /// Calls llvm::createPGOFuncNameVar() with the given function instance's mangled function name.
-    /// The LLVM API returns an llvm::GlobalVariable containing the function name, with the specific
-    /// variable name and linkage required by LLVM InstrProf source-based coverage instrumentation.
-    fn create_pgo_func_name_var(&self, instance: Instance<'tcx>) -> Self::Value {
-        unimplemented!();
-        /*let llfn = self.cx.get_fn(instance);
-        let mangled_fn_name = CString::new(self.tcx.symbol_name(instance).name)
-            .expect("error converting function name to C string");
-        unsafe { llvm::LLVMRustCoverageCreatePGOFuncNameVar(llfn, mangled_fn_name.as_ptr()) }*/
-    }
-
     fn set_function_source_hash(
         &mut self,
         instance: Instance<'tcx>,
@@ -107,9 +97,45 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
     }
 }
 
-impl<'gcc, 'tcx> CoverageInfoMethods for CodegenCx<'gcc, 'tcx> {
+impl<'gcc, 'tcx> CoverageInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn coverageinfo_finalize(&self) {
         // TODO
         //mapgen::finalize(self)
+    }
+
+    fn get_pgo_func_name_var(&self, instance: Instance<'tcx>) -> RValue<'gcc> {
+        unimplemented!();
+        /*if let Some(coverage_context) = self.coverage_context() {
+            debug!("getting pgo_func_name_var for instance={:?}", instance);
+            let mut pgo_func_name_var_map = coverage_context.pgo_func_name_var_map.borrow_mut();
+            pgo_func_name_var_map
+                .entry(instance)
+                .or_insert_with(|| create_pgo_func_name_var(self, instance))
+        } else {
+            bug!("Could not get the `coverage_context`");
+        }*/
+    }
+
+    /// Functions with MIR-based coverage are normally codegenned _only_ if
+    /// called. LLVM coverage tools typically expect every function to be
+    /// defined (even if unused), with at least one call to LLVM intrinsic
+    /// `instrprof.increment`.
+    ///
+    /// Codegen a small function that will never be called, with one counter
+    /// that will never be incremented.
+    ///
+    /// For used/called functions, the coverageinfo was already added to the
+    /// `function_coverage_map` (keyed by function `Instance`) during codegen.
+    /// But in this case, since the unused function was _not_ previously
+    /// codegenned, collect the coverage `CodeRegion`s from the MIR and add
+    /// them. The first `CodeRegion` is used to add a single counter, with the
+    /// same counter ID used in the injected `instrprof.increment` intrinsic
+    /// call. Since the function is never called, all other `CodeRegion`s can be
+    /// added as `unreachable_region`s.
+    fn define_unused_fn(&self, def_id: DefId) {
+        unimplemented!();
+        /*let instance = declare_unused_fn(self, &def_id);
+        codegen_unused_fn_and_counter(self, instance);
+        add_unused_function_coverage(self, instance, def_id);*/
     }
 }

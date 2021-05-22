@@ -58,7 +58,15 @@ pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
     stack_var_count: Cell<usize>,
 }
 
-impl<'gcc, 'tcx> Builder<'_, 'gcc, 'tcx> {
+impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
+    fn with_cx(cx: &'a CodegenCx<'gcc, 'tcx>) -> Self {
+        Builder {
+            cx,
+            block: None,
+            stack_var_count: Cell::new(0),
+        }
+    }
+
     pub fn assign(&self, lvalue: LValue<'gcc>, value: RValue<'gcc>) {
         self.llbb().add_assignment(None, lvalue, value);
     }
@@ -353,36 +361,30 @@ impl<'gcc, 'tcx> BackendTypes for Builder<'_, 'gcc, 'tcx> {
 }
 
 impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
-    fn new_block<'b>(cx: &'a CodegenCx<'gcc, 'tcx>, func: RValue<'gcc>, name: &'b str) -> Self {
-        let func = cx.rvalue_as_function(func);
-        let block = func.new_block(name);
+    fn build(cx: &'a CodegenCx<'gcc, 'tcx>, block: Block<'gcc>) -> Self {
         let mut bx = Builder::with_cx(cx);
-        bx.position_at_end(block);
+        *cx.current_block.borrow_mut() = Some(block);
+        bx.block = Some(block);
         bx
     }
 
-    fn with_cx(cx: &'a CodegenCx<'gcc, 'tcx>) -> Self {
-        Builder {
-            cx,
-            block: None,
-            stack_var_count: Cell::new(0),
-        }
-    }
-
-    fn build_sibling_block(&self, name: &str) -> Self {
-        let func = self.llbb().get_function();
-        // TODO: this is a wrong cast.
-        let func: RValue<'gcc> = unsafe { std::mem::transmute(func) };
-        Builder::new_block(self.cx, func, name)
+    fn build_sibling_block(&mut self, name: &str) -> Self {
+        let block = self.append_sibling_block(name);
+        Self::build(self.cx, block)
     }
 
     fn llbb(&self) -> Block<'gcc> {
         self.block.expect("block")
     }
 
-    fn position_at_end(&mut self, block: Block<'gcc>) {
-        *self.cx.current_block.borrow_mut() = Some(block);
-        self.block = Some(block);
+    fn append_block(cx: &'a CodegenCx<'gcc, 'tcx>, func: RValue<'gcc>, name: &str) -> Block<'gcc> {
+        let func = cx.rvalue_as_function(func);
+        func.new_block(name)
+    }
+
+    fn append_sibling_block(&mut self, name: &str) -> Block<'gcc> {
+        let func = self.current_func();
+        func.new_block(name)
     }
 
     fn ret_void(&mut self) {
@@ -1533,11 +1535,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.cx
     }
 
-    unsafe fn delete_basic_block(&mut self, bb: Block<'gcc>) {
-        unimplemented!();
-        //llvm::LLVMDeleteBasicBlock(bb);
-    }
-
     fn do_not_inline(&mut self, llret: RValue<'gcc>) {
         unimplemented!();
         //llvm::Attribute::NoInline.apply_callsite(llvm::AttributePlace::Function, llret);
@@ -1567,10 +1564,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn fptosi_sat(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
         None
-    }
-
-    fn fptosui_may_trap(&self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> bool {
-        false
     }
 
     fn instrprof_increment(&mut self, fn_name: RValue<'gcc>, hash: RValue<'gcc>, num_counters: RValue<'gcc>, index: RValue<'gcc>) {

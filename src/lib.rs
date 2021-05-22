@@ -7,7 +7,7 @@
  * TODO: remove the patches.
  */
 
-#![feature(rustc_private, decl_macro, or_patterns, type_alias_impl_trait, associated_type_bounds, never_type, trusted_len)]
+#![feature(rustc_private, decl_macro, associated_type_bounds, never_type, trusted_len)]
 #![allow(broken_intra_doc_links)]
 #![recursion_limit="256"]
 #![warn(rust_2018_idioms)]
@@ -47,6 +47,7 @@ mod coverageinfo;
 mod debuginfo;
 mod declare;
 mod intrinsic;
+mod mangled_std_symbols;
 mod metadata;
 mod mono_item;
 mod type_;
@@ -65,7 +66,6 @@ use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModul
 use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, ModuleBufferMethods, ThinBufferMethods, WriteBackendMethods};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{ErrorReported, Handler};
-use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 use rustc_middle::middle::cstore::{EncodedMetadata, MetadataLoader};
 use rustc_middle::ty::{
@@ -110,7 +110,8 @@ impl CodegenBackend for GccCodegenBackend {
     }
 
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, metadata: EncodedMetadata, need_metadata_module: bool) -> Box<dyn Any> {
-        let res = codegen_crate(self.clone(), tcx, metadata, need_metadata_module);
+        let target_cpu = target_cpu(tcx.sess);
+        let res = codegen_crate(self.clone(), tcx, target_cpu.to_string(), metadata, need_metadata_module);
 
         rustc_symbol_mangling::test::report_symbol_names(tcx);
 
@@ -130,13 +131,11 @@ impl CodegenBackend for GccCodegenBackend {
         use rustc_codegen_ssa::back::link::link_binary;
 
         sess.time("linking", || {
-            let target_cpu = crate::target_triple(sess).to_string();
             link_binary::<crate::archive::ArArchiveBuilder<'_>>(
                 sess,
                 &codegen_results,
                 outputs,
                 &codegen_results.crate_name.as_str(),
-                &target_cpu,
             );
         });
 
@@ -261,8 +260,9 @@ impl WriteBackendMethods for GccCodegenBackend {
         unimplemented!();
     }
 
-    fn run_lto_pass_manager(_cgcx: &CodegenContext<Self>, _llmod: &ModuleCodegen<Self::Module>, _config: &ModuleConfig, _thin: bool) {
+    fn run_lto_pass_manager(_cgcx: &CodegenContext<Self>, _module: &ModuleCodegen<Self::Module>, _config: &ModuleConfig, _thin: bool) -> Result<(), FatalError> {
         // TODO
+        Ok(())
     }
 
     fn run_link(cgcx: &CodegenContext<Self>, diag_handler: &Handler, modules: Vec<ModuleCodegen<Self::Module>>) -> Result<ModuleCodegen<Self::Module>, FatalError> {
@@ -296,10 +296,28 @@ fn to_gcc_opt_level(optlevel: Option<OptLevel>) -> OptimizationLevel {
 }
 
 fn create_function_calling_initializers<'gcc, 'tcx>(tcx: TyCtxt<'tcx>, context: &Context<'gcc>, block: Block<'gcc>) {
-    let codegen_units = tcx.collect_and_partition_mono_items(LOCAL_CRATE).1;
+    let codegen_units = tcx.collect_and_partition_mono_items(()).1;
     for codegen_unit in codegen_units {
         let codegen_init_func = context.new_function(None, FunctionType::Extern, context.new_type::<()>(), &[],
             &format!("__gccGlobalInit{}", unit_name(&codegen_unit)), false);
         block.add_eval(None, context.new_call(None, codegen_init_func, &[]));
     }
+}
+
+fn handle_native(name: &str) -> &str {
+    if name != "native" {
+        return name;
+    }
+
+    unimplemented!();
+    /*unsafe {
+        let mut len = 0;
+        let ptr = llvm::LLVMRustGetHostCPUName(&mut len);
+        str::from_utf8(slice::from_raw_parts(ptr as *const u8, len)).unwrap()
+    }*/
+}
+
+pub fn target_cpu(sess: &Session) -> &str {
+    let name = sess.opts.cg.target_cpu.as_ref().unwrap_or(&sess.target.cpu);
+    handle_native(name)
 }

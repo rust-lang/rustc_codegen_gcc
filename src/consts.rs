@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 
-use gccjit::{GlobalKind, RValue, Type};
+use gccjit::{RValue, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, ConstMethods, DerivedTypeMethods, StaticMethods};
 use rustc_hir as hir;
 use rustc_hir::Node;
@@ -8,14 +8,14 @@ use rustc_middle::{bug, span_bug};
 use rustc_middle::middle::codegen_fn_attrs::{CodegenFnAttrFlags, CodegenFnAttrs};
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{self, Instance, Ty};
-use rustc_mir::interpret::{self, Allocation, ConstValue, ErrorHandled, read_target_uint};
+use rustc_mir::interpret::{self, Allocation, ErrorHandled, read_target_uint};
 use rustc_span::Span;
 use rustc_span::def_id::DefId;
-use rustc_span::symbol::sym;
 use rustc_target::abi::{self, Align, HasDataLayout, LayoutOf, Primitive, Size};
 
 use crate::base;
 use crate::context::CodegenCx;
+use crate::mangled_std_symbols::{ARGC, ARGV, ARGV_INIT_ARRAY};
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -137,16 +137,16 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             // overwrite those variables.
             // FIXME: correctly support global variable initialization.
             let skip_init = [
-                "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY17h6d5a1c8046e3c889E",
-                "_ZN3std3sys4unix4args3imp4ARGC17h8c5dd779873fb856E",
-                "_ZN3std3sys4unix4args3imp4ARGV17hf9e65532da2fd64dE",
+                ARGV_INIT_ARRAY,
+                ARGC,
+                ARGV,
             ];
             if !skip_init.contains(&name) {
                 // TODO: switch to set_initializer when libgccjit supports that.
                 let memcpy = self.context.get_builtin_function("memcpy");
                 let dst = self.context.new_cast(None, global, self.type_i8p());
                 let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
-                let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size.bytes() as i64);
+                let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size().bytes() as i64);
                 self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
             }
 
@@ -335,15 +335,15 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let id = self.tcx.hir().local_def_id_to_hir_id(def_id);
                 let llty = self.layout_of(ty).gcc_type(self, true);
                 // FIXME: refactor this to work without accessing the HIR
-                let (global, attrs) = match self.tcx.hir().get(id) {
-                    Node::Item(&hir::Item { attrs, span, kind: hir::ItemKind::Static(..), .. }) => {
+                let global = match self.tcx.hir().get(id) {
+                    Node::Item(&hir::Item { span, kind: hir::ItemKind::Static(..), .. }) => {
                         if let Some(global) = self.get_declared_value(&sym) {
                             if self.val_ty(global) != self.type_ptr_to(llty) {
                                 span_bug!(span, "Conflicting types for static");
                             }
                         }
 
-                        let is_tls = attrs.iter().any(|attr| self.tcx.sess.check_name(attr, sym::thread_local));
+                        let is_tls = fn_attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
                         let global = self.declare_global(&sym, llty, is_tls, fn_attrs.link_section);
 
                         if !self.tcx.is_reachable_non_generic(def_id) {
@@ -352,17 +352,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                               }*/
                         }
 
-                        (global, attrs)
+                        global
                     }
 
                     Node::ForeignItem(&hir::ForeignItem {
-                        ref attrs,
                         span,
                         kind: hir::ForeignItemKind::Static(..),
                         ..
                     }) => {
                         let fn_attrs = self.tcx.codegen_fn_attrs(def_id);
-                        (check_and_apply_linkage(&self, &fn_attrs, ty, sym, span), &**attrs)
+                        check_and_apply_linkage(&self, &fn_attrs, ty, sym, span)
                     }
 
                     item => bug!("get_static: expected static, found {:?}", item),
