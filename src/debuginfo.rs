@@ -1,6 +1,7 @@
 use gccjit::{FunctionType, RValue};
 use rustc_codegen_ssa::mir::debuginfo::{FunctionDebugContext, VariableKind};
 use rustc_codegen_ssa::traits::{BuilderMethods, DebugInfoBuilderMethods, DebugInfoMethods};
+use rustc_middle::middle::cstore::CrateDepKind;
 use rustc_middle::mir;
 use rustc_middle::ty::{Instance, Ty};
 use rustc_span::{SourceFile, Span, Symbol};
@@ -74,9 +75,9 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
         // We assume this is only called for the main function.
         use std::iter;
 
-        for crate_num in self.cx.tcx.all_crate_nums(LOCAL_CRATE).iter().copied().chain(iter::once(LOCAL_CRATE)) {
+        for crate_num in self.cx.tcx.all_crate_nums(()).iter().copied().chain(iter::once(LOCAL_CRATE)) {
             // FIXME: better way to find if a crate is of proc-macro type?
-            if self.cx.tcx.proc_macro_decls_static(crate_num).is_none() {
+            if crate_num == LOCAL_CRATE || self.cx.tcx.dep_kind(crate_num) != CrateDepKind::MacrosOnly {
                 // NOTE: proc-macro crates are not included in the executable, so don't call their
                 // initialization routine.
                 let initializer_name = format!("__gccGlobalCrateInit{}", self.cx.tcx.crate_name(crate_num));

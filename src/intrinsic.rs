@@ -1,5 +1,4 @@
 use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
-use rustc_ast::ast;
 use rustc_codegen_ssa::MemFlags;
 use rustc_codegen_ssa::base::wants_msvc_seh;
 use rustc_codegen_ssa::common::span_invalid_monomorphization_error;
@@ -380,7 +379,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         cond
     }
 
-    fn sideeffect(&mut self, unconditional: bool) {
+    fn sideeffect(&mut self) {
         // TODO
         /*if self.tcx().sess.opts.debugging_opts.insert_sideeffect {
             let fnname = self.get_intrinsic(&("llvm.sideeffect"));

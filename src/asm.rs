@@ -2,11 +2,10 @@ use gccjit::{RValue, ToRValue, Type};
 use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::operand::OperandValue;
 use rustc_codegen_ssa::mir::place::PlaceRef;
-use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, InlineAsmOperandRef, MiscMethods};
+use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef, InlineAsmOperandRef};
 use rustc_data_structures::fx::FxHashMap;
-use rustc_hir::{GlobalAsm, LlvmInlineAsmInner};
+use rustc_hir::LlvmInlineAsmInner;
 use rustc_middle::bug;
-use rustc_middle::ty::layout::TyAndLayout;
 use rustc_span::Span;
 use rustc_target::asm::*;
 
@@ -156,7 +155,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     current_number += 1;
                     output_vars.insert(idx, var);
                 }
-                InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
+                InlineAsmOperandRef::InOut { reg, late, out_place, .. } => {
                     let ty =
                         match out_place {
                             Some(place) => place.layout.gcc_type(self.cx, false),
@@ -192,7 +191,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         // Build the template string
         let mut template_str = String::new();
-        let mut operand_index = 0;
         for piece in template {
             match *piece {
                 InlineAsmTemplatePiece::String(ref string) => {
@@ -212,7 +210,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
                 InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span: _ } => {
                     match operands[operand_idx] {
-                        InlineAsmOperandRef::Out { reg, place: Some(place), late  } => {
+                        InlineAsmOperandRef::Out { reg, place: Some(_), ..  } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
                             if let Some(modifier) = modifier {
                                 template_str.push_str(&format!("%{}{}", modifier, operand_numbers[&operand_idx]));
@@ -420,54 +418,9 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 }
 
-fn reg_to_clobber<'tcx>(reg: InlineAsmRegOrRegClass) -> &'static str {
-    match reg {
-        // For vector registers LLVM wants the register name to match the type size.
-        InlineAsmRegOrRegClass::Reg(reg) => {
-            reg.name()
-        },
-        InlineAsmRegOrRegClass::RegClass(reg) => match reg {
-            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => unimplemented!(),
-            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg) => unimplemented!(),
-            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => unimplemented!(),
-            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg) => unimplemented!(),
-            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg_thumb) => unimplemented!(),
-            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg)
-            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low16)
-            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low8) => unimplemented!(),
-            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg_low16)
-            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low8)
-            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low4) => unimplemented!(),
-            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg)
-            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg) => unimplemented!(),
-            InlineAsmRegClass::Hexagon(HexagonInlineAsmRegClass::reg) => unimplemented!(),
-            InlineAsmRegClass::Mips(MipsInlineAsmRegClass::reg) => unimplemented!(),
-            InlineAsmRegClass::Mips(MipsInlineAsmRegClass::freg) => unimplemented!(),
-            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg16) => unimplemented!(),
-            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg32) => unimplemented!(),
-            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg64) => unimplemented!(),
-            InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => unimplemented!(),
-            InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg) => {
-                "r"
-            },
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
-            | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
-            InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
-            InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
-                bug!("GCC backend does not support SPIR-V")
-            }
-        }
-    }
-}
-
 /// Converts a register class to a GCC constraint code.
 // TODO: return &'static str instead?
-fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
+fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
     match reg {
         // For vector registers LLVM wants the register name to match the type size.
         InlineAsmRegOrRegClass::Reg(reg) => {
@@ -508,6 +461,9 @@ fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
             InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg16) => unimplemented!(),
             InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg32) => unimplemented!(),
             InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg64) => unimplemented!(),
+            InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::reg_nonzero) => unimplemented!(),
+            InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::freg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::reg) => "r",
@@ -521,6 +477,7 @@ fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
             InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
                 bug!("GCC backend does not support SPIR-V")
             }
+            InlineAsmRegClass::Err => unreachable!(),
         }
         .to_string(),
     }
@@ -553,6 +510,9 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
         InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg16) => cx.type_i16(),
         InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg32) => cx.type_i32(),
         InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg64) => cx.type_i64(),
+        InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::reg) => cx.type_i32(),
+        InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::reg_nonzero) => cx.type_i32(),
+        InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::freg) => cx.type_f64(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => cx.type_i32(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => cx.type_f32(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
@@ -565,19 +525,60 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
         InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => cx.type_i32(),
         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
             bug!("LLVM backend does not support SPIR-V")
-        }
+        },
+        InlineAsmRegClass::Err => unreachable!(),
     }
 }
 
 impl<'gcc, 'tcx> AsmMethods for CodegenCx<'gcc, 'tcx> {
-    fn codegen_global_asm(&self, ga: &GlobalAsm) {
-        let asm = ga.asm.as_str();
-        // TODO: global_asm! uses AT&T syntax. Maybe that will switch to Intel some day.
-        let asm = format!(".att_syntax noprefix\n\t{}\n\t.intel_syntax noprefix\n", asm);
+    fn codegen_global_asm(&self, template: &[InlineAsmTemplatePiece], operands: &[GlobalAsmOperandRef], options: InlineAsmOptions, _line_spans: &[Span]) {
+        let asm_arch = self.tcx.sess.asm_arch.unwrap();
+
+        // Default to Intel syntax on x86
+        let intel_syntax = matches!(asm_arch, InlineAsmArch::X86 | InlineAsmArch::X86_64)
+            && !options.contains(InlineAsmOptions::ATT_SYNTAX);
+
+        // Build the template string
+        let mut template_str = String::new();
+        for piece in template {
+            match *piece {
+                InlineAsmTemplatePiece::String(ref string) => {
+                    for line in string.lines() {
+                        // NOTE: gcc does not allow inline comment, so remove them.
+                        let line =
+                            if let Some(index) = line.rfind("//") {
+                                &line[..index]
+                            }
+                            else {
+                                line
+                            };
+                        template_str.push_str(line);
+                        template_str.push('\n');
+                    }
+                },
+                InlineAsmTemplatePiece::Placeholder { operand_idx, modifier: _, span: _ } => {
+                    match operands[operand_idx] {
+                        GlobalAsmOperandRef::Const { ref string } => {
+                            // Const operands get injected directly into the
+                            // template. Note that we don't need to escape $
+                            // here unlike normal inline assembly.
+                            template_str.push_str(string);
+                        }
+                    }
+                }
+            }
+        }
+
+        let template_str =
+            if intel_syntax {
+                format!("{}\n\t.intel_syntax noprefix", template_str)
+            }
+            else {
+                format!(".att_syntax\n\t{}\n\t.intel_syntax noprefix", template_str)
+            };
         // NOTE: seems like gcc will put the asm in the wrong section, so set it to .text manually.
-        let asm = format!(".pushsection .text\n{}.popsection", asm);
-        println!("Template: {}", asm);
-        self.context.add_top_level_asm(None, &*asm);
+        let template_str = format!(".pushsection .text\n{}\n.popsection", template_str);
+        self.context.add_top_level_asm(None, &template_str);
     }
 }
 
@@ -609,6 +610,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
         InlineAsmRegClass::Hexagon(_) => unimplemented!(),
         InlineAsmRegClass::Mips(_) => unimplemented!(),
         InlineAsmRegClass::Nvptx(_) => unimplemented!(),
+        InlineAsmRegClass::PowerPC(_) => unimplemented!(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg)
         | InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
@@ -638,6 +640,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
         InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
             bug!("LLVM backend does not support SPIR-V")
-        }
+        },
+        InlineAsmRegClass::Err => unreachable!(),
     }
 }

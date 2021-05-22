@@ -1,4 +1,4 @@
-use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, ToRValue, Type};
+use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::Ty;
 use rustc_span::Symbol;
@@ -6,6 +6,7 @@ use rustc_target::abi::call::FnAbi;
 
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
+use crate::mangled_std_symbols::{ARGV_INIT_ARRAY, ARGV_INIT_WRAPPER};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
@@ -56,14 +57,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // NOTE: hack to initialize ARGC_INIT_ARRAY before libc tries to call the function it
         // points to.
         // FIXME: correctly support global variable initialization.
-        if name == "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY17h6d5a1c8046e3c889E" {
+        if name == ARGV_INIT_ARRAY {
             let return_type = self.type_void();
             let params = [
                 self.context.new_parameter(None, self.int_type, "argc"),
                 self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "argv"),
                 self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "envp"),
             ];
-            let function = self.context.new_function(None, FunctionType::Extern, return_type, &params, "_ZN3std3sys4unix4args3imp15ARGV_INIT_ARRAY12init_wrapper17hbb5be70f6e8d1248E", false);
+            let function = self.context.new_function(None, FunctionType::Extern, return_type, &params, ARGV_INIT_WRAPPER, false);
             initializer = Some(function.get_address(None));
         }
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
