@@ -1,22 +1,82 @@
 #![allow(deprecated)]
-#![feature(asm, backtrace, core_intrinsics, global_asm)]
+#![feature(asm, backtrace, core_intrinsics, global_asm, naked_functions)]
 
 //use backtrace::Backtrace;
 use std::backtrace::Backtrace;
 
-/*global_asm!("
+global_asm!("
     .global add_asm
 add_asm:
-     mov $rax, $rdi
-     add $rax, $rsi
+     mov %rdi, %rax
+     add %rsi, %rax
      ret"
-);*/
+);
 
 global_asm!("
 .global toto
 toto:
      ret"
 );
+
+/*global_asm!("
+            .att_syntax
+            .pushsection .text.__rust_probestack
+            .globl __rust_probestack
+            .type  __rust_probestack, @function
+            .hidden __rust_probestack
+        __rust_probestack:
+
+    .cfi_startproc
+    pushq  %rbp
+    .cfi_adjust_cfa_offset 8
+    .cfi_offset %rbp, -16
+    movq   %rsp, %rbp
+    .cfi_def_cfa_register %rbp
+
+    mov    %rax,%r11
+
+    // Main loop, taken in one page increments. We're decrementing rsp by
+    // a page each time until there's less than a page remaining. We're
+    // guaranteed that this function isn't called unless there's more than a
+    // page needed.
+    //
+    // Note that we're also testing against `8(%rsp)` to account for the 8
+    // bytes pushed on the stack orginally with our return address. Using
+    // `8(%rsp)` simulates us testing the stack pointer in the caller's
+    // context.
+
+    // It's usually called when %rax >= 0x1000, but that's not always true.
+    // Dynamic stack allocation, which is needed to implement unsized
+    // rvalues, triggers stackprobe even if %rax < 0x1000.
+    // Thus we have to check %r11 first to avoid segfault.
+    cmp    $0x1000,%r11
+    jna    3f
+2:
+    sub    $0x1000,%rsp
+    test   %rsp,8(%rsp)
+    sub    $0x1000,%r11
+    cmp    $0x1000,%r11
+    ja     2b
+
+3:
+    // Finish up the last remaining stack space requested, getting the last
+    // bits out of r11
+    sub    %r11,%rsp
+    test   %rsp,8(%rsp)
+
+    // Restore the stack pointer to what it previously was when entering
+    // this function. The caller will readjust the stack pointer after we
+    // return.
+    add    %rax,%rsp
+
+    leave
+    .cfi_def_cfa_register %rsp
+    .cfi_adjust_cfa_offset -8
+    ret
+    .cfi_endproc
+
+            .size __rust_probestack, . - __rust_probestack
+            .popsection");*/
 
 extern "C" {
     fn add_asm(a: i64, b: i64) -> i64;
@@ -131,7 +191,7 @@ fn thread_func(_arg: *mut c_void) -> *mut c_void {
     std::ptr::null_mut()
 }
 
-fn main() {
+/*fn main() {
     FOO.with(|foo| {
         println!("Foo: {}", foo.get());
         foo.set(42);
@@ -182,12 +242,12 @@ fn main() {
     //let mutex = Mutex::new(42_u64);
     println!("Poisoned: {}", mutex.is_poisoned());
     let _guard = mutex.lock().unwrap();*/
-}
+}*/
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-/*fn main() {
-    println!("Global panic count: {}", GLOBAL_PANIC_COUNT.load(Ordering::Relaxed));
+fn main() {
+    //println!("Global panic count: {}", GLOBAL_PANIC_COUNT.load(Ordering::Relaxed));
 
     let mutex = std::sync::Mutex::new(());
     println!("Poisoned: {}", mutex.is_poisoned());
@@ -224,9 +284,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     /*unsafe {
         asm!("nop");
-    }*/
+    }
 
-    /*let x: u64;
+    let x: u64;
     unsafe {
         asm!("mov $5, {}",
             out(reg) x,
@@ -235,7 +295,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     }
     assert_eq!(x, 5);
 
-    println!("Output {}", x);*/
+    println!("Output {}", x);
 
     let x: u64;
     let input: u64 = 42;
@@ -271,9 +331,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     }
     assert_eq!(x, 43);
 
-    println!("Input + output (intel) {}", x);
+    println!("Input + output (intel) {}", x);*/
 
-    let buf = "Hello from asm!\n";
+    /*let buf = "Hello from asm!\n";
     let ret: i32;
     unsafe {
         asm!(
@@ -287,7 +347,53 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
             lateout("rax") ret,
         );
     }
-    println!("write returned: {}", ret);
+    println!("write returned: {}", ret);*/
+
+    /*unsafe {
+        asm!("nop");
+    }
+
+    let x: u64;
+    unsafe {
+        asm!("mov $5, {}",
+            out(reg) x,
+            options(att_syntax)
+        );
+    }
+    assert_eq!(x, 5);
+
+    let x: u64;
+    let input: u64 = 42;
+    unsafe {
+        asm!("mov {input}, {output}",
+             "add $1, {output}",
+            input = in(reg) input,
+            output = out(reg) x,
+            options(att_syntax)
+        );
+    }
+    assert_eq!(x, 43);
+
+    let x: u64;
+    unsafe {
+        asm!("mov {}, 6",
+            out(reg) x,
+        );
+    }
+    assert_eq!(x, 6);
+
+    let x: u64;
+    let input: u64 = 42;
+    unsafe {
+        asm!("mov {output}, {input}",
+             "add {output}, 1",
+            input = in(reg) input,
+            output = out(reg) x,
+        );
+    }
+    assert_eq!(x, 43);
+
+    assert_eq!(unsafe { add_asm(40, 2) }, 42);*/
 
     /*let mut bits = [0u8; 64];
     for value in 0..=1024u64 {
@@ -309,13 +415,38 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
                 inout("rdi") bits.as_mut_ptr() => _,
             );
         }
+        // TODO: check if this works in release mode.
         println!("bits of {}: {:?}", value, &bits[0..popcnt]);
     }*/
+
+    let mut bits = [0u8; 64];
+    for value in 0..=1024u64 {
+        let popcnt;
+        unsafe {
+            asm!(
+                "popcnt {v}, {popcnt}",
+                "2:",
+                "blsi {v}, %rax",
+                "jz 1f",
+                "xor %rax, {v}",
+                "tzcnt %rax, %rax",
+                "stosb",
+                "jmp 2b",
+                "1:",
+                v = inout(reg) value => _,
+                popcnt = out(reg) popcnt,
+                out("rax") _, // scratch
+                inout("rdi") bits.as_mut_ptr() => _,
+                options(att_syntax)
+            );
+        }
+        println!("bits of {}: {:?}", value, &bits[0..popcnt]);
+    }
 
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/
 
-
+    /*
     //unsafe { println!("{}", std::intrinsics::ctlz_nonzero(8_usize)) };
     println!("one less: {}", one_less_than_next_power_of_two(8));
 
@@ -355,7 +486,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     //example_a();
     //example_b();
     //example_c();
-}*/
+    */
+}
 
 //#![feature(maybe_uninit_slice)]
 
