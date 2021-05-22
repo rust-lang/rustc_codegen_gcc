@@ -5,10 +5,12 @@
 
 #![feature(asm, global_asm)]
 
-global_asm!("add_asm:",
-     "mov $rax, $rdi",
-     "add $rax, $rsi",
-     "ret"
+global_asm!("
+    .global add_asm
+add_asm:
+     mov %rdi, %rax
+     add %rsi, %rax
+     ret"
 );
 
 extern "C" {

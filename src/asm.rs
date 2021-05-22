@@ -119,7 +119,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
-        /*let asm_arch = self.tcx.sess.asm_arch.unwrap();
+        let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
         let intel_dialect =
             match asm_arch {
@@ -144,7 +144,11 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                 // If the output is discarded, we don't really care what
                                 // type is used. We're just using this to tell GCC to
                                 // reserve the register.
-                                dummy_output_type(self.cx, reg.reg_class())
+                                //dummy_output_type(self.cx, reg.reg_class())
+
+                                // NOTE: if no output value, we should not create one (it will be a
+                                // clobber).
+                                continue;
                             },
                         };
                     let var = self.current_func().new_local(None, ty, "output_register");
@@ -153,7 +157,23 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     output_vars.insert(idx, var);
                 }
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
-                    // TODO
+                    let ty =
+                        match out_place {
+                            Some(place) => place.layout.gcc_type(self.cx, false),
+                            None => {
+                                // If the output is discarded, we don't really care what
+                                // type is used. We're just using this to tell GCC to
+                                // reserve the register.
+                                //dummy_output_type(self.cx, reg.reg_class())
+
+                                // NOTE: if no output value, we should not create one.
+                                continue;
+                            },
+                        };
+                    operand_numbers.insert(idx, current_number);
+                    current_number += 1;
+                    let var = self.current_func().new_local(None, ty, "output_register");
+                    output_vars.insert(idx, var);
                 }
                 _ => {}
             }
@@ -162,7 +182,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         // All output operands must come before the input operands, hence the 2 loops.
         for (idx, op) in operands.iter().enumerate() {
             match *op {
-                InlineAsmOperandRef::In { .. } => {
+                InlineAsmOperandRef::In { .. } | InlineAsmOperandRef::InOut { .. } => {
                     operand_numbers.insert(idx, current_number);
                     current_number += 1;
                 },
@@ -175,36 +195,42 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         let mut operand_index = 0;
         for piece in template {
             match *piece {
-                InlineAsmTemplatePiece::String(ref s) => {
-                    template_str.push_str(s)
+                InlineAsmTemplatePiece::String(ref string) => {
+                    if string.contains('%') {
+                        for c in string.chars() {
+                            if c == '%' {
+                                template_str.push_str("%%");
+                            }
+                            else {
+                                template_str.push(c);
+                            }
+                        }
+                    }
+                    else {
+                        template_str.push_str(string)
+                    }
                 }
                 InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span: _ } => {
                     match operands[operand_idx] {
-                        InlineAsmOperandRef::Out { reg, place: Some(place), .. } => {
-                            /*let modifier = modifier_to_llvm(asm_arch, reg.reg_class(), modifier); // TODO
+                        InlineAsmOperandRef::Out { reg, place: Some(place), late  } => {
+                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
                             if let Some(modifier) = modifier {
-                                template_str.push_str(&format!(
-                                    "${{{}:{}}}",
-                                    op_idx[&operand_idx], modifier
-                                ));
-                            } else {*/
+                                template_str.push_str(&format!("%{}{}", modifier, operand_numbers[&operand_idx]));
+                            } else {
                                 template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
-                            //}
+                            }
                         },
                         InlineAsmOperandRef::Out { reg, place: None, .. } => {
                             unimplemented!("Out None");
                         },
                         InlineAsmOperandRef::In { reg, .. }
                         | InlineAsmOperandRef::InOut { reg, .. } => {
-                            /*let modifier = modifier_to_llvm(asm_arch, reg.reg_class(), modifier);
+                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
                             if let Some(modifier) = modifier {
-                                template_str.push_str(&format!(
-                                    "${{{}:{}}}",
-                                    op_idx[&operand_idx], modifier
-                                ));
-                            } else {*/
+                                template_str.push_str(&format!("%{}{}", modifier, operand_numbers[&operand_idx]));
+                            } else {
                                 template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
-                            //}
+                            }
                         }
                         InlineAsmOperandRef::Const { ref string } => {
                             // Const operands get injected directly into the template
@@ -254,8 +280,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     let prefix = if late { "=" } else { "=&" };
                     let constraint = format!("{}{}", prefix, reg_to_gcc(reg));
 
-                    let var = output_vars[&idx];
-                    extended_asm.add_output_operand(None, &constraint, var);
+                    if place.is_some() {
+                        let var = output_vars[&idx];
+                        extended_asm.add_output_operand(None, &constraint, var);
+                    }
+                    else {
+                        // NOTE: reg.to_string() returns the register name with quotes around it so
+                        // remove them.
+                        extended_asm.add_clobber(reg.to_string().trim_matches('"'));
+                    }
                 }
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
                     let ty =
@@ -267,7 +300,20 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     //op_idx.insert(idx, constraints.len());
                     // TODO: prefix of "+" for reading and writing?
                     let prefix = if late { "=" } else { "=&" };
-                    //constraints.push(format!("{}{}", prefix, reg_to_gcc(reg)));
+                    let constraint = format!("{}{}", prefix, reg_to_gcc(reg));
+
+                    if out_place.is_some() {
+                        let var = output_vars[&idx];
+                        // TODO: also specify an output operand when out_place is none: that would
+                        // be the clobber but clobbers do not support general constraint like reg;
+                        // they only support named registers.
+                        // Not sure how we can do this. And the LLVM backend does not seem to add a
+                        // clobber.
+                        extended_asm.add_output_operand(None, &constraint, var);
+                    }
+
+                    let constraint = reg_to_gcc(reg);
+                    extended_asm.add_input_operand(None, &constraint, in_value.immediate());
                 }
                 InlineAsmOperandRef::In { reg, value } => {
                     let constraint = reg_to_gcc(reg);
@@ -370,11 +416,57 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             {
                 OperandValue::Immediate(output_vars[&idx].to_rvalue()).store(self, place);
             }
-        }*/
+        }
+    }
+}
+
+fn reg_to_clobber<'tcx>(reg: InlineAsmRegOrRegClass) -> &'static str {
+    match reg {
+        // For vector registers LLVM wants the register name to match the type size.
+        InlineAsmRegOrRegClass::Reg(reg) => {
+            reg.name()
+        },
+        InlineAsmRegOrRegClass::RegClass(reg) => match reg {
+            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg) => unimplemented!(),
+            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => unimplemented!(),
+            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg_thumb) => unimplemented!(),
+            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg)
+            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low16)
+            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low8) => unimplemented!(),
+            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg_low16)
+            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low8)
+            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low4) => unimplemented!(),
+            InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg)
+            | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg) => unimplemented!(),
+            InlineAsmRegClass::Hexagon(HexagonInlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::Mips(MipsInlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::Mips(MipsInlineAsmRegClass::freg) => unimplemented!(),
+            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg16) => unimplemented!(),
+            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg32) => unimplemented!(),
+            InlineAsmRegClass::Nvptx(NvptxInlineAsmRegClass::reg64) => unimplemented!(),
+            InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => unimplemented!(),
+            InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg) => {
+                "r"
+            },
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
+            | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
+            InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
+            InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
+                bug!("GCC backend does not support SPIR-V")
+            }
+        }
     }
 }
 
 /// Converts a register class to a GCC constraint code.
+// TODO: return &'static str instead?
 fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
     match reg {
         // For vector registers LLVM wants the register name to match the type size.
@@ -394,7 +486,6 @@ fn reg_to_gcc<'tcx>(reg: InlineAsmRegOrRegClass) -> String {
                     // like it's implemented yet.
                     name => name, // FIXME: probably wrong.
                 };
-            println!("Constraint {}", constraint);
             constraint.to_string()
         },
         InlineAsmRegOrRegClass::RegClass(reg) => match reg {
@@ -480,9 +571,73 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
 
 impl<'gcc, 'tcx> AsmMethods for CodegenCx<'gcc, 'tcx> {
     fn codegen_global_asm(&self, ga: &GlobalAsm) {
-        /*println!("Global asm: {:?}", ga);
         let asm = ga.asm.as_str();
+        // TODO: global_asm! uses AT&T syntax. Maybe that will switch to Intel some day.
+        let asm = format!(".att_syntax noprefix\n\t{}\n\t.intel_syntax noprefix\n", asm);
+        // NOTE: seems like gcc will put the asm in the wrong section, so set it to .text manually.
+        let asm = format!(".pushsection .text\n{}.popsection", asm);
         println!("Template: {}", asm);
-        self.context.add_top_level_asm(None, &*asm);*/
+        self.context.add_top_level_asm(None, &*asm);
+    }
+}
+
+fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option<char>) -> Option<char> {
+    match reg {
+        InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => modifier,
+        InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg)
+        | InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => {
+            unimplemented!()
+            //if modifier == Some('v') { None } else { modifier }
+        }
+        InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::reg_thumb) => unimplemented!(),
+        InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::sreg_low16) => unimplemented!(),
+        InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low16)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::dreg_low8) => unimplemented!(),
+        InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low8)
+        | InlineAsmRegClass::Arm(ArmInlineAsmRegClass::qreg_low4) => {
+            unimplemented!()
+            /*if modifier.is_none() {
+                Some('q')
+            } else {
+                modifier
+            }*/
+        }
+        InlineAsmRegClass::Hexagon(_) => unimplemented!(),
+        InlineAsmRegClass::Mips(_) => unimplemented!(),
+        InlineAsmRegClass::Nvptx(_) => unimplemented!(),
+        InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg)
+        | InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
+        | InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => match modifier {
+            None if arch == InlineAsmArch::X86_64 => Some('q'),
+            None => Some('k'),
+            Some('l') => Some('b'),
+            Some('h') => Some('h'),
+            Some('x') => Some('w'),
+            Some('e') => Some('k'),
+            Some('r') => Some('q'),
+            _ => unreachable!(),
+        },
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
+        InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::xmm_reg)
+        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::ymm_reg)
+        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::zmm_reg) => unimplemented!() /*match (reg, modifier) {
+            (X86InlineAsmRegClass::xmm_reg, None) => Some('x'),
+            (X86InlineAsmRegClass::ymm_reg, None) => Some('t'),
+            (X86InlineAsmRegClass::zmm_reg, None) => Some('g'),
+            (_, Some('x')) => Some('x'),
+            (_, Some('y')) => Some('t'),
+            (_, Some('z')) => Some('g'),
+            _ => unreachable!(),
+        }*/,
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
+        InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
+        InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
+            bug!("LLVM backend does not support SPIR-V")
+        }
     }
 }

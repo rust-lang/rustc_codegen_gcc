@@ -12,3 +12,5 @@ perf.data.old
 /rust
 /regex
 gimple*
+*asm
+res
