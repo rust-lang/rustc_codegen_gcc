@@ -8,8 +8,8 @@
 global_asm!("
     .global add_asm
 add_asm:
-     mov %rdi, %rax
-     add %rsi, %rax
+     mov rax, rdi
+     add rax, rsi
      ret"
 );
 

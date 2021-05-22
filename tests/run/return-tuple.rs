@@ -6,7 +6,7 @@
 //     10
 //     42
 
-#![feature(auto_traits, lang_items, link_args, no_core, start, intrinsics)]
+#![feature(auto_traits, lang_items, no_core, start, intrinsics)]
 
 #![no_std]
 #![no_core]
@@ -26,10 +26,6 @@ unsafe impl Copy for i32 {}
 unsafe impl Copy for isize {}
 unsafe impl Copy for f32 {}
 unsafe impl Copy for char {}
-
-#[link_args="-lc"]
-extern {
-}
 
 mod libc {
     #[link(name = "c")]
