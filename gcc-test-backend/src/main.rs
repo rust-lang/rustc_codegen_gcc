@@ -2,9 +2,9 @@
 #![feature(asm, backtrace, core_intrinsics, global_asm, naked_functions)]
 
 //use backtrace::Backtrace;
-use std::backtrace::Backtrace;
+//use std::backtrace::Backtrace;
 
-global_asm!("
+/*global_asm!("
     .global add_asm
 add_asm:
      mov %rdi, %rax
@@ -16,7 +16,7 @@ global_asm!("
 .global toto
 toto:
      ret"
-);
+);*/
 
 /*global_asm!("
             .att_syntax
@@ -79,8 +79,8 @@ toto:
             .popsection");*/
 
 extern "C" {
-    fn add_asm(a: i64, b: i64) -> i64;
-    fn toto();
+    //fn add_asm(a: i64, b: i64) -> i64;
+    //fn toto();
 }
 
 //#![feature(intrinsics)]
@@ -129,7 +129,7 @@ pub fn example_c() -> [T; N] {
     pub fn atomic_xchg<T: Copy>(dst: *mut T, src: T) -> T;
 }*/
 
-fn rem(num: f32, other: f32) -> f32 {
+/*fn rem(num: f32, other: f32) -> f32 {
     num % other
 }
 
@@ -189,7 +189,7 @@ fn thread_func(_arg: *mut c_void) -> *mut c_void {
     });
 
     std::ptr::null_mut()
-}
+}*/
 
 /*fn main() {
     FOO.with(|foo| {
@@ -249,9 +249,68 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 fn main() {
     //println!("Global panic count: {}", GLOBAL_PANIC_COUNT.load(Ordering::Relaxed));
 
-    let mutex = std::sync::Mutex::new(());
+    /*let x = AtomicUsize::new(0xf731);
+    assert_eq!(x.fetch_min(0x137f, Ordering::SeqCst), 0xf731);
+    assert_eq!(x.load(Ordering::SeqCst), 0x137f);
+    assert_eq!(x.fetch_min(0xf731, Ordering::SeqCst), 0x137f);
+    assert_eq!(x.load(Ordering::SeqCst), 0x137f);
+
+    let x = AtomicUsize::new(0x137f);
+    assert_eq!(x.fetch_max(0xf731, Ordering::SeqCst), 0x137f);
+    assert_eq!(x.load(Ordering::SeqCst), 0xf731);
+    assert_eq!(x.fetch_max(0x137f, Ordering::SeqCst), 0xf731);
+    assert_eq!(x.load(Ordering::SeqCst), 0xf731);
+
+    let b: [i32; 0] = [];
+    assert_eq!(b.binary_search(&5), Err(0));
+
+    let b = [4];
+    assert_eq!(b.binary_search(&3), Err(0));
+    assert_eq!(b.binary_search(&4), Ok(0));
+    assert_eq!(b.binary_search(&5), Err(1));
+
+    let b = [1, 2, 4, 6, 8, 9];
+    assert_eq!(b.binary_search(&5), Err(3));
+    assert_eq!(b.binary_search(&6), Ok(3));
+    assert_eq!(b.binary_search(&7), Err(4));
+    assert_eq!(b.binary_search(&8), Ok(4));
+
+    let b = [1, 2, 4, 5, 6, 8];
+    assert_eq!(b.binary_search(&9), Err(6));
+
+    let b = [1, 2, 4, 6, 7, 8, 9];
+    assert_eq!(b.binary_search(&6), Ok(3));
+    assert_eq!(b.binary_search(&5), Err(3));
+    assert_eq!(b.binary_search(&8), Ok(5));
+
+    let b = [1, 2, 4, 5, 6, 8, 9];
+    assert_eq!(b.binary_search(&7), Err(5));
+    assert_eq!(b.binary_search(&0), Err(0));
+
+    let b = [1, 3, 3, 3, 7];
+    assert_eq!(b.binary_search(&0), Err(0));
+    assert_eq!(b.binary_search(&1), Ok(0));
+    assert_eq!(b.binary_search(&2), Err(1));
+    assert!(match b.binary_search(&3) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert!(match b.binary_search(&3) {
+        Ok(1..=3) => true,
+        _ => false,
+    });
+    assert_eq!(b.binary_search(&4), Err(4));
+    assert_eq!(b.binary_search(&5), Err(4));
+    assert_eq!(b.binary_search(&6), Err(4));
+    assert_eq!(b.binary_search(&7), Ok(4));
+    assert_eq!(b.binary_search(&8), Err(5));*/
+
+    let b = [(); usize::MAX];
+    assert_eq!(b.binary_search(&()), Ok(usize::MAX / 2));
+
+    /*let mutex = std::sync::Mutex::new(());
     println!("Poisoned: {}", mutex.is_poisoned());
-    let _guard = mutex.lock().unwrap();
+    let _guard = mutex.lock().unwrap();*/
 
     //unsafe { toto() };
     //assert_eq!(unsafe { add_asm(40, 2) }, 42);
@@ -419,7 +478,7 @@ fn main() {
         println!("bits of {}: {:?}", value, &bits[0..popcnt]);
     }*/
 
-    let mut bits = [0u8; 64];
+    /*let mut bits = [0u8; 64];
     for value in 0..=1024u64 {
         let popcnt;
         unsafe {
@@ -441,7 +500,7 @@ fn main() {
             );
         }
         println!("bits of {}: {:?}", value, &bits[0..popcnt]);
-    }
+    }*/
 
     /*let bt = Backtrace::new();
     println!("{:?}", bt);*/

@@ -52,6 +52,29 @@ type Funclet = ();
 // TODO: remove this variable.
 static mut RETURN_VALUE_COUNT: usize = 0;
 
+enum ExtremumOperation {
+    Max,
+    Min,
+}
+
+trait EnumClone {
+    fn clone(&self) -> Self;
+}
+
+impl EnumClone for AtomicOrdering {
+    fn clone(&self) -> Self {
+        match *self {
+            AtomicOrdering::NotAtomic => AtomicOrdering::NotAtomic,
+            AtomicOrdering::Unordered => AtomicOrdering::Unordered,
+            AtomicOrdering::Monotonic => AtomicOrdering::Monotonic,
+            AtomicOrdering::Acquire => AtomicOrdering::Acquire,
+            AtomicOrdering::Release => AtomicOrdering::Release,
+            AtomicOrdering::AcquireRelease => AtomicOrdering::AcquireRelease,
+            AtomicOrdering::SequentiallyConsistent => AtomicOrdering::SequentiallyConsistent,
+        }
+    }
+}
+
 pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
     pub cx: &'a CodegenCx<'gcc, 'tcx>,
     pub block: Option<Block<'gcc>>,
@@ -65,6 +88,80 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             block: None,
             stack_var_count: Cell::new(0),
         }
+    }
+
+    fn atomic_extremum(&mut self, operation: ExtremumOperation, dst: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering) -> RValue<'gcc> {
+        let size = self.cx.int_width(src.get_type()) / 8;
+
+        let func = self.current_func();
+
+        let load_ordering =
+            match order {
+                // TODO: does this make sense?
+                AtomicOrdering::AcquireRelease | AtomicOrdering::Release => AtomicOrdering::Acquire,
+                _ => order.clone(),
+            };
+        let previous_value = self.atomic_load(dst, load_ordering.clone(), Size::from_bytes(size));
+        let previous_var = func.new_local(None, previous_value.get_type(), "previous_value");
+        let return_value = func.new_local(None, previous_value.get_type(), "return_value");
+        self.llbb().add_assignment(None, previous_var, previous_value);
+        self.llbb().add_assignment(None, return_value, previous_var.to_rvalue());
+
+        let while_block = func.new_block("while");
+        let after_block = func.new_block("after_while");
+        self.llbb().end_with_jump(None, while_block);
+
+        // NOTE: since jumps were added and compare_exchange doesn't expect this, the current blocks in the
+        // state need to be updated.
+        self.block = Some(while_block);
+        *self.cx.current_block.borrow_mut() = Some(while_block);
+
+        let comparison_operator =
+            match operation {
+                ExtremumOperation::Max => ComparisonOp::LessThan,
+                ExtremumOperation::Min => ComparisonOp::GreaterThan,
+            };
+
+        let cond1 = self.context.new_comparison(None, comparison_operator, previous_var.to_rvalue(), self.context.new_cast(None, src, previous_value.get_type()));
+        let compare_exchange = self.compare_exchange(dst, previous_var.to_rvalue(), src, order, load_ordering, false);
+        let cond2 = self.cx.context.new_unary_op(None, UnaryOp::LogicalNegate, compare_exchange.get_type(), compare_exchange);
+        let cond = self.cx.context.new_binary_op(None, BinaryOp::LogicalAnd, self.cx.bool_type, cond1, cond2);
+
+        while_block.end_with_conditional(None, cond, while_block, after_block);
+
+        // NOTE: since jumps were added in a place rustc does not expect, the current blocks in the
+        // state need to be updated.
+        self.block = Some(after_block);
+        *self.cx.current_block.borrow_mut() = Some(after_block);
+
+        return_value.to_rvalue()
+    }
+
+    fn compare_exchange(&self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
+        let size = self.cx.int_width(src.get_type());
+        let compare_exchange = self.context.get_builtin_function(&format!("__atomic_compare_exchange_{}", size / 8));
+        let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
+        let failure_order = self.context.new_rvalue_from_int(self.i32_type, failure_order.to_gcc());
+        let weak = self.context.new_rvalue_from_int(self.bool_type, weak as i32);
+
+        let void_ptr_type = self.context.new_type::<*mut ()>();
+        let volatile_void_ptr_type = void_ptr_type.make_volatile();
+        let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
+        let expected = self.current_func().new_local(None, cmp.get_type(), "expected");
+        self.llbb().add_assignment(None, expected, cmp);
+        let expected = self.context.new_cast(None, expected.get_address(None), void_ptr_type);
+
+        // NOTE: not sure why, but we need to cast to the signed type.
+        let new_src_type =
+            if size == 64 {
+                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
+                self.cx.long_type
+            }
+            else {
+                src.get_type().to_signed(&self.cx)
+            };
+        let src = self.context.new_cast(None, src, new_src_type);
+        self.context.new_call(None, compare_exchange, &[dst, expected, src, weak, order, failure_order])
     }
 
     pub fn assign(&self, lvalue: LValue<'gcc>, value: RValue<'gcc>) {
@@ -1397,30 +1494,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     // Atomic Operations
     fn atomic_cmpxchg(&mut self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
-        let size = self.cx.int_width(src.get_type());
-        let compare_exchange = self.context.get_builtin_function(&format!("__atomic_compare_exchange_{}", size / 8));
-        let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
-        let failure_order = self.context.new_rvalue_from_int(self.i32_type, failure_order.to_gcc());
-        let weak = self.context.new_rvalue_from_int(self.bool_type, weak as i32);
-
-        let void_ptr_type = self.context.new_type::<*mut ()>();
-        let volatile_void_ptr_type = void_ptr_type.make_volatile();
-        let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
-        let expected = self.current_func().new_local(None, cmp.get_type(), "expected");
-        self.llbb().add_assignment(None, expected, cmp);
-        let expected = self.context.new_cast(None, expected.get_address(None), void_ptr_type);
-
-        // NOTE: not sure why, but we need to cast to the signed type.
-        let new_src_type =
-            if size == 64 {
-                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
-                self.cx.long_type
-            }
-            else {
-                src.get_type().to_signed(&self.cx)
-            };
-        let src = self.context.new_cast(None, src, new_src_type);
-        let success = self.context.new_call(None, compare_exchange, &[dst, expected, src, weak, order, failure_order]);
+        let success = self.compare_exchange(dst, cmp, src, order, failure_order, weak);
 
         let pair_type = self.cx.type_struct(&[src.get_type(), self.bool_type], false);
         let result = self.current_func().new_local(None, pair_type, "atomic_cmpxchg_result");
@@ -1446,10 +1520,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 AtomicRmwBinOp::AtomicNand => format!("__atomic_fetch_nand_{}", size),
                 AtomicRmwBinOp::AtomicOr => format!("__atomic_fetch_or_{}", size),
                 AtomicRmwBinOp::AtomicXor => format!("__atomic_fetch_xor_{}", size),
-                AtomicRmwBinOp::AtomicMax => unimplemented!(),
-                AtomicRmwBinOp::AtomicMin => unimplemented!(),
-                AtomicRmwBinOp::AtomicUMax => unimplemented!(),
-                AtomicRmwBinOp::AtomicUMin => unimplemented!(),
+                AtomicRmwBinOp::AtomicMax => return self.atomic_extremum(ExtremumOperation::Max, dst, src, order),
+                AtomicRmwBinOp::AtomicMin => return self.atomic_extremum(ExtremumOperation::Min, dst, src, order),
+                AtomicRmwBinOp::AtomicUMax => return self.atomic_extremum(ExtremumOperation::Max, dst, src, order),
+                AtomicRmwBinOp::AtomicUMin => return self.atomic_extremum(ExtremumOperation::Min, dst, src, order),
             };
 
 
