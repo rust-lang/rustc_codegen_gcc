@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use gccjit::{RValue, Struct, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods};
 use rustc_codegen_ssa::common::TypeKind;
@@ -237,8 +239,20 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.context.new_opaque_struct_type(None, name)
     }
 
-    pub fn type_array(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
-        self.context.new_array_type(None, ty, len as i32)
+    pub fn type_array(&self, ty: Type<'gcc>, mut len: u64) -> Type<'gcc> {
+        if let Some(struct_type) = ty.is_struct() {
+            if struct_type.get_field_count() == 0 {
+                // NOTE: since gccjit only supports i32 for the array size and libcore's tests uses a
+                // size of usize::MAX in test_binary_search, we workaround this by setting the size to
+                // zero for ZSTs.
+                // FIXME: fix gccjit API.
+                len = 0;
+            }
+        }
+
+        let len: i32 = len.try_into().expect("array len");
+
+        self.context.new_array_type(None, ty, len)
     }
 }
 
