@@ -99,6 +99,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// Cache of emitted const globals (value -> global)
     pub const_globals: RefCell<FxHashMap<RValue<'gcc>, RValue<'gcc>>>,
 
+    pub init_argv_var: RefCell<String>,
+    pub argv_initialized: Cell<bool>,
+
     /// Cache of constant strings,
     pub const_cstr_cache: RefCell<FxHashMap<Symbol, LValue<'gcc>>>,
 
@@ -227,6 +230,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             instances: Default::default(),
             vtables: Default::default(),
             const_globals: Default::default(),
+            init_argv_var: RefCell::new(String::new()),
+            argv_initialized: Cell::new(false),
             const_cstr_cache: Default::default(),
             global_names: Default::default(),
             globals: Default::default(),
@@ -254,6 +259,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
+    // TODO: remove this method and global_names.
     pub fn get_global_name(&self, value: RValue<'gcc>) -> Option<String> {
         self.global_names.borrow().get(&value).cloned()
     }

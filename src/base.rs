@@ -92,7 +92,7 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
                 block.end_with_void_return(None);
             });
 
-            println!("module_codegen: {:?} {:?}", cgu_name, &cx.context as *const _);
+            //println!("module_codegen: {:?} {:?}", cgu_name, &cx.context as *const _);
             let mono_items = cgu.items_in_deterministic_order(tcx);
             for &(mono_item, (linkage, visibility)) in &mono_items {
                 mono_item.predefine::<Builder<'_, '_, '_>>(&cx, linkage, visibility);

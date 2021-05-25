@@ -106,7 +106,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                 else {
                     // If we created the global with the wrong type,
                     // correct the type.
-                    let name = self.get_global_name(global).expect("global name");
                     /*let name = llvm::get_value_name(global).to_vec();
                     llvm::set_value_name(global, b"");
 
@@ -141,7 +140,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                 ARGC,
                 ARGV,
             ];
-            if !skip_init.contains(&name) {
+            if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
                 // TODO: switch to set_initializer when libgccjit supports that.
                 let memcpy = self.context.get_builtin_function("memcpy");
                 let dst = self.context.new_cast(None, global, self.type_i8p());
