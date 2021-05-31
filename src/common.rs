@@ -1,4 +1,6 @@
 use std::convert::TryFrom;
+use std::convert::TryInto;
+use std::mem;
 
 use gccjit::{Block, RValue, Type, ToRValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
@@ -127,10 +129,20 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn const_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
-        // TODO: support u128.
-        //self.context.new_rvalue_from_long(typ, i64::try_from(num).expect("i64::try_from"))
-        // TODO: does that require a function new_rvalue_from_unsigned_long()?
-        self.context.new_rvalue_from_long(typ, u64::try_from(num).unwrap_or_default() as i64)
+        let num64: Result<u64, _> = num.try_into();
+        if let Ok(num) = num64 {
+            // FIXME: workaround for a bug where libgccjit is expecting a constant.
+            // The operations >> 64 and | low are making the normal case a non-constant.
+            return self.context.new_rvalue_from_long(typ, num as i64);
+        }
+
+        // FIXME: use a new function new_rvalue_from_unsigned_long()?
+        let low = self.context.new_rvalue_from_long(typ, num as u64 as i64);
+        let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
+
+        let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+
+        (high << sixty_four) | low
 
         /*unsafe {
             let words = [u as u64, (u >> 64) as u64];
