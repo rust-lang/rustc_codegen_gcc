@@ -236,6 +236,16 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             }
             Scalar::Int(int) => {
                 let data = int.assert_bits(layout.value.size(self));
+
+                // FIXME: there's some issues with using the u128 code that follows, so hard-code
+                // the paths for floating-point values.
+                if ty == self.float_type {
+                    return self.context.new_rvalue_from_double(ty, f32::from_bits(data as u32) as f64);
+                }
+                else if ty == self.double_type {
+                    return self.context.new_rvalue_from_double(ty, f64::from_bits(data as u64));
+                }
+
                 let value = self.const_uint_big(self.type_ix(bitsize), data);
                 if layout.value == Pointer {
                     self.inttoptr(self.current_block.borrow().expect("block"), value, ty)
