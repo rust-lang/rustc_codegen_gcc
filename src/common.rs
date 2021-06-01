@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
-use std::mem;
 
 use gccjit::{Block, RValue, Type, ToRValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
