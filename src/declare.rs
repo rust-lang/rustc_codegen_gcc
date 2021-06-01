@@ -3,7 +3,6 @@ use rustc_codegen_ssa::traits::BaseTypeMethods;
 use rustc_middle::ty::Ty;
 use rustc_span::Symbol;
 use rustc_target::abi::call::FnAbi;
-use rustc_symbol_mangling::symbol_name_for_instance_in_crate;
 
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
