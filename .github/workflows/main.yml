@@ -73,7 +73,6 @@ jobs:
         args: --release
 
     - name: Test
-      continue-on-error: true # TODO: remove when this pass.
       run: |
         # Enable backtraces for easier debugging
         export RUST_BACKTRACE=1
@@ -83,8 +82,3 @@ jobs:
         export RUN_RUNS=2
 
         ./test.sh --release
-
-    - name: libcore's tests
-      run: |
-          cd build_sysroot/sysroot_src/library/core/tests/
-          CHANNEL=release ../../../../../cargo.sh test -- --skip num::dec2flt::special_code_paths
