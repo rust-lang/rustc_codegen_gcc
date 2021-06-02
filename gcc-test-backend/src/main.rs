@@ -1,21 +1,6 @@
-#![feature(core_intrinsics)]
+#![feature(const_option)]
 
-fn i128_to_u64(u: i128) -> Option<u64> {
-    let min = u64::MIN as i128;
-    //let max = u64::MAX as i128;
-    let max = 18446744073709551612_i128;
-    //println!("{} < {} => {}", u, min, u < min);
-    //println!("max: {:b}", u64::MAX);
-    println!("max: {:b}", max);
-    println!("max: {}", max);
-    //println!("{}", u < min);
-    //println!("{}", u > max);
-    if u < min || u > max {
-        None
-    } else {
-        Some(u as u64)
-    }
-}
+use std::num::{NonZeroU8, NonZeroI8, NonZeroU16, NonZeroI16, NonZeroU32, NonZeroI32, NonZeroU64, NonZeroI64, NonZeroU128, NonZeroI128, NonZeroUsize, NonZeroIsize};
 
 fn main() {
     /*test_float!(f64, f64, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
@@ -57,21 +42,6 @@ fn main() {
         printf(b"Num: %f\n\0" as *const _ as *const _, 9.4f64);
     }
     println!("{}", 9.4f64);*/
-
-    let mut value = 0;
-    let res = unsafe { std::intrinsics::atomic_cxchg(&mut value, 0, 1) };
-    println!("{:?}", res);
-    let res = unsafe { std::intrinsics::atomic_cxchg(&mut value, 0, 1) };
-    println!("{:?}", res);
-
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    let a = AtomicBool::new(false);
-    assert_eq!(a.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst), Ok(false));
-    assert_eq!(a.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst), Err(true));
-
-    a.store(false, Ordering::SeqCst);
-    assert_eq!(a.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst), Ok(false));
 
     // FIXME: the code seems to be the same when using an integer, but somehow, it doesn't work for
     // a float. Could it be related to the fact that floating-points use different registers?
@@ -160,4 +130,71 @@ fn main() {
         t_min as u64
     );*/
     */
+
+    assert_eq!(NonZeroU8::new(1).unwrap().leading_zeros(), 7);
+    assert_eq!(NonZeroI8::new(1).unwrap().leading_zeros(), 7);
+    assert_eq!(NonZeroU16::new(1).unwrap().leading_zeros(), 15);
+    assert_eq!(NonZeroI16::new(1).unwrap().leading_zeros(), 15);
+    assert_eq!(NonZeroU32::new(1).unwrap().leading_zeros(), 31);
+    assert_eq!(NonZeroI32::new(1).unwrap().leading_zeros(), 31);
+    assert_eq!(NonZeroU64::new(1).unwrap().leading_zeros(), 63);
+    assert_eq!(NonZeroI64::new(1).unwrap().leading_zeros(), 63);
+    assert_eq!(NonZeroU128::new(1).unwrap().leading_zeros(), 127);
+    assert_eq!(NonZeroI128::new(1).unwrap().leading_zeros(), 127);
+    assert_eq!(NonZeroUsize::new(1).unwrap().leading_zeros(), usize::BITS - 1);
+    assert_eq!(NonZeroIsize::new(1).unwrap().leading_zeros(), usize::BITS - 1);
+
+    assert_eq!(NonZeroU8::new(u8::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroI8::new((u8::MAX >> 2) as i8).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroU16::new(u16::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroI16::new((u16::MAX >> 2) as i16).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroU32::new(u32::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroI32::new((u32::MAX >> 2) as i32).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroU64::new(u64::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroI64::new((u64::MAX >> 2) as i64).unwrap().leading_zeros(), 2);
+
+        /*
+    //let mut num = u128::MAX >> 20;
+    //let mut num = u128::MAX;
+    #[inline(never)]
+    fn two() -> u128 {
+        2
+    }
+
+    //let mut num = 340282366920938463463374607431768211455_u128 >> two();
+    let mut num = 340282366920938463463374607431768211455_u128 >> 2;
+    //let mut num = 340282366920938463463374607431768211455_u128;
+    //let mut num = 10_u128 >> 2;
+    const MASK: u128 = 0x80000000000000000000000000000000;
+    for _ in 0..128 {
+        if num & MASK == MASK {
+            print!("1");
+        }
+        else {
+            print!("0");
+        }
+        num <<= 1;
+    }
+    println!();
+*/
+    assert_eq!(NonZeroU128::new(u128::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroI128::new((u128::MAX >> 2) as i128).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroUsize::new(usize::MAX >> 2).unwrap().leading_zeros(), 2);
+    assert_eq!(NonZeroIsize::new((usize::MAX >> 2) as isize).unwrap().leading_zeros(), 2);
+
+    assert_eq!(NonZeroU8::new(u8::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroI8::new(-1i8).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroU16::new(u16::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroI16::new(-1i16).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroU32::new(u32::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroI32::new(-1i32).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroU64::new(u64::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroI64::new(-1i64).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroU128::new(u128::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroI128::new(-1i128).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroUsize::new(usize::MAX).unwrap().leading_zeros(), 0);
+    assert_eq!(NonZeroIsize::new(-1isize).unwrap().leading_zeros(), 0);
+
+    const LEADING_ZEROS: u32 = NonZeroU16::new(1).unwrap().leading_zeros();
+    assert_eq!(LEADING_ZEROS, 15);
 }
