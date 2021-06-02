@@ -1,5 +1,7 @@
 # WIP libgccjit codegen backend for rust
 
+This is a GCC codegen for rustc, which means it can be loaded by the existing rustc frontend, but benefits from GCC: more architectures are supported and GCC's optimizations are used.
+
 **Despite its name, libgccjit can be used for ahead-of-time compilation, as is used here.**
 
 ## Motivation
