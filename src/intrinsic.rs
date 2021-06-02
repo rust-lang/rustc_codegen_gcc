@@ -233,6 +233,12 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     then_block.add_assignment(None, result, zero_result);
                                     then_block.end_with_jump(None, after_block);
 
+                                    // NOTE: since jumps were added in a place
+                                    // count_leading_zeroes() does not expect, the current blocks
+                                    // in the state need to be updated.
+                                    *self.current_block.borrow_mut() = Some(else_block);
+                                    self.block = Some(else_block);
+
                                     let zeros =
                                         match name {
                                             sym::ctlz => self.count_leading_zeroes(width, arg),
@@ -732,6 +738,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn count_leading_zeroes(&self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: use width?
         let arg_type = arg.get_type();
         let count_leading_zeroes =
             if arg_type.is_uint(&self.cx) {
@@ -743,8 +750,47 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             else if arg_type.is_ulonglong(&self.cx) {
                 "__builtin_clzll"
             }
+            else if width == 128 {
+                // Algorithm from: https://stackoverflow.com/a/28433850/389119
+                let array_type = self.context.new_array_type(None, arg_type, 3);
+                let result = self.current_func()
+                    .new_local(None, array_type, "count_loading_zeroes_results");
+
+                let sixty_four = self.context.new_rvalue_from_long(arg_type, 64);
+                let high = self.context.new_cast(None, arg >> sixty_four, self.u64_type);
+                let low = self.context.new_cast(None, arg, self.u64_type);
+
+                let zero = self.context.new_rvalue_zero(self.usize_type);
+                let one = self.context.new_rvalue_one(self.usize_type);
+                let two = self.context.new_rvalue_from_long(self.usize_type, 2);
+
+                let clzll = self.context.get_builtin_function("__builtin_clzll");
+
+                let first_elem = self.context.new_array_access(None, result, zero);
+                let first_value = self.context.new_cast(None, self.context.new_call(None, clzll, &[high]), arg_type);
+                self.llbb()
+                    .add_assignment(None, first_elem, first_value);
+
+                let second_elem = self.context.new_array_access(None, result, one);
+                let second_value = self.context.new_cast(None, self.context.new_call(None, clzll, &[low]), arg_type) + sixty_four;
+                self.llbb()
+                    .add_assignment(None, second_elem, second_value);
+
+                let third_elem = self.context.new_array_access(None, result, two);
+                let third_value = self.context.new_rvalue_from_long(arg_type, 128);
+                self.llbb()
+                    .add_assignment(None, third_elem, third_value);
+
+                let not_high = self.context.new_unary_op(None, UnaryOp::LogicalNegate, self.u64_type, high);
+                let not_low = self.context.new_unary_op(None, UnaryOp::LogicalNegate, self.u64_type, low);
+                let not_low_and_not_high = not_low & not_high;
+                let index = not_high + not_low_and_not_high;
+
+                let res = self.context.new_array_access(None, result, index);
+
+                return self.context.new_cast(None, res, arg_type);
+            }
             else {
-                // TODO: implement for 128-bit integers.
                 let count_leading_zeroes = self.context.get_builtin_function("__builtin_clz");
                 let arg = self.context.new_cast(None, arg, self.uint_type);
                 let diff = self.int_width(self.uint_type) - self.int_width(arg_type);

@@ -136,12 +136,12 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         }
 
         // FIXME: use a new function new_rvalue_from_unsigned_long()?
-        let low = self.context.new_rvalue_from_long(typ, num as u64 as i64);
+        let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
         let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
 
         let sixty_four = self.context.new_rvalue_from_long(typ, 64);
 
-        (high << sixty_four) | low
+        (high << sixty_four) | self.context.new_cast(None, low, typ)
 
         /*unsafe {
             let words = [u as u64, (u >> 64) as u64];
