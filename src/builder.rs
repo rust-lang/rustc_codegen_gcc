@@ -123,7 +123,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             };
 
         let cond1 = self.context.new_comparison(None, comparison_operator, previous_var.to_rvalue(), self.context.new_cast(None, src, previous_value.get_type()));
-        let compare_exchange = self.compare_exchange(dst, previous_var.to_rvalue(), src, order, load_ordering, false);
+        let compare_exchange = self.compare_exchange(dst, previous_var, src, order, load_ordering, false);
         let cond2 = self.cx.context.new_unary_op(None, UnaryOp::LogicalNegate, compare_exchange.get_type(), compare_exchange);
         let cond = self.cx.context.new_binary_op(None, BinaryOp::LogicalAnd, self.cx.bool_type, cond1, cond2);
 
@@ -137,7 +137,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         return_value.to_rvalue()
     }
 
-    fn compare_exchange(&self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
+    fn compare_exchange(&self, dst: RValue<'gcc>, cmp: LValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
         let size = self.cx.int_width(src.get_type());
         let compare_exchange = self.context.get_builtin_function(&format!("__atomic_compare_exchange_{}", size / 8));
         let order = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
@@ -147,9 +147,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let void_ptr_type = self.context.new_type::<*mut ()>();
         let volatile_void_ptr_type = void_ptr_type.make_volatile();
         let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
-        let expected = self.current_func().new_local(None, cmp.get_type(), "expected");
-        self.llbb().add_assignment(None, expected, cmp);
-        let expected = self.context.new_cast(None, expected.get_address(None), void_ptr_type);
+        let expected = self.context.new_cast(None, cmp.get_address(None), void_ptr_type);
 
         // NOTE: not sure why, but we need to cast to the signed type.
         let new_src_type =
@@ -1494,7 +1492,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     // Atomic Operations
     fn atomic_cmpxchg(&mut self, dst: RValue<'gcc>, cmp: RValue<'gcc>, src: RValue<'gcc>, order: AtomicOrdering, failure_order: AtomicOrdering, weak: bool) -> RValue<'gcc> {
-        let success = self.compare_exchange(dst, cmp, src, order, failure_order, weak);
+        let expected = self.current_func().new_local(None, cmp.get_type(), "expected");
+        self.llbb().add_assignment(None, expected, cmp);
+        let success = self.compare_exchange(dst, expected, src, order, failure_order, weak);
 
         let pair_type = self.cx.type_struct(&[src.get_type(), self.bool_type], false);
         let result = self.current_func().new_local(None, pair_type, "atomic_cmpxchg_result");
@@ -1502,9 +1502,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         let value_type = result.to_rvalue().get_type();
         if let Some(struct_type) = value_type.is_struct() {
-            self.store(cmp, result.access_field(None, struct_type.get_field(0)).get_address(None), align);
             self.store(success, result.access_field(None, struct_type.get_field(1)).get_address(None), align);
+            // NOTE: since success contains the call to the intrinsic, it must be stored before
+            // expected so that we store expected after the call.
+            self.store(expected.to_rvalue(), result.access_field(None, struct_type.get_field(0)).get_address(None), align);
         }
+        // TODO: handle when value is not a struct.
 
         result.to_rvalue()
     }
