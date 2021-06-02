@@ -271,28 +271,17 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                         args[0].immediate() // byte swap a u8/i8 is just a no-op
                                     }
                                     else {
-                                        match width {
-                                            128 => {
-                                                // TODO: check if it's faster to use string literals and a
-                                                // match instead of format!.
-                                                // FIXME: support 128-bit ints.
-                                                let bswap = self.cx.context.get_builtin_function("__builtin_bswap64");
-                                                self.cx.context.new_call(None, bswap, &[self.intcast(args[0].immediate(), self.ulong_type, false)])
-                                            },
-                                            _ => {
-                                                // TODO: check if it's faster to use string literals and a
-                                                // match instead of format!.
-                                                let bswap = self.cx.context.get_builtin_function(&format!("__builtin_bswap{}", width));
-                                                let mut arg = args[0].immediate();
-                                                // FIXME: this cast should not be necessary. Remove
-                                                // when having proper sized integer types.
-                                                let param_type = bswap.get_param(0).to_rvalue().get_type();
-                                                if param_type != arg.get_type() {
-                                                    arg = self.bitcast(arg, param_type);
-                                                }
-                                                self.cx.context.new_call(None, bswap, &[arg])
-                                            },
+                                        // TODO: check if it's faster to use string literals and a
+                                        // match instead of format!.
+                                        let bswap = self.cx.context.get_builtin_function(&format!("__builtin_bswap{}", width));
+                                        let mut arg = args[0].immediate();
+                                        // FIXME: this cast should not be necessary. Remove
+                                        // when having proper sized integer types.
+                                        let param_type = bswap.get_param(0).to_rvalue().get_type();
+                                        if param_type != arg.get_type() {
+                                            arg = self.bitcast(arg, param_type);
                                         }
+                                        self.cx.context.new_call(None, bswap, &[arg])
                                     }
                                 },
                                 sym::bitreverse => self.bit_reverse(width, args[0].immediate()),

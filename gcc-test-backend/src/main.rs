@@ -204,4 +204,19 @@ fn main() {
 
     const TRAILING_ZEROS: u32 = NonZeroU16::new(1 << 2).unwrap().trailing_zeros();
     assert_eq!(TRAILING_ZEROS, 2);
+
+    const A: u128 = 0b0101100;
+    const B: u128 = 0b0100001;
+    const C: u128 = 0b1111001;
+
+    const _0: u128 = 0;
+    const _1: u128 = !0;
+
+    assert_eq!(u128::from_be(A.to_be()), A);
+    assert_eq!(u128::from_be(B.to_be()), B);
+    assert_eq!(u128::from_be(C.to_be()), C);
+    assert_eq!(u128::from_be(_0), _0);
+    assert_eq!(u128::from_be(_1), _1);
+    assert_eq!(_0.to_be(), _0);
+    assert_eq!(_1.to_be(), _1);
 }
