@@ -817,8 +817,44 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 ("__builtin_ctzll", self.cx.ulonglong_type)
             }
             else if arg_type.is_u128(&self.cx) {
-                // FIXME: actually implement the real function for u128.
-                ("__builtin_ctzll", self.cx.ulonglong_type)
+                // Adapted from the algorithm to count leading zeroes from: https://stackoverflow.com/a/28433850/389119
+                let array_type = self.context.new_array_type(None, arg_type, 3);
+                let result = self.current_func()
+                    .new_local(None, array_type, "count_loading_zeroes_results");
+
+                let sixty_four = self.context.new_rvalue_from_long(arg_type, 64);
+                let high = self.context.new_cast(None, arg >> sixty_four, self.u64_type);
+                let low = self.context.new_cast(None, arg, self.u64_type);
+
+                let zero = self.context.new_rvalue_zero(self.usize_type);
+                let one = self.context.new_rvalue_one(self.usize_type);
+                let two = self.context.new_rvalue_from_long(self.usize_type, 2);
+
+                let ctzll = self.context.get_builtin_function("__builtin_ctzll");
+
+                let first_elem = self.context.new_array_access(None, result, zero);
+                let first_value = self.context.new_cast(None, self.context.new_call(None, ctzll, &[low]), arg_type);
+                self.llbb()
+                    .add_assignment(None, first_elem, first_value);
+
+                let second_elem = self.context.new_array_access(None, result, one);
+                let second_value = self.context.new_cast(None, self.context.new_call(None, ctzll, &[high]), arg_type) + sixty_four;
+                self.llbb()
+                    .add_assignment(None, second_elem, second_value);
+
+                let third_elem = self.context.new_array_access(None, result, two);
+                let third_value = self.context.new_rvalue_from_long(arg_type, 128);
+                self.llbb()
+                    .add_assignment(None, third_elem, third_value);
+
+                let not_low = self.context.new_unary_op(None, UnaryOp::LogicalNegate, self.u64_type, low);
+                let not_high = self.context.new_unary_op(None, UnaryOp::LogicalNegate, self.u64_type, high);
+                let not_low_and_not_high = not_low & not_high;
+                let index = not_low + not_low_and_not_high;
+
+                let res = self.context.new_array_access(None, result, index);
+
+                return self.context.new_cast(None, res, arg_type);
             }
             else {
                 unimplemented!("count_trailing_zeroes for {:?}", arg_type);
