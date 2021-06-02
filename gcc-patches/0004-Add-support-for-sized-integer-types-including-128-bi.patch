@@ -1,4 +1,4 @@
-From 05d931244a575f3d03d8c7ff409d539e0cc6d154 Mon Sep 17 00:00:00 2001
+From f41a659255180e29f57f48d6fe38a552f4dda0a2 Mon Sep 17 00:00:00 2001
 From: Antoni Boucher <bouanto@zoho.com>
 Date: Mon, 10 May 2021 19:43:02 -0400
 Subject: [PATCH] Add support for sized integer types, including 128-bit
@@ -13,6 +13,7 @@ Subject: [PATCH] Add support for sized integer types, including 128-bit
             GCC_JIT_TYPE_UINT32_T, GCC_JIT_TYPE_UINT64_T,
             GCC_JIT_TYPE_UINT128_T, GCC_JIT_TYPE_INT8_T, GCC_JIT_TYPE_INT16_T,
             GCC_JIT_TYPE_INT32_T, GCC_JIT_TYPE_INT64_T, GCC_JIT_TYPE_INT128_T.
+            * jit-builtins.c: Add support for BT_UINT128.
             * jit-playback.c: Add support for the sized integer types.
             * jit-recording.c: Add support for the sized integer types.
             * libgccjit.h (GCC_JIT_TYPE_UINT8_T, GCC_JIT_TYPE_UINT16_T,
@@ -25,11 +26,12 @@ Subject: [PATCH] Add support for sized integer types, including 128-bit
             * jit.dg/test-types.c: Add tests for sized integer types.
 ---
  gcc/jit/docs/topics/types.rst     |  10 +++
+ gcc/jit/jit-builtins.c            |   1 +
  gcc/jit/jit-playback.c            |  21 ++++++
- gcc/jit/jit-recording.c           |  73 ++++++++++++++++++++
+ gcc/jit/jit-recording.c           |  77 +++++++++++++++++++++
  gcc/jit/libgccjit.h               |  11 +++
  gcc/testsuite/jit.dg/test-types.c | 111 ++++++++++++++++++++++++++++++
- 5 files changed, 226 insertions(+)
+ 6 files changed, 231 insertions(+)
 
 diff --git a/gcc/jit/docs/topics/types.rst b/gcc/jit/docs/topics/types.rst
 index 831f11b679a..68accacca45 100644
@@ -52,6 +54,18 @@ index 831f11b679a..68accacca45 100644
     :c:data:`GCC_JIT_TYPE_FLOAT`
     :c:data:`GCC_JIT_TYPE_DOUBLE`
     :c:data:`GCC_JIT_TYPE_LONG_DOUBLE`
+diff --git a/gcc/jit/jit-builtins.c b/gcc/jit/jit-builtins.c
+index 1ea96f4e025..27f3eec3e54 100644
+--- a/gcc/jit/jit-builtins.c
++++ b/gcc/jit/jit-builtins.c
+@@ -483,6 +483,7 @@ builtins_manager::make_primitive_type (enum jit_builtin_type type_id)
+     case BT_UINT16: return m_ctxt->get_int_type (2, false);
+     case BT_UINT32: return m_ctxt->get_int_type (4, false);
+     case BT_UINT64: return m_ctxt->get_int_type (8, false);
++    case BT_UINT128: return m_ctxt->get_int_type (16, false);
+     // case BT_WORD:
+     // case BT_UNWINDWORD:
+     case BT_FLOAT: return m_ctxt->get_type (GCC_JIT_TYPE_FLOAT);
 diff --git a/gcc/jit/jit-playback.c b/gcc/jit/jit-playback.c
 index c6136301243..40630aa1ab8 100644
 --- a/gcc/jit/jit-playback.c
@@ -85,10 +99,21 @@ index c6136301243..40630aa1ab8 100644
        return long_integer_type_node;
      case GCC_JIT_TYPE_UNSIGNED_LONG:
 diff --git a/gcc/jit/jit-recording.c b/gcc/jit/jit-recording.c
-index 117ff70114c..b67ae8bfb78 100644
+index 117ff70114c..3848e5da138 100644
 --- a/gcc/jit/jit-recording.c
 +++ b/gcc/jit/jit-recording.c
-@@ -2247,6 +2247,18 @@ recording::memento_of_get_type::get_size ()
+@@ -822,6 +822,10 @@ recording::context::get_int_type (int num_bytes, int is_signed)
+     return get_type (is_signed
+ 		     ? GCC_JIT_TYPE_LONG_LONG
+ 		     : GCC_JIT_TYPE_UNSIGNED_LONG_LONG);
++  if (num_bits == 128)
++    return get_type (is_signed
++		     ? GCC_JIT_TYPE_INT128_T
++		     : GCC_JIT_TYPE_UINT128_T);
+ 
+   /* Some other size, not corresponding to the C int types.  */
+   /* To be written: support arbitrary other sizes, sharing by
+@@ -2247,6 +2251,18 @@ recording::memento_of_get_type::get_size ()
      case GCC_JIT_TYPE_UNSIGNED_LONG_LONG:
        size = LONG_LONG_TYPE_SIZE;
        break;
@@ -107,7 +132,7 @@ index 117ff70114c..b67ae8bfb78 100644
      case GCC_JIT_TYPE_FLOAT:
        size = FLOAT_TYPE_SIZE;
        break;
-@@ -2295,6 +2307,16 @@ recording::memento_of_get_type::dereference ()
+@@ -2295,6 +2311,16 @@ recording::memento_of_get_type::dereference ()
      case GCC_JIT_TYPE_UNSIGNED_LONG:
      case GCC_JIT_TYPE_LONG_LONG:
      case GCC_JIT_TYPE_UNSIGNED_LONG_LONG:
@@ -124,7 +149,7 @@ index 117ff70114c..b67ae8bfb78 100644
      case GCC_JIT_TYPE_FLOAT:
      case GCC_JIT_TYPE_DOUBLE:
      case GCC_JIT_TYPE_LONG_DOUBLE:
-@@ -2347,6 +2369,16 @@ recording::memento_of_get_type::is_int () const
+@@ -2347,6 +2373,16 @@ recording::memento_of_get_type::is_int () const
      case GCC_JIT_TYPE_UNSIGNED_LONG:
      case GCC_JIT_TYPE_LONG_LONG:
      case GCC_JIT_TYPE_UNSIGNED_LONG_LONG:
@@ -141,7 +166,7 @@ index 117ff70114c..b67ae8bfb78 100644
        return true;
  
      case GCC_JIT_TYPE_FLOAT:
-@@ -2400,6 +2432,16 @@ recording::memento_of_get_type::is_float () const
+@@ -2400,6 +2436,16 @@ recording::memento_of_get_type::is_float () const
      case GCC_JIT_TYPE_UNSIGNED_LONG:
      case GCC_JIT_TYPE_LONG_LONG:
      case GCC_JIT_TYPE_UNSIGNED_LONG_LONG:
@@ -158,7 +183,7 @@ index 117ff70114c..b67ae8bfb78 100644
        return false;
  
      case GCC_JIT_TYPE_FLOAT:
-@@ -2453,6 +2495,16 @@ recording::memento_of_get_type::is_bool () const
+@@ -2453,6 +2499,16 @@ recording::memento_of_get_type::is_bool () const
      case GCC_JIT_TYPE_UNSIGNED_LONG:
      case GCC_JIT_TYPE_LONG_LONG:
      case GCC_JIT_TYPE_UNSIGNED_LONG_LONG:
@@ -175,7 +200,7 @@ index 117ff70114c..b67ae8bfb78 100644
        return false;
  
      case GCC_JIT_TYPE_FLOAT:
-@@ -2511,6 +2563,17 @@ static const char * const get_type_strings[] = {
+@@ -2511,6 +2567,17 @@ static const char * const get_type_strings[] = {
    "long long",           /* GCC_JIT_TYPE_LONG_LONG */
    "unsigned long long",  /* GCC_JIT_TYPE_UNSIGNED_LONG_LONG */
  
@@ -193,7 +218,7 @@ index 117ff70114c..b67ae8bfb78 100644
    "float",        /* GCC_JIT_TYPE_FLOAT */
    "double",       /* GCC_JIT_TYPE_DOUBLE */
    "long double",  /* GCC_JIT_TYPE_LONG_DOUBLE */
-@@ -2551,6 +2614,16 @@ static const char * const get_type_enum_strings[] = {
+@@ -2551,6 +2618,16 @@ static const char * const get_type_enum_strings[] = {
    "GCC_JIT_TYPE_UNSIGNED_LONG",
    "GCC_JIT_TYPE_LONG_LONG",
    "GCC_JIT_TYPE_UNSIGNED_LONG_LONG",

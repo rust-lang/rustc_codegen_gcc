@@ -138,27 +138,4 @@ unsafe fn test_mm_cvtsi128_si64() {
     let r = _mm_cvtsi128_si64(std::mem::transmute::<[i64; 2], _>([5, 0]));
     assert_eq!(r, 5);
 }
-
-#[target_feature(enable = "sse4.1")]
-unsafe fn test_mm_cvtepi8_epi16() {
-    let a = _mm_set1_epi8(10);
-    let r = _mm_cvtepi8_epi16(a);
-    let e = _mm_set1_epi16(10);
-    assert_eq_m128i(r, e);
-    let a = _mm_set1_epi8(-10);
-    let r = _mm_cvtepi8_epi16(a);
-    let e = _mm_set1_epi16(-10);
-    assert_eq_m128i(r, e);
-}
-
-#[target_feature(enable = "sse4.1")]
-unsafe fn test_mm_extract_epi8() {
-    let a = _mm_setr_epi8(
-        -1, 1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15
-    );
-    let r1 = _mm_extract_epi8(a, 0);
-    let r2 = _mm_extract_epi8(a, 19);
-    assert_eq!(r1, 0xFF);
-    assert_eq!(r2, 3);
-}*/
+*/
