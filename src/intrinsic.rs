@@ -1006,14 +1006,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
-            let width =
-                // TODO: support 128-bit integers.
-                if width == 128 {
-                    64
-                }
-                else {
-                    width
-                };
             let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
             let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
             let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
