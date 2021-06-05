@@ -54,6 +54,8 @@ $ rustc +$(cat $cg_gccjit_dir/rust-toolchain) -Cpanic=abort -Zcodegen-backend=$c
     object files when their content should have been changed by a change to cg_gccjit.</dd>
     <dt>CG_GCCJIT_DISPLAY_CG_TIME</dt>
     <dd>Display the time it took to perform codegen for a crate</dd>
+    <dt>CG_GCCJIT_DUMP_GIMPLE</dt>
+    <dd>Dump the generated gimple code</dd>
 </dl>
 
 ## Debugging

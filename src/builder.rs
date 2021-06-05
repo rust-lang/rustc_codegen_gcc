@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
 
+use gccjit::FunctionType;
 use gccjit::{
     BinaryOp,
     Block,
@@ -77,7 +78,7 @@ impl EnumClone for AtomicOrdering {
 
 pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
     pub cx: &'a CodegenCx<'gcc, 'tcx>,
-    pub block: Option<Block<'gcc>>,
+    pub block: Option<Block<'gcc>>, // TODO: remove as we already have current_block in cx.
     stack_var_count: Cell<usize>,
 }
 
@@ -471,6 +472,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 bx.block = Some(block);
             }
             else {
+                println!("Setting unreachable block");
                 *cx.unreachable_block.borrow_mut() = Some(block);
             }
         }
@@ -486,7 +488,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn llbb(&self) -> Block<'gcc> {
-        self.block.unwrap_or_else(|| self.cx.landing_pad_block.borrow().expect("landing pad block"))
+        let res = self.cx.unreachable_block.borrow()
+            .unwrap_or_else(||
+                self.block.unwrap_or_else(|| self.cx.landing_pad_block.borrow().expect("landing pad block"))
+            );
+        *self.cx.unreachable_block.borrow_mut() = None;
+        res
+        //self.block.expect("block")
     }
 
     fn append_block(cx: &'a CodegenCx<'gcc, 'tcx>, func: RValue<'gcc>, name: &str) -> Block<'gcc> {
@@ -544,21 +552,29 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         //     catch
         // }
 
+        let try_block = self.current_func().new_block("try");
+
         let current_block = self.current_block.borrow().clone();
         //*self.current_block.borrow_mut() = Some(self.cx.landing_pad_block.borrow().expect("landing pad block"));
+        *self.current_block.borrow_mut() = Some(try_block);
         let call = self.call(func, args, None); // TODO: use funclet here?
         *self.current_block.borrow_mut() = current_block;
 
         let return_value = self.current_func()
             .new_local(None, call.get_type(), "invokeResult");
 
-        let try_block = self.current_func().new_block("try");
-
         try_block.add_assignment(None, return_value, call);
 
+        println!("Try end with {:?}", then);
+        println!("*** Catch {:?}", catch);
         try_block.end_with_jump(None, then);
 
+        // FIXME: seems to not be doing a try/finally in some cases.
         self.block.expect("block").add_try_finally(None, try_block, catch);
+
+        self.current_block.borrow().expect("current block")
+            .end_with_jump(None, then);
+        println!("Current block ends with {:?}", then);
 
         // NOTE: since jumps were added in a place rustc does not expect, the current blocks in the
         // state need to be updated.
@@ -590,7 +606,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn unreachable(&mut self) {
         let func = self.context.get_builtin_function("__builtin_unreachable");
-        let block = self.block.unwrap_or_else(|| self.cx.unreachable_block.borrow().expect("unreachable block"));
+        let block = self.block.unwrap_or_else(|| self.cx.unreachable_block.borrow().expect("block"));
         block.add_eval(None, self.context.new_call(None, func, &[]));
         let return_type = block.get_function().get_return_type();
         let void_type = self.context.new_type::<()>();
@@ -602,6 +618,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 .new_local(None, return_type, "unreachableReturn");
             block.end_with_return(None, return_value)
         }
+
+        //self.block = Some(self.cx.unreachable_block.borrow().expect("unreachable block"));
+        //*self.cx.unreachable_block.borrow_mut() = None;
     }
 
     fn add(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -1472,7 +1491,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
          * CLEANUP_POINT_EXPR, CATCH_EXPR, and EH_FILTER_EXPR.
          */
 
-        let var = self.current_func().new_local(None, ty, "landing_pad");
+        let block = self.cx.landing_pad_block.borrow().expect("landing pad block");
+        let func = block.get_function();
+        let var = func.new_local(None, ty, "landing_pad");
         var.to_rvalue()
 
         /*unsafe {
@@ -1492,6 +1513,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn resume(&mut self, exn: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: nothing to do as gcc will just get 
         // NOTE: dummy value here since it's never used. FIXME: API should not return a value here?
+        println!("Resume in {:?}", self.llbb());
+        // TODO: support other rethrow than gcc.
+
+        let param = self.context.new_parameter(None, exn.get_type(), "exn");
+        let rethrow = self.context.new_function(None, FunctionType::Extern, self.int_type, &[param], "_Unwind_RaiseException", false);
+        self.llbb().add_eval(None, self.context.new_call(None, rethrow, &[exn]));
+
+        self.unreachable();
         self.cx.context.new_rvalue_zero(self.type_i32())
         //unsafe { llvm::LLVMBuildResume(self.llbuilder, exn) }
     }
