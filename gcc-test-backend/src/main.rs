@@ -1,7 +1,5 @@
 #![feature(const_option)]
 
-use std::num::{NonZeroU8, NonZeroI8, NonZeroU16, NonZeroI16, NonZeroU32, NonZeroI32, NonZeroU64, NonZeroI64, NonZeroU128, NonZeroI128, NonZeroUsize, NonZeroIsize};
-
 fn main() {
     /*test_float!(f64, f64, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
     ($modname: ident, $fty: ty, $inf: expr, $neginf: expr, $nan: expr) => {*/
@@ -156,67 +154,53 @@ fn main() {
     println!();
 */
 
-    assert_eq!(NonZeroU8::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI8::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU16::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI16::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU32::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI32::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU64::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI64::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU128::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI128::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroUsize::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroIsize::new(1).unwrap().trailing_zeros(), 0);
+    /*let mut r = 2 as i128;
+    assert_eq!(r.pow(2), 4 as i128);
+    assert_eq!(r.pow(0), 1 as i128);
+    assert_eq!(r.wrapping_pow(2), 4 as i128);
+    assert_eq!(r.wrapping_pow(0), 1 as i128);
+    assert_eq!(r.checked_pow(2), Some(4 as i128));
+    assert_eq!(r.checked_pow(0), Some(1 as i128));
+    assert_eq!(r.overflowing_pow(2), (4 as i128, false));
+    assert_eq!(r.overflowing_pow(0), (1 as i128, false));
+    assert_eq!(r.saturating_pow(2), 4 as i128);
+    assert_eq!(r.saturating_pow(0), 1 as i128);
 
-    assert_eq!(NonZeroU8::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI8::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU16::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI16::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU32::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI32::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU64::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI64::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU128::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI128::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroUsize::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroIsize::new(1 << 2).unwrap().trailing_zeros(), 2);
+    r = i128::MAX;
+    // use `^` to represent .pow() with no overflow.
+    // if itest::MAX == 2^j-1, then itest is a `j` bit int,
+    // so that `itest::MAX*itest::MAX == 2^(2*j)-2^(j+1)+1`,
+    // thussaturating_pow the overflowing result is exactly 1.
+    assert_eq!(r.wrapping_pow(2), 1 as i128);
+    assert_eq!(r.checked_pow(2), None);
+    assert_eq!(r.overflowing_pow(2), (1 as i128, true));
+    assert_eq!(r.saturating_pow(2), i128::MAX);
+    //test for negative exponent.
+    r = -2 as i128;
+    assert_eq!(r.pow(2), 4 as i128);
+    assert_eq!(r.pow(3), -8 as i128);
+    assert_eq!(r.pow(0), 1 as i128);
+    assert_eq!(r.wrapping_pow(2), 4 as i128);
+    assert_eq!(r.wrapping_pow(3), -8 as i128);
+    assert_eq!(r.wrapping_pow(0), 1 as i128);
+    assert_eq!(r.checked_pow(2), Some(4 as i128));
+    assert_eq!(r.checked_pow(3), Some(-8 as i128));
+    assert_eq!(r.checked_pow(0), Some(1 as i128));
+    assert_eq!(r.overflowing_pow(2), (4 as i128, false));
+    assert_eq!(r.overflowing_pow(3), (-8 as i128, false));
+    assert_eq!(r.overflowing_pow(0), (1 as i128, false));
+    assert_eq!(r.saturating_pow(2), 4 as i128);
+    assert_eq!(r.saturating_pow(3), -8 as i128);
+    assert_eq!(r.saturating_pow(0), 1 as i128);*/
 
-    assert_eq!(NonZeroU8::new(1 << 7).unwrap().trailing_zeros(), 7);
-    assert_eq!(NonZeroI8::new(1 << 7).unwrap().trailing_zeros(), 7);
-    assert_eq!(NonZeroU16::new(1 << 15).unwrap().trailing_zeros(), 15);
-    assert_eq!(NonZeroI16::new(1 << 15).unwrap().trailing_zeros(), 15);
-    assert_eq!(NonZeroU32::new(1 << 31).unwrap().trailing_zeros(), 31);
-    assert_eq!(NonZeroI32::new(1 << 31).unwrap().trailing_zeros(), 31);
-    assert_eq!(NonZeroU64::new(1 << 63).unwrap().trailing_zeros(), 63);
-    assert_eq!(NonZeroI64::new(1 << 63).unwrap().trailing_zeros(), 63);
-    assert_eq!(NonZeroU128::new(1 << 127).unwrap().trailing_zeros(), 127);
-    assert_eq!(NonZeroI128::new(1 << 127).unwrap().trailing_zeros(), 127);
-
-    assert_eq!(
-        NonZeroUsize::new(1 << (usize::BITS - 1)).unwrap().trailing_zeros(),
-        usize::BITS - 1
-    );
-    assert_eq!(
-        NonZeroIsize::new(1 << (usize::BITS - 1)).unwrap().trailing_zeros(),
-        usize::BITS - 1
-    );
-
-    const TRAILING_ZEROS: u32 = NonZeroU16::new(1 << 2).unwrap().trailing_zeros();
-    assert_eq!(TRAILING_ZEROS, 2);
-
-    const A: u128 = 0b0101100;
-    const B: u128 = 0b0100001;
-    const C: u128 = 0b1111001;
-
-    const _0: u128 = 0;
-    const _1: u128 = !0;
-
-    assert_eq!(u128::from_be(A.to_be()), A);
-    assert_eq!(u128::from_be(B.to_be()), B);
-    assert_eq!(u128::from_be(C.to_be()), C);
-    assert_eq!(u128::from_be(_0), _0);
-    assert_eq!(u128::from_be(_1), _1);
-    assert_eq!(_0.to_be(), _0);
-    assert_eq!(_1.to_be(), _1);
+    use std::i128::{MAX, MIN};
+    assert_eq!((0 as i128).saturating_neg(), 0);
+    assert_eq!((123 as i128).saturating_neg(), -123);
+    assert_eq!((-123 as i128).saturating_neg(), 123);
+    assert_eq!((MAX - 2).saturating_neg(), MIN + 3);
+    assert_eq!((MAX - 1).saturating_neg(), MIN + 2);
+    assert_eq!(MAX.saturating_neg(), MIN + 1);
+    assert_eq!((MIN + 2).saturating_neg(), MAX - 1);
+    assert_eq!((MIN + 1).saturating_neg(), MAX);
+    assert_eq!(MIN.saturating_neg(), MAX);
 }
