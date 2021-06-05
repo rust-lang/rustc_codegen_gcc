@@ -30,7 +30,8 @@ if [[ "$HOST_TRIPLE" != "$TARGET_TRIPLE" ]]; then
    fi
 fi
 
-export RUSTFLAGS=$linker' -Cpanic=abort -Cdebuginfo=2 -Zpanic-abort-tests -Zcodegen-backend='$(pwd)'/target/'$CHANNEL'/librustc_codegen_gcc.'$dylib_ext' --sysroot '$(pwd)'/build_sysroot/sysroot'
+export RUSTFLAGS=$linker' -Cdebuginfo=2 -Zcodegen-backend='$(pwd)'/target/'$CHANNEL'/librustc_codegen_gcc.'$dylib_ext' --sysroot '$(pwd)'/build_sysroot/sysroot'
+#export RUSTFLAGS=$linker' -Cpanic=abort -Cdebuginfo=2 -Zpanic-abort-tests -Zcodegen-backend='$(pwd)'/target/'$CHANNEL'/librustc_codegen_gcc.'$dylib_ext' --sysroot '$(pwd)'/build_sysroot/sysroot'
 #export RUSTFLAGS=$linker' -Cpanic=abort -Cdebuginfo=2 -Zpanic-abort-tests -Zcodegen-backend='$(pwd)'/target/'$CHANNEL'/librustc_codegen_gcc.'$dylib_ext' --sysroot '$(pwd)'/build_sysroot/sysroot -Clto=fat -Cembed-bitcode=yes'
 
 # FIXME remove once the atomic shim is gone

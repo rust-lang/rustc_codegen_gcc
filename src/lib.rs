@@ -145,8 +145,17 @@ impl CodegenBackend for GccCodegenBackend {
 
 impl ExtraBackendMethods for GccCodegenBackend {
     fn new_metadata<'tcx>(&self, _tcx: TyCtxt<'tcx>, _mod_name: &str) -> Self::Module {
+        let context = Context::default();
+        context.add_command_line_option("-fexceptions");
+        context.add_driver_option("-fexceptions");
+
+        context.add_command_line_option("-fasynchronous-unwind-tables");
+        context.add_driver_option("-fasynchronous-unwind-tables");
+
+        context.add_command_line_option("-funwind-tables");
+        context.add_driver_option("-funwind-tables");
         GccContext {
-            context: Context::default(),
+            context,
         }
     }
 

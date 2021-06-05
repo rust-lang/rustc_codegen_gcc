@@ -45,6 +45,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn declare_func(&self, name: &str, return_type: Type<'gcc>, params: &[Type<'gcc>], variadic: bool) -> RValue<'gcc> {
+        if name == "rust_eh_personality" {
+            panic!();
+        }
         self.linkage.set(FunctionType::Exported);
         let func = declare_raw_fn(self, name, () /*llvm::CCallConv*/, return_type, params, variadic);
         // FIXME: this is a wrong cast. That requires changing the compiler API.

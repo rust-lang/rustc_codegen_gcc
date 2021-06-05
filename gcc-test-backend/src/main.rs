@@ -156,67 +156,35 @@ fn main() {
     println!();
 */
 
-    assert_eq!(NonZeroU8::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI8::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU16::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI16::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU32::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI32::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU64::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI64::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroU128::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroI128::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroUsize::new(1).unwrap().trailing_zeros(), 0);
-    assert_eq!(NonZeroIsize::new(1).unwrap().trailing_zeros(), 0);
+    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    #[derive(Debug)]
+    struct Bomb(usize);
 
-    assert_eq!(NonZeroU8::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI8::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU16::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI16::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU32::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI32::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU64::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI64::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroU128::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroI128::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroUsize::new(1 << 2).unwrap().trailing_zeros(), 2);
-    assert_eq!(NonZeroIsize::new(1 << 2).unwrap().trailing_zeros(), 2);
+    impl Default for Bomb {
+        fn default() -> Bomb {
+            if COUNTER.load(Relaxed) == 3 {
+                panic!("bomb limit exceeded");
+            }
 
-    assert_eq!(NonZeroU8::new(1 << 7).unwrap().trailing_zeros(), 7);
-    assert_eq!(NonZeroI8::new(1 << 7).unwrap().trailing_zeros(), 7);
-    assert_eq!(NonZeroU16::new(1 << 15).unwrap().trailing_zeros(), 15);
-    assert_eq!(NonZeroI16::new(1 << 15).unwrap().trailing_zeros(), 15);
-    assert_eq!(NonZeroU32::new(1 << 31).unwrap().trailing_zeros(), 31);
-    assert_eq!(NonZeroI32::new(1 << 31).unwrap().trailing_zeros(), 31);
-    assert_eq!(NonZeroU64::new(1 << 63).unwrap().trailing_zeros(), 63);
-    assert_eq!(NonZeroI64::new(1 << 63).unwrap().trailing_zeros(), 63);
-    assert_eq!(NonZeroU128::new(1 << 127).unwrap().trailing_zeros(), 127);
-    assert_eq!(NonZeroI128::new(1 << 127).unwrap().trailing_zeros(), 127);
+            COUNTER.fetch_add(1, Relaxed);
+            Bomb(COUNTER.load(Relaxed))
+        }
+    }
 
-    assert_eq!(
-        NonZeroUsize::new(1 << (usize::BITS - 1)).unwrap().trailing_zeros(),
-        usize::BITS - 1
-    );
-    assert_eq!(
-        NonZeroIsize::new(1 << (usize::BITS - 1)).unwrap().trailing_zeros(),
-        usize::BITS - 1
-    );
+    impl Drop for Bomb {
+        fn drop(&mut self) {
+            COUNTER.fetch_sub(1, Relaxed);
+        }
+    }
 
-    const TRAILING_ZEROS: u32 = NonZeroU16::new(1 << 2).unwrap().trailing_zeros();
-    assert_eq!(TRAILING_ZEROS, 2);
-
-    const A: u128 = 0b0101100;
-    const B: u128 = 0b0100001;
-    const C: u128 = 0b1111001;
-
-    const _0: u128 = 0;
-    const _1: u128 = !0;
-
-    assert_eq!(u128::from_be(A.to_be()), A);
-    assert_eq!(u128::from_be(B.to_be()), B);
-    assert_eq!(u128::from_be(C.to_be()), C);
-    assert_eq!(u128::from_be(_0), _0);
-    assert_eq!(u128::from_be(_1), _1);
-    assert_eq!(_0.to_be(), _0);
-    assert_eq!(_1.to_be(), _1);
+    let res = std::panic::catch_unwind(|| <[Bomb; 5]>::default());
+    let panic_msg = match res {
+        Ok(_) => unreachable!(),
+        Err(p) => p.downcast::<&'static str>().unwrap(),
+    };
+    assert_eq!(*panic_msg, "bomb limit exceeded");
+    // check that all bombs are successfully dropped
+    assert_eq!(COUNTER.load(Relaxed), 0);
+    panic!("test succeeded")
 }

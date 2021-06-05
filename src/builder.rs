@@ -326,7 +326,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     pub fn current_func(&self) -> Function<'gcc> {
-        self.block.expect("block").get_function()
+        let block = self.block
+            .unwrap_or_else(|| self.cx.landing_pad_block.borrow().unwrap().clone());
+        block.get_function()
     }
 
     fn function_call(&mut self, func: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
@@ -458,8 +460,23 @@ impl<'gcc, 'tcx> BackendTypes for Builder<'_, 'gcc, 'tcx> {
 impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn build(cx: &'a CodegenCx<'gcc, 'tcx>, block: Block<'gcc>) -> Self {
         let mut bx = Builder::with_cx(cx);
-        *cx.current_block.borrow_mut() = Some(block);
-        bx.block = Some(block);
+        // NOTE: do not up update the current basic block if it is the cleanup block because that
+        // would cause the next call to invoke to be added to this cleanup basic block while it's
+        // already terminated.
+        // FIXME: rustc API to avoid this hack.
+        let block_name = format!("{:?}", block);
+        if block_name != "cleanup" {
+            if block_name != "unreachable" {
+                *cx.current_block.borrow_mut() = Some(block);
+                bx.block = Some(block);
+            }
+            else {
+                *cx.unreachable_block.borrow_mut() = Some(block);
+            }
+        }
+        else {
+            *cx.landing_pad_block.borrow_mut() = Some(block);
+        }
         bx
     }
 
@@ -469,7 +486,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn llbb(&self) -> Block<'gcc> {
-        self.block.expect("block")
+        self.block.unwrap_or_else(|| self.cx.landing_pad_block.borrow().expect("landing pad block"))
     }
 
     fn append_block(cx: &'a CodegenCx<'gcc, 'tcx>, func: RValue<'gcc>, name: &str) -> Block<'gcc> {
@@ -518,7 +535,39 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn invoke(&mut self, func: RValue<'gcc>, args: &[RValue<'gcc>], then: Block<'gcc>, catch: Block<'gcc>, funclet: Option<&Funclet>) -> RValue<'gcc> {
-        unimplemented!();
+        // TODO: just generate a TRY_FINALLY_EXPR here should be enough.
+        // try {
+        //     func(args)
+        //     then
+        // }
+        // finally {
+        //     catch
+        // }
+
+        let current_block = self.current_block.borrow().clone();
+        //*self.current_block.borrow_mut() = Some(self.cx.landing_pad_block.borrow().expect("landing pad block"));
+        let call = self.call(func, args, None); // TODO: use funclet here?
+        *self.current_block.borrow_mut() = current_block;
+
+        let return_value = self.current_func()
+            .new_local(None, call.get_type(), "invokeResult");
+
+        let try_block = self.current_func().new_block("try");
+
+        try_block.add_assignment(None, return_value, call);
+
+        try_block.end_with_jump(None, then);
+
+        self.block.expect("block").add_try_finally(None, try_block, catch);
+
+        // NOTE: since jumps were added in a place rustc does not expect, the current blocks in the
+        // state need to be updated.
+        // FIXME: not sure it's actually needed.
+        self.block = Some(then);
+        *self.cx.current_block.borrow_mut() = Some(then);
+
+        return_value.to_rvalue()
+
         /*debug!("invoke {:?} with args ({:?})", func, args);
 
         let args = self.check_call("invoke", func, args);
@@ -541,7 +590,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn unreachable(&mut self) {
         let func = self.context.get_builtin_function("__builtin_unreachable");
-        let block = self.block.expect("block");
+        let block = self.block.unwrap_or_else(|| self.cx.unreachable_block.borrow().expect("unreachable block"));
         block.add_eval(None, self.context.new_call(None, func, &[]));
         let return_type = block.get_function().get_return_type();
         let void_type = self.context.new_type::<()>();
@@ -1400,27 +1449,50 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             else {
                 panic!("Unexpected type {:?}", value_type);
             };
+        let lvalue_type = lvalue.to_rvalue().get_type();
+        let value =
+            if lvalue_type != value.get_type() {
+                self.context.new_cast(None, value, lvalue_type)
+            }
+            else {
+                value
+            };
         self.llbb().add_assignment(None, lvalue, value);
 
         aggregate_value
     }
 
+    /// A landing pad is a basic block where the exception lands, and corresponds to the code found in the catch portion of a try/catch sequence.
     fn landing_pad(&mut self, ty: Type<'gcc>, pers_fn: RValue<'gcc>, num_clauses: usize) -> RValue<'gcc> {
-        unimplemented!();
+        // TODO: (DON'T DO THIS =>) probably a TRY_CATCH_EXPR (https://gcc.gnu.org/onlinedocs/gcc-4.3.3/gccint/GIMPLE-Exception-Handling.html).
+        // TODO: Since set_cleanup() is always called, just create a TRY_FINALLY_EXPR directly here.
+        /*
+         * NOTE(gcc): In the beginning, in the front end, we have the GENERIC trees
+         * TRY_CATCH_EXPR, TRY_FINALLY_EXPR, EH_ELSE_EXPR, WITH_CLEANUP_EXPR,
+         * CLEANUP_POINT_EXPR, CATCH_EXPR, and EH_FILTER_EXPR.
+         */
+
+        let var = self.current_func().new_local(None, ty, "landing_pad");
+        var.to_rvalue()
+
         /*unsafe {
             llvm::LLVMBuildLandingPad(self.llbuilder, ty, pers_fn, num_clauses as c_uint, UNNAMED)
         }*/
     }
 
+    /// The optional cleanup flag indicates that the landing pad block is a cleanup.
     fn set_cleanup(&mut self, landing_pad: RValue<'gcc>) {
-        unimplemented!();
+        // TODO: probably transform a TRY_CATCH_EXPR in a TRY_FINALLY_EXPR (https://gcc.gnu.org/onlinedocs/gcc-4.3.3/gccint/Cleanups.html).
+        // NOTE: nothing to do here. Everything is handled in invoke.
         /*unsafe {
             llvm::LLVMSetCleanup(landing_pad, llvm::True);
         }*/
     }
 
     fn resume(&mut self, exn: RValue<'gcc>) -> RValue<'gcc> {
-        unimplemented!();
+        // NOTE: nothing to do as gcc will just get 
+        // NOTE: dummy value here since it's never used. FIXME: API should not return a value here?
+        self.cx.context.new_rvalue_zero(self.type_i32())
         //unsafe { llvm::LLVMBuildResume(self.llbuilder, exn) }
     }
 
@@ -1484,10 +1556,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn set_personality_fn(&mut self, personality: RValue<'gcc>) {
-        unimplemented!();
-        /*unsafe {
-            llvm::LLVMSetPersonalityFn(self.llfn(), personality);
-        }*/
+        // TODO: maybe its address just needs to be put in a variable DW.ref.rust_eh_personality in the section
+        // .data:
+        // https://github.com/rust-lang/rust/issues/47493#issuecomment-549431106
+        // TODO: otherwise, read this: https://monkeywritescode.blogspot.com/p/c-exceptions-under-hood.html
+        let personality = self.rvalue_as_function(personality);
+        self.current_func().set_personality_function(personality);
     }
 
     // Atomic Operations
@@ -1613,7 +1687,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn do_not_inline(&mut self, llret: RValue<'gcc>) {
-        unimplemented!();
+        // TODO
         //llvm::Attribute::NoInline.apply_callsite(llvm::AttributePlace::Function, llret);
     }
 

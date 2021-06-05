@@ -74,6 +74,16 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
         let context = Context::default();
         // TODO: only set on x86 platforms.
         context.add_command_line_option("-masm=intel");
+
+        context.add_command_line_option("-fexceptions");
+        context.add_driver_option("-fexceptions");
+
+        context.add_command_line_option("-fasynchronous-unwind-tables");
+        context.add_driver_option("-fasynchronous-unwind-tables");
+
+        context.add_command_line_option("-funwind-tables");
+        context.add_driver_option("-funwind-tables");
+
         //context.set_dump_code_on_compile(true);
         //context.set_dump_initial_gimple(true);
         context.set_debug_info(true);

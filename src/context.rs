@@ -49,6 +49,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub current_func: RefCell<Option<Function<'gcc>>>,
     pub normal_function_addresses: RefCell<FxHashSet<RValue<'gcc>>>,
 
+    pub landing_pad_block: RefCell<Option<Block<'gcc>>>,
+    pub unreachable_block: RefCell<Option<Block<'gcc>>>,
+
     /// The function where globals are initialized.
     pub global_init_func: Function<'gcc>,
     pub global_init_block: Block<'gcc>,
@@ -195,6 +198,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             current_block: RefCell::new(None),
             current_func: RefCell::new(None),
             normal_function_addresses: Default::default(),
+            landing_pad_block: RefCell::new(None),
+            unreachable_block: RefCell::new(None),
             functions: RefCell::new(functions),
             global_init_func,
             global_init_block,
@@ -308,6 +313,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
     fn get_fn(&self, instance: Instance<'tcx>) -> RValue<'gcc> {
         let func = get_fn(self, instance);
+        // FIXME: assigning to current_func here is a hack.
         *self.current_func.borrow_mut() = Some(self.rvalue_as_function(func));
         func
     }
@@ -356,15 +362,16 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         }
         let tcx = self.tcx;
         let llfn = match tcx.lang_items().eh_personality() {
-            Some(def_id) if !wants_msvc_seh(self.sess()) => self.get_fn_addr(
-                ty::Instance::resolve(
-                    tcx,
-                    ty::ParamEnv::reveal_all(),
-                    def_id,
-                    tcx.intern_substs(&[]),
-                )
-                .unwrap().unwrap(),
-            ),
+            Some(def_id) if !wants_msvc_seh(self.sess()) => {
+                let instance = ty::Instance::resolve(
+                        tcx,
+                        ty::ParamEnv::reveal_all(),
+                        def_id,
+                        tcx.intern_substs(&[]),
+                    )
+                    .unwrap().unwrap();
+                get_fn(self, instance)
+            },
             _ => {
                 let name = if wants_msvc_seh(self.sess()) {
                     "__CxxFrameHandler3"
