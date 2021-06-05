@@ -2,7 +2,6 @@
  * TODO: support #[inline] attributes.
  * TODO: support LTO.
  *
- * TODO: remove the local gccjit LD_LIBRARY_PATH in config.sh.
  * TODO: remove the object dependency.
  * TODO: remove the patches.
  */

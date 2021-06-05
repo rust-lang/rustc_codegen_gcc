@@ -565,16 +565,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         try_block.add_assignment(None, return_value, call);
 
-        println!("Try end with {:?}", then);
-        println!("*** Catch {:?}", catch);
         try_block.end_with_jump(None, then);
 
-        // FIXME: seems to not be doing a try/finally in some cases.
         self.block.expect("block").add_try_finally(None, try_block, catch);
 
         self.current_block.borrow().expect("current block")
             .end_with_jump(None, then);
-        println!("Current block ends with {:?}", then);
 
         // NOTE: since jumps were added in a place rustc does not expect, the current blocks in the
         // state need to be updated.
@@ -1513,7 +1509,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn resume(&mut self, exn: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: nothing to do as gcc will just get 
         // NOTE: dummy value here since it's never used. FIXME: API should not return a value here?
-        println!("Resume in {:?}", self.llbb());
         // TODO: support other rethrow than gcc.
 
         let param = self.context.new_parameter(None, exn.get_type(), "exn");
