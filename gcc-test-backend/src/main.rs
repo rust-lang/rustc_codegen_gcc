@@ -193,14 +193,45 @@ fn main() {
     assert_eq!(r.saturating_pow(3), -8 as i128);
     assert_eq!(r.saturating_pow(0), 1 as i128);*/
 
-    use std::i128::{MAX, MIN};
-    assert_eq!((0 as i128).saturating_neg(), 0);
-    assert_eq!((123 as i128).saturating_neg(), -123);
-    assert_eq!((-123 as i128).saturating_neg(), 123);
-    assert_eq!((MAX - 2).saturating_neg(), MIN + 3);
-    assert_eq!((MAX - 1).saturating_neg(), MIN + 2);
-    assert_eq!(MAX.saturating_neg(), MIN + 1);
-    assert_eq!((MIN + 2).saturating_neg(), MAX - 1);
-    assert_eq!((MIN + 1).saturating_neg(), MAX);
-    assert_eq!(MIN.saturating_neg(), MAX);
+    const A: u64 = 0b0101100;
+    const B: u64 = 0b0100001;
+    const C: u64 = 0b1111001;
+
+    const _0: u64 = 0;
+    const _1: u64 = !0;
+
+    assert_eq!(A.reverse_bits().reverse_bits(), A);
+    assert_eq!(B.reverse_bits().reverse_bits(), B);
+    assert_eq!(C.reverse_bits().reverse_bits(), C);
+
+    // Swapping these should make no difference
+    assert_eq!(_0.reverse_bits(), _0);
+    assert_eq!(_1.reverse_bits(), _1);
+
+    /*const _0: i128 = 0;
+    const _1: i128 = !0;
+
+    use std::i128::MAX;
+
+    let a: i128 = 0b0101_1111;
+    assert_eq!(a.trailing_ones(), 5);
+    assert_eq!((!a).leading_ones(), i128::BITS - 7);
+
+    assert_eq!(a.reverse_bits().leading_ones(), 5);
+
+    assert_eq!(_1.leading_ones(), i128::BITS);
+    assert_eq!(_1.trailing_ones(), i128::BITS);
+
+    assert_eq!((_1 << 1).trailing_ones(), 0);
+    assert_eq!(MAX.leading_ones(), 0);
+
+    assert_eq!((_1 << 1).leading_ones(), i128::BITS - 1);
+    assert_eq!(MAX.trailing_ones(), i128::BITS - 1);
+
+    assert_eq!(_0.leading_ones(), 0);
+    assert_eq!(_0.trailing_ones(), 0);
+
+    let x: i128 = 0b0010_1100;
+    assert_eq!(x.leading_ones(), 0);
+    assert_eq!(x.trailing_ones(), 0);*/
 }
