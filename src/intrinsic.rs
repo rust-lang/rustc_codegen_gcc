@@ -677,14 +677,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             64 => {
                 // First step.
                 let left = self.shl(value, context.new_rvalue_from_long(typ, 32));
-                let right = self.lshr(left, context.new_rvalue_from_long(typ, 32));
+                let right = self.lshr(value, context.new_rvalue_from_long(typ, 32));
                 let step1 = self.or(left, right);
 
                 // Second step.
                 let left = self.and(step1, context.new_rvalue_from_long(typ, 0x0001FFFF0001FFFF));
                 let left = self.shl(left, context.new_rvalue_from_long(typ, 15));
                 let right = self.and(step1, context.new_rvalue_from_long(typ, 0xFFFE0000FFFE0000u64 as i64)); // TODO: transmute the number instead?
-                let right = self.shl(right, context.new_rvalue_from_long(typ, 17));
+                let right = self.lshr(right, context.new_rvalue_from_long(typ, 17));
                 let step2 = self.or(left, right);
 
                 // Third step.
@@ -717,8 +717,18 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 step5
             },
             128 => {
-                // TODO
-                value
+                // TODO: find a more efficient implementation?
+                let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+                let high = self.context.new_cast(None, value >> sixty_four, self.u64_type);
+                let low = self.context.new_cast(None, value, self.u64_type);
+
+                let reversed_high = self.bit_reverse(64, high);
+                let reversed_low = self.bit_reverse(64, low);
+
+                let new_low = self.context.new_cast(None, reversed_high, typ);
+                let new_high = self.context.new_cast(None, reversed_low, typ) << sixty_four;
+
+                new_low | new_high
             },
             _ => {
                 panic!("cannot bit reverse with width = {}", width);
@@ -1006,14 +1016,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
-            let width =
-                // TODO: support 128-bit integers.
-                if width == 128 {
-                    64
-                }
-                else {
-                    width
-                };
             let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
             let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
             let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
