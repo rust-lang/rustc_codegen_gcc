@@ -717,8 +717,18 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 step5
             },
             128 => {
-                // TODO
-                value
+                // TODO: find a more efficient implementation?
+                let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+                let high = self.context.new_cast(None, value >> sixty_four, self.u64_type);
+                let low = self.context.new_cast(None, value, self.u64_type);
+
+                let reversed_high = self.bit_reverse(64, high);
+                let reversed_low = self.bit_reverse(64, low);
+
+                let new_low = self.context.new_cast(None, reversed_high, typ);
+                let new_high = self.context.new_cast(None, reversed_low, typ) << sixty_four;
+
+                new_low | new_high
             },
             _ => {
                 panic!("cannot bit reverse with width = {}", width);
