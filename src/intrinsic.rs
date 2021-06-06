@@ -677,14 +677,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             64 => {
                 // First step.
                 let left = self.shl(value, context.new_rvalue_from_long(typ, 32));
-                let right = self.lshr(left, context.new_rvalue_from_long(typ, 32));
+                let right = self.lshr(value, context.new_rvalue_from_long(typ, 32));
                 let step1 = self.or(left, right);
 
                 // Second step.
                 let left = self.and(step1, context.new_rvalue_from_long(typ, 0x0001FFFF0001FFFF));
                 let left = self.shl(left, context.new_rvalue_from_long(typ, 15));
                 let right = self.and(step1, context.new_rvalue_from_long(typ, 0xFFFE0000FFFE0000u64 as i64)); // TODO: transmute the number instead?
-                let right = self.shl(right, context.new_rvalue_from_long(typ, 17));
+                let right = self.lshr(right, context.new_rvalue_from_long(typ, 17));
                 let step2 = self.or(left, right);
 
                 // Third step.
