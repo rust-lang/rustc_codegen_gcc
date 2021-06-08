@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
-use gccjit::{Block, RValue, Type, ToRValue};
+use gccjit::{Block, CType, RValue, Type, ToRValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{
     BaseTypeMethods,
@@ -425,11 +425,11 @@ impl<'gcc, 'tcx> TypeReflection<'gcc, 'tcx> for Type<'gcc> {
     }
 
     fn is_i128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        self.unqualified() == cx.i128_type
+        self.unqualified() == cx.context.new_c_type(CType::Int128t)
     }
 
     fn is_u128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
-        self.unqualified() == cx.u128_type
+        self.unqualified() == cx.context.new_c_type(CType::UInt128t)
     }
 
     fn is_f32(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {

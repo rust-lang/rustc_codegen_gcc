@@ -145,12 +145,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let i16_type = context.new_type::<i16>();
         let i32_type = context.new_type::<i32>();
         let i64_type = context.new_c_type(CType::LongLong);
-        let i128_type = context.new_c_type(CType::Int128t);
+        let i128_type = context.new_c_type(CType::Int128t).get_aligned(8); // TODO: should this be hard-coded?
         let u8_type = context.new_type::<u8>();
         let u16_type = context.new_type::<u16>();
         let u32_type = context.new_type::<u32>();
         let u64_type = context.new_c_type(CType::ULongLong);
-        let u128_type = context.new_c_type(CType::UInt128t);
+        let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO: should this be hard-coded?
 
         let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());
 
