@@ -1,3 +1,4 @@
+use std::env;
 use std::sync::Once;
 use std::time::Instant;
 
@@ -75,7 +76,9 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
         // TODO: only set on x86 platforms.
         context.add_command_line_option("-masm=intel");
         //context.set_dump_code_on_compile(true);
-        //context.set_dump_initial_gimple(true);
+        if env::var("CG_GCCJIT_DUMP_GIMPLE").as_deref() == Ok("1") {
+            context.set_dump_initial_gimple(true);
+        }
         context.set_debug_info(true);
         //context.set_dump_everything(true);
         //context.set_keep_intermediates(true);

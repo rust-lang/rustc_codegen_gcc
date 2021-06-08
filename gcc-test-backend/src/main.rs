@@ -1,4 +1,4 @@
-#![feature(const_option)]
+#![feature(const_option, core_intrinsics)]
 
 fn main() {
     /*test_float!(f64, f64, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
@@ -193,47 +193,104 @@ fn main() {
     assert_eq!(r.saturating_pow(3), -8 as i128);
     assert_eq!(r.saturating_pow(0), 1 as i128);*/
 
-    {
-        const A: u128 = 0b0101100;
-        const B: u128 = 0b0100001;
-        const C: u128 = 0b1111001;
+    /*let res = 10_i64.checked_div(2);
+    if res == Some(5) {
+        println!("1");
+    }*/
 
-        const _0: u128 = 0;
-        const _1: u128 = !0;
-
-        assert_eq!(A.reverse_bits().reverse_bits(), A);
-        assert_eq!(B.reverse_bits().reverse_bits(), B);
-        assert_eq!(C.reverse_bits().reverse_bits(), C);
-
-        // Swapping these should make no difference
-        assert_eq!(_0.reverse_bits(), _0);
-        assert_eq!(_1.reverse_bits(), _1);
+    fn equal(num1: &Option<i64>, num2: &Option<i64>) -> bool {
+        match (num1, num2) {
+            (Some(num1), Some(num2)) => num1 == num2,
+            (None, None) => true,
+            _ => false
+        }
     }
 
-    const _0: i128 = 0;
-    const _1: i128 = !0;
+    fn equal2(num1: &Option<i128>, num2: &Option<i128>) -> bool {
+        match (num1, num2) {
+            (Some(num1), Some(num2)) => num1 == num2,
+            (None, None) => true,
+            _ => false
+        }
+    }
 
-    use std::i128::MAX;
+    /*let res2 = Some(10_i64 / 2);
+    // NOTE: (local variable case) res2 is initialized as:
+    // first 8 bits: 1
+    // next 8 bits : 5
+    //
+    // (global variable case) Some(5) is initialized as:
+    // first 8 bits: 1
+    // next 8 bits : 5
+    if equal(&res2, &Some(5)) {
+        //println!("Equal: {}", res2 == Some(5));
+        std::process::exit(1);
+    }*/
 
-    let a: i128 = 0b0101_1111;
-    assert_eq!(a.trailing_ones(), 5);
-    assert_eq!((!a).leading_ones(), i128::BITS - 7);
+    // TODO: this seems to confirm that align(i128) == 16.
+    #[repr(C)]
+    struct int_option {
+        is_some: bool,
+        val: i128,
+    }
 
-    assert_eq!(a.reverse_bits().leading_ones(), 5);
+    fn equal3(int1: &int_option, int2: &int_option) -> bool {
+        int1.is_some == int2.is_some &&
+            int1.val == int2.val
+    }
 
-    assert_eq!(_1.leading_ones(), i128::BITS);
-    assert_eq!(_1.trailing_ones(), i128::BITS);
+    let res = int_option {
+        is_some: true,
+        val: 10 / 2,
+    };
 
-    assert_eq!((_1 << 1).trailing_ones(), 0);
-    assert_eq!(MAX.leading_ones(), 0);
+    let expected = int_option {
+        is_some: true,
+        val: 5,
+    };
 
-    assert_eq!((_1 << 1).leading_ones(), i128::BITS - 1);
-    assert_eq!(MAX.trailing_ones(), i128::BITS - 1);
+    /*if equal3(&expected, &res) {
+        std::process::exit(50);
+    }*/
 
-    assert_eq!(_0.leading_ones(), 0);
-    assert_eq!(_0.trailing_ones(), 0);
+    // FIXME: &Option<i128> does not work while Option<i128> does.
+    let res2 = Some(10_i128 / 2);
+    // NOTE: (local variable case) res2 is initialized as:
+    // first 16 bits: 1 (garbage in the last 8 bits)
+    // next 8 bits  : 5
+    // next 8 bits  : 0
+    //
+    // FIXME: maybe there's an alignment problem (i.e. the i128 wants to be aligned on 128-bits?).
+    //
+    // (global variable case) Some(5) is initialized as:
+    // first 8 bits: 1
+    // next 8 bits : 5
+    // next 8 bits : 0
+    //
+    //let res1 = Some(5); // NOTE: It works when putting the value in a variable.
+    // NOTE: the case that doesn't work uses a global variable, which might mean we don't
+    // initialize them correctly.
+    if equal2(&Some(5), &res2) {
+        //println!("Equal: {}", res2 == Some(5));
+        std::process::exit(42);
+    }
 
-    let x: i128 = 0b0010_1100;
-    assert_eq!(x.leading_ones(), 0);
-    assert_eq!(x.trailing_ones(), 0);
+    /*let res = 10_i128.checked_div(2);
+    if res == Some(5) {
+        println!("2");
+    }
+    if let Some(val) = res {
+        println!("Val: {}", val);
+    }*/
+
+    /*let res = 5_i128.checked_div(0);
+    if let Some(val) = res {
+        println!("Val: {}", val);
+    }
+
+    assert!((10 as i128).checked_div(2) == Some(5));
+    assert!((5 as i128).checked_div(0) == None);*/
+
+    /*assert_eq!((10 as i128).checked_div(2), Some(5));
+    assert_eq!((5 as i128).checked_div(0), None);*/
 }
