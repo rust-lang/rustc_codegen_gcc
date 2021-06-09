@@ -7,7 +7,29 @@ fn main() {
     /*assert_eq!((0.0 as f64).min(0.0), 0.0);
     assert!((0.0 as f64).min(0.0).is_sign_positive());
     assert_eq!((-0.0 as f64).min(-0.0), -0.0);
-    assert!((-0.0 as f64).min(-0.0).is_sign_negative());
+
+    fn is_sign_neg(num: f64) -> bool {
+        num.to_bits() & 0x8000_0000_0000_0000 != 0
+    }
+    //assert!(is_sign_neg(-0.0_f64));
+    println!("{:b}", (-0.0_f64).to_bits());
+    let var = 1.2_f64;
+    println!("{}", 1.2_f64 == var);*/
+
+    /*fn my_float() -> f64 {
+        -0.0
+    }
+
+    let float = my_float();*/
+    //println!("{}", (-0.0_f64).to_bits());
+
+    // FIXME: seems like the asm is calling comisd which seems to convert -0.0 to 0.
+    assert!((-0.0_f64).to_bits() & 0x8000_0000_0000_0000 != 0);
+    println!("1");
+    //println!("{}", float);
+    //std::process::exit(float as i32)
+
+    /*assert!((-0.0 as f64).min(-0.0).is_sign_negative());
     assert_eq!((9.0 as f64).min(9.0), 9.0);
     assert_eq!((-9.0 as f64).min(0.0), -9.0);
     assert_eq!((0.0 as f64).min(9.0), 0.0);
@@ -192,105 +214,4 @@ fn main() {
     assert_eq!(r.saturating_pow(2), 4 as i128);
     assert_eq!(r.saturating_pow(3), -8 as i128);
     assert_eq!(r.saturating_pow(0), 1 as i128);*/
-
-    /*let res = 10_i64.checked_div(2);
-    if res == Some(5) {
-        println!("1");
-    }*/
-
-    fn equal(num1: &Option<i64>, num2: &Option<i64>) -> bool {
-        match (num1, num2) {
-            (Some(num1), Some(num2)) => num1 == num2,
-            (None, None) => true,
-            _ => false
-        }
-    }
-
-    fn equal2(num1: &Option<i128>, num2: &Option<i128>) -> bool {
-        match (num1, num2) {
-            (Some(num1), Some(num2)) => num1 == num2,
-            (None, None) => true,
-            _ => false
-        }
-    }
-
-    /*let res2 = Some(10_i64 / 2);
-    // NOTE: (local variable case) res2 is initialized as:
-    // first 8 bits: 1
-    // next 8 bits : 5
-    //
-    // (global variable case) Some(5) is initialized as:
-    // first 8 bits: 1
-    // next 8 bits : 5
-    if equal(&res2, &Some(5)) {
-        //println!("Equal: {}", res2 == Some(5));
-        std::process::exit(1);
-    }*/
-
-    // TODO: this seems to confirm that align(i128) == 16.
-    #[repr(C)]
-    struct int_option {
-        is_some: bool,
-        val: i128,
-    }
-
-    fn equal3(int1: &int_option, int2: &int_option) -> bool {
-        int1.is_some == int2.is_some &&
-            int1.val == int2.val
-    }
-
-    let res = int_option {
-        is_some: true,
-        val: 10 / 2,
-    };
-
-    let expected = int_option {
-        is_some: true,
-        val: 5,
-    };
-
-    /*if equal3(&expected, &res) {
-        std::process::exit(50);
-    }*/
-
-    // FIXME: &Option<i128> does not work while Option<i128> does.
-    let res2 = Some(10_i128 / 2);
-    // NOTE: (local variable case) res2 is initialized as:
-    // first 16 bits: 1 (garbage in the last 8 bits)
-    // next 8 bits  : 5
-    // next 8 bits  : 0
-    //
-    // FIXME: maybe there's an alignment problem (i.e. the i128 wants to be aligned on 128-bits?).
-    //
-    // (global variable case) Some(5) is initialized as:
-    // first 8 bits: 1
-    // next 8 bits : 5
-    // next 8 bits : 0
-    //
-    //let res1 = Some(5); // NOTE: It works when putting the value in a variable.
-    // NOTE: the case that doesn't work uses a global variable, which might mean we don't
-    // initialize them correctly.
-    if equal2(&Some(5), &res2) {
-        //println!("Equal: {}", res2 == Some(5));
-        std::process::exit(42);
-    }
-
-    /*let res = 10_i128.checked_div(2);
-    if res == Some(5) {
-        println!("2");
-    }
-    if let Some(val) = res {
-        println!("Val: {}", val);
-    }*/
-
-    /*let res = 5_i128.checked_div(0);
-    if let Some(val) = res {
-        println!("Val: {}", val);
-    }
-
-    assert!((10 as i128).checked_div(2) == Some(5));
-    assert!((5 as i128).checked_div(0) == None);*/
-
-    /*assert_eq!((10 as i128).checked_div(2), Some(5));
-    assert_eq!((5 as i128).checked_div(0), None);*/
 }

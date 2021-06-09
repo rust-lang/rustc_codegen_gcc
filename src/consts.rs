@@ -20,25 +20,7 @@ use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn const_bitcast(&self, value: RValue<'gcc>, typ: Type<'gcc>) -> RValue<'gcc> {
-        self.context.new_cast(None, value, typ)
-        // FIXME: use a real bitcast.
-            /*
-        //println!("bitcast: {:?} -> {:?}", value, dest_ty);
-        if type_is_pointer(value.get_type()) && type_is_pointer(typ) {
-            return self.context.new_cast(None, value, typ);
-        }
-
-        let func = self.current_func.borrow().expect("current func");
-        let variable = func.new_local(None, value.get_type(), "pointerCastVar");
-        // FIXME: we might not be in a function here, so we cannot create a variable.
-        // Use a global? Where to init it, though? Maybe where this function is called (static
-        // creation).
-        self.current_block.borrow().expect("current block").add_assignment(None, variable, value);
-        let pointer = variable.get_address(None);
-        self.context.new_cast(None, pointer, typ.make_pointer())
-            .dereference(None)
-            .to_rvalue()
-            */
+        self.context.new_bitcast(None, value, typ)
     }
 }
 
