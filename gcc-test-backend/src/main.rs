@@ -24,8 +24,8 @@ fn main() {
     //println!("{}", (-0.0_f64).to_bits());
 
     // FIXME: seems like the asm is calling comisd which seems to convert -0.0 to 0.
-    assert!((-0.0_f64).to_bits() & 0x8000_0000_0000_0000 != 0);
-    println!("1");
+    /*assert!((-0.0_f64).to_bits() & 0x8000_0000_0000_0000 != 0);
+    println!("1");*/
     //println!("{}", float);
     //std::process::exit(float as i32)
 
@@ -214,4 +214,47 @@ fn main() {
     assert_eq!(r.saturating_pow(2), 4 as i128);
     assert_eq!(r.saturating_pow(3), -8 as i128);
     assert_eq!(r.saturating_pow(0), 1 as i128);*/
+
+    fn max64() -> i128 {
+        18446744073709551615_i128
+        //18446744073709551615_u64 as i128
+
+        /*println!("{}", u64::MAX);
+        u64::MAX as i128*/
+    }
+
+    println!("1. {}", max64());
+
+    /*use std::convert::TryFrom;
+
+    fn try_from(u: i128) -> Option<u64> {
+        let min = u64::MIN as i128;
+        let max = u64::MAX as i128;
+        /*println!("{} < {} == {}", u, min, u < min);
+        println!("{} > {} == {}", u, max, u > max);*/
+        if u < min || u > max {
+            None
+        } else {
+            Some(u as u64)
+        }
+    }
+
+    let max = <i128>::MAX;
+    let min = <i128>::MIN;
+    let zero: i128 = 0;
+    let t_max = <u64>::MAX;
+    let t_min = <u64>::MIN;
+    assert!(<u64 as TryFrom<i128>>::try_from(max).is_err());
+    assert!(<u64 as TryFrom<i128>>::try_from(min).is_err());
+    println!("{:?}", try_from(zero));
+    println!("{:?}", <u64 as TryFrom<i128>>::try_from(zero));
+    assert_eq!(<u64 as TryFrom<i128>>::try_from(zero).unwrap(), zero as u64);
+    assert_eq!(
+        <u64 as TryFrom<i128>>::try_from(t_max as i128).unwrap(),
+        t_max as u64
+    );
+    assert_eq!(
+        <u64 as TryFrom<i128>>::try_from(t_min as i128).unwrap(),
+        t_min as u64
+    );*/
 }

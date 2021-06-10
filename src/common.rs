@@ -128,25 +128,28 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn const_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
-        let num64: Result<u64, _> = num.try_into();
+        let num64: Result<i64, _> = num.try_into();
         if let Ok(num) = num64 {
             // FIXME: workaround for a bug where libgccjit is expecting a constant.
             // The operations >> 64 and | low are making the normal case a non-constant.
             return self.context.new_rvalue_from_long(typ, num as i64);
         }
 
-        // FIXME: use a new function new_rvalue_from_unsigned_long()?
-        let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-        let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
+        if num >> 64 != 0 {
+            // FIXME: use a new function new_rvalue_from_unsigned_long()?
+            let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
+            let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
 
-        let sixty_four = self.context.new_rvalue_from_long(typ, 64);
-
-        (high << sixty_four) | self.context.new_cast(None, low, typ)
-
-        /*unsafe {
-            let words = [u as u64, (u >> 64) as u64];
-            llvm::LLVMConstIntOfArbitraryPrecision(t, 2, words.as_ptr())
-        }*/
+            let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+            (high << sixty_four) | self.context.new_cast(None, low, typ)
+        }
+        else if typ.is_i128(self) {
+            let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
+            self.context.new_cast(None, num, typ)
+        }
+        else {
+            self.context.new_rvalue_from_long(typ, num as u64 as i64)
+        }
     }
 
     fn const_bool(&self, val: bool) -> RValue<'gcc> {
