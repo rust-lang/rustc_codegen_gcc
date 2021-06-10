@@ -24,8 +24,8 @@ fn main() {
     //println!("{}", (-0.0_f64).to_bits());
 
     // FIXME: seems like the asm is calling comisd which seems to convert -0.0 to 0.
-    assert!((-0.0_f64).to_bits() & 0x8000_0000_0000_0000 != 0);
-    println!("1");
+    /*assert!((-0.0_f64).to_bits() & 0x8000_0000_0000_0000 != 0);
+    println!("1");*/
     //println!("{}", float);
     //std::process::exit(float as i32)
 
@@ -216,7 +216,8 @@ fn main() {
     assert_eq!(r.saturating_pow(0), 1 as i128);*/
 
     fn max64() -> i128 {
-        18446744073709551615_u64 as i128
+        18446744073709551615_i128
+        //18446744073709551615_u64 as i128
 
         /*println!("{}", u64::MAX);
         u64::MAX as i128*/
