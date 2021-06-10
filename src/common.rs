@@ -279,9 +279,12 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                             self.get_static(def_id)
                         },
                     };
-                let value = self.context.new_array_access(None, base_addr, self.const_usize(ptr.offset.bytes()));
+                let ptr_type = base_addr.get_type();
+                let base_addr = self.const_bitcast(base_addr, self.usize_type);
+                let offset = self.context.new_rvalue_from_long(self.usize_type, ptr.offset.bytes() as i64);
+                let ptr = self.const_bitcast(base_addr + offset, ptr_type);
+                let value = ptr.dereference(None);
                 if layout.value != Pointer {
-                    //unsafe { llvm::LLVMConstPtrToInt(value, ty) }
                     self.const_bitcast(value.to_rvalue(), ty)
                 }
                 else {
