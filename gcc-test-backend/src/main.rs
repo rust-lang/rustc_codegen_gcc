@@ -1,12 +1,11 @@
 fn main() {
-    const OPTION: Option<usize> = Some(32);
-
-    const REF: Option<&usize> = OPTION.as_ref();
-    assert_eq!(REF, Some(&32));
-
-    const IS_SOME: bool = OPTION.is_some();
-    assert!(IS_SOME);
-
-    const IS_NONE: bool = OPTION.is_none();
-    assert!(!IS_NONE);
+    let mut a = [0; 5];
+    let ptr1: *mut i32 = &mut a[1];
+    let ptr2: *mut i32 = &mut a[3];
+    unsafe {
+        assert_eq!(ptr2.offset_from(ptr1), 2);
+        assert_eq!(ptr1.offset_from(ptr2), -2);
+        assert_eq!(ptr1.offset(2), ptr2);
+        assert_eq!(ptr2.offset(-2), ptr1);
+    }
 }
