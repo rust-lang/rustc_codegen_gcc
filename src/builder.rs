@@ -580,15 +580,18 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn udiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: convert the arguments to unsigned?
         a / b
     }
 
     fn exactudiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: convert the arguments to unsigned?
         // TODO: poison if not exact.
         a / b
     }
 
     fn sdiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: convert the arguments to signed?
         a / b
     }
 
@@ -596,7 +599,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // TODO: posion if not exact.
         // FIXME: rustc_codegen_ssa::mir::intrinsic uses different types for a and b but they
         // should be the same.
-        let a = self.context.new_cast(None, a, b.get_type());
+        let typ = a.get_type().to_signed(self);
+        let a = self.context.new_cast(None, a, typ);
+        let b = self.context.new_cast(None, b, typ);
         a / b
     }
 
