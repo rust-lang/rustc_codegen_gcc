@@ -296,6 +296,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                         self.rotate_left(val, raw_shift, width)
                                     }
                                     else {
+                                        // TODO: implement now to enable more tests.
                                         match width {
                                             8 => unimplemented!(),
                                             16 => unimplemented!(),
