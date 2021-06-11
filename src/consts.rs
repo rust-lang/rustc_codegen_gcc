@@ -253,6 +253,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     let name = self.generate_local_symbol_name(kind);
                     // TODO: check if it's okay that TLS is off here.
                     // TODO: check if it's okay that link_section is None here.
+                    // TODO: set alignment here as well.
                     let gv = self.define_global(&name[..], self.val_ty(cv), false, None).unwrap_or_else(|| {
                         bug!("symbol `{}` is already defined", name);
                     });
@@ -262,7 +263,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 _ => {
                     let index = self.global_gen_sym_counter.get();
                     let name = format!("global_{}_{}", index, self.codegen_unit.name());
-                    let global = self.define_private_global(self.val_ty(cv));
+                    let typ = self.val_ty(cv).get_aligned(align.bytes());
+                    let global = self.define_private_global(typ);
                     (name, global)
                 },
             };
@@ -272,7 +274,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // to import it later.
         self.global_names.borrow_mut().insert(cv, name);
         self.global_init_block.add_assignment(None, gv.dereference(None), cv);
-        //set_global_alignment(&self, gv, align);
         //llvm::SetUnnamedAddress(gv, llvm::UnnamedAddr::Global);
         gv
     }
