@@ -296,14 +296,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                         self.rotate_left(val, raw_shift, width)
                                     }
                                     else {
-                                        // TODO: implement now to enable more tests.
-                                        match width {
-                                            8 => unimplemented!(),
-                                            16 => unimplemented!(),
-                                            32 => unimplemented!(),
-                                            64 => unimplemented!(),
-                                            _ => unimplemented!("rotate for integer of size {}", width),
-                                        }
+                                        self.rotate_right(val, raw_shift, width)
                                     }
                                 },
                                 sym::saturating_add => {
@@ -935,13 +928,29 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     // Algorithm from: https://blog.regehr.org/archives/1063
     fn rotate_left(&mut self, value: RValue<'gcc>, shift: RValue<'gcc>, width: u64) -> RValue<'gcc> {
+        let max = self.context.new_rvalue_from_long(shift.get_type(), width as i64);
+        let shift = shift % max;
         let lhs = self.shl(value, shift);
         let result_and =
             self.and(
                 self.context.new_unary_op(None, UnaryOp::Minus, shift.get_type(), shift),
                 self.context.new_rvalue_from_long(shift.get_type(), width as i64 - 1),
             );
-        let rhs = self.lshr(shift, result_and);
+        let rhs = self.lshr(value, result_and);
+        self.or(lhs, rhs)
+    }
+
+    // Algorithm from: https://blog.regehr.org/archives/1063
+    fn rotate_right(&mut self, value: RValue<'gcc>, shift: RValue<'gcc>, width: u64) -> RValue<'gcc> {
+        let max = self.context.new_rvalue_from_long(shift.get_type(), width as i64);
+        let shift = shift % max;
+        let lhs = self.lshr(value, shift);
+        let result_and =
+            self.and(
+                self.context.new_unary_op(None, UnaryOp::Minus, shift.get_type(), shift),
+                self.context.new_rvalue_from_long(shift.get_type(), width as i64 - 1),
+            );
+        let rhs = self.shl(value, result_and);
         self.or(lhs, rhs)
     }
 
