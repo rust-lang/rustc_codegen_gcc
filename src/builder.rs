@@ -720,8 +720,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fneg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO: use new_unary_op()?
-        self.cx.context.new_rvalue_from_long(a.get_type(), 0) - a
+        self.cx.context.new_unary_op(None, UnaryOp::Minus, a.get_type(), a)
     }
 
     fn not(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
