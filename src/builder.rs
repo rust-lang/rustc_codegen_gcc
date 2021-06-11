@@ -1034,10 +1034,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let align = dest.align.restrict_for_offset(dest.layout.field(self.cx(), 0).size);
         cg_elem.val.store(&mut body_bx, PlaceRef::new_sized_aligned(current_val, cg_elem.layout, align));
 
-        let ptr_value = self.const_usize(1);
-        let current_int = body_bx.ptrtoint(current_val, self.usize_type);
-        let next = current_int + ptr_value;
-        let next = body_bx.inttoptr(next, ptr_type);
+        let next = body_bx.inbounds_gep(current.to_rvalue(), &[self.const_usize(1)]);
         body_bx.llbb().add_assignment(None, current, next);
         body_bx.br(header_bx.llbb());
 
