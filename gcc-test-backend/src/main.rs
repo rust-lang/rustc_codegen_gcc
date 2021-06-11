@@ -1,39 +1,17 @@
-#![feature(array_chunks, slice_as_chunks)]
+#![feature(is_sorted)]
 
 fn main() {
-    let v: &mut [i32] = &mut [0, 1, 2, 3, 4, 5, 6];
+    let b: u16 = 42;
+    assert_eq!(b, 42);
+    let empty: [i32; 0] = [];
 
-    const WINDOW_SIZE: usize = 3;
-
-    let mut i = 0;
-    let len = v.len();
-    while i < len {
-        if i + WINDOW_SIZE >= len {
-            break;
-        }
-
-        //let slice: &mut [i32; WINDOW_SIZE] = TryFrom::try_from(&mut v[i..i+WINDOW_SIZE]).unwrap();
-        let slice = &mut v[i..i+WINDOW_SIZE];
-        let ptr = slice.as_mut_ptr() as *mut [i32; WINDOW_SIZE];
-        let array: &mut [i32; WINDOW_SIZE] = unsafe { &mut *ptr };
-        //println!("{:?}", array);
-
-        let sum = array.iter().sum::<i32>();
-        *array = [sum; WINDOW_SIZE];
-
-        i += WINDOW_SIZE;
-    }
-
-    //println!("{:?}", v);
-    assert_eq!(v, &[3, 3, 3, 12, 12, 12, 6]);
-
-    /*for a in v.array_chunks_mut() {
-        let sum = a.iter().sum::<i32>();
-        *a = [sum; 3];
-    }
-    assert_eq!(v, &[3, 3, 3, 12, 12, 12, 6]);*/
-
-    /*let v2: &mut [i32] = &mut [0, 1, 2, 3, 4, 5, 6];
-    v2.array_chunks_mut().for_each(|[a, b]| core::mem::swap(a, b));
-    assert_eq!(v2, &[1, 0, 3, 2, 5, 4, 6]);*/
+    assert!([1, 2, 2, 9].is_sorted());
+    assert!(![1, 3, 2].is_sorted());
+    assert!([42].is_sorted());
+    assert!(empty.is_sorted());
+    assert!(![0.0, 1.0, f32::NAN].is_sorted());
+    assert!([-2, -1, 0, 3].is_sorted());
+    assert!(![-2i32, -1, 0, 3].is_sorted_by_key(|n| n.abs()));
+    assert!(!["c", "bb", "aaa"].is_sorted());
+    assert!(["c", "bb", "aaa"].is_sorted_by_key(|s| s.len()));
 }
