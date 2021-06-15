@@ -48,7 +48,6 @@ mod debuginfo;
 mod declare;
 mod intrinsic;
 mod mangled_std_symbols;
-mod metadata;
 mod mono_item;
 mod type_;
 mod type_of;
@@ -99,16 +98,6 @@ impl CodegenBackend for GccCodegenBackend {
         }
     }
 
-    fn metadata_loader(&self) -> Box<dyn MetadataLoader + Sync> {
-        Box::new(crate::metadata::GccMetadataLoader)
-    }
-
-    fn provide(&self, _providers: &mut Providers) {
-    }
-
-    fn provide_extern(&self, _providers: &mut Providers) {
-    }
-
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, metadata: EncodedMetadata, need_metadata_module: bool) -> Box<dyn Any> {
         let target_cpu = target_cpu(tcx.sess);
         let res = codegen_crate(self.clone(), tcx, target_cpu.to_string(), metadata, need_metadata_module);
@@ -135,7 +124,7 @@ impl CodegenBackend for GccCodegenBackend {
                 sess,
                 &codegen_results,
                 outputs,
-                &codegen_results.crate_name.as_str(),
+                &codegen_results.crate_info.local_crate_name.as_str(),
             );
         });
 
