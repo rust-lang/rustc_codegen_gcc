@@ -1373,6 +1373,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         else if value_type.is_vector().is_some() {
             panic!();
         }
+        else if let Some(pointer_type) = value_type.get_pointee() {
+            if let Some(struct_type) = pointer_type.is_struct() {
+                // NOTE: hack to workaround a limitation of the rustc API: see comment on
+                // CodegenCx.structs_as_pointer
+                aggregate_value.dereference_field(None, struct_type.get_field(idx as i32)).to_rvalue()
+            }
+            else {
+                panic!("Unexpected type {:?}", value_type);
+            }
+        }
         else if let Some(struct_type) = value_type.is_struct() {
             aggregate_value.access_field(None, struct_type.get_field(idx as i32)).to_rvalue()
         }

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use rustc_session::Session;
 use rustc_codegen_ssa::back::archive::{find_library, ArchiveBuilder};
 use rustc_codegen_ssa::METADATA_FILENAME;
+use rustc_data_structures::temp_dir::MaybeTempDir;
+use rustc_middle::middle::cstore::DllImport;
 use rustc_span::symbol::Symbol;
 
 struct ArchiveConfig<'a> {
@@ -234,6 +236,10 @@ impl<'a> ArchiveBuilder<'a> for ArArchiveBuilder<'a> {
         if !status.success() {
             self.config.sess.fatal(&format!("Ranlib exited with code {:?}", status.code()));
         }
+    }
+
+    fn inject_dll_import_lib(&mut self, lib_name: &str, dll_imports: &[DllImport], tmpdir: &MaybeTempDir) {
+        unimplemented!();
     }
 }
 
