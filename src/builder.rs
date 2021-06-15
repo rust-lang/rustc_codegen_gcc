@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::convert::TryFrom;
 use std::ops::{Deref, Range};
 
+use gccjit::FunctionType;
 use gccjit::{
     BinaryOp,
     Block,
@@ -555,7 +556,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn add(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn add(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        if a.get_type() != b.get_type() {
+            b = self.context.new_cast(None, b, a.get_type());
+        }
         a + b
     }
 
@@ -563,7 +567,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         a + b
     }
 
-    fn sub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn sub(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        if a.get_type() != b.get_type() {
+            b = self.context.new_cast(None, b, a.get_type());
+        }
         a - b
     }
 
@@ -694,9 +701,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn and(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn and(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         // FIXME: hack by putting the result in a variable to workaround this bug:
         // https://gcc.gnu.org/bugzilla//show_bug.cgi?id=95498
+        if a.get_type() != b.get_type() {
+            b = self.context.new_cast(None, b, a.get_type());
+        }
         let res = self.current_func().new_local(None, b.get_type(), "andResult");
         self.llbb().add_assignment(None, res, a & b);
         res.to_rvalue()
@@ -1149,7 +1159,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let value = ptr.dereference(None).to_rvalue();
         let value_type = value.get_type();
 
-        if value_type.is_array() {
+        if value_type.is_array().is_some() {
             let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
             let element = self.context.new_array_access(None, value, index);
             element.get_address(None)
@@ -1180,9 +1190,21 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.context.new_cast(None, value, dest_ty)
     }
 
-    fn sext(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
-        unimplemented!();
-        //unsafe { llvm::LLVMBuildSExt(self.llbuilder, val, dest_ty, UNNAMED) }
+    fn sext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        // TODO: check that it indeed sign extend the value.
+        //println!("Sext {:?} to {:?}", value, dest_ty);
+        println!("Value type: {:?}", value.get_type());
+        println!("Value type is vec: {:?}", value.get_type().is_vector().is_some());
+        //if let Some(vector_type) = value.get_type().is_vector() {
+        if let Some(vector_type) = dest_ty.is_vector() {
+            println!("Vector unit {:?}", vector_type.get_num_units());
+            // TODO: nothing to do as it is only for LLVM?
+            return value;
+            /*let dest_type = self.context.new_vector_type(dest_ty, vector_type.get_num_units() as u64);
+            println!("Casting {:?} to {:?}", value, dest_type);
+            return self.context.new_cast(None, value, dest_type);*/
+        }
+        self.context.new_cast(None, value, dest_ty)
     }
 
     fn fptoui(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
@@ -1258,7 +1280,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     /* Comparisons */
-    fn icmp(&mut self, op: IntPredicate, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn icmp(&mut self, op: IntPredicate, lhs: RValue<'gcc>, mut rhs: RValue<'gcc>) -> RValue<'gcc> {
+        if lhs.get_type() != rhs.get_type() {
+            // NOTE: hack because we try to cast a vector type to the same vector type.
+            if format!("{:?}", lhs.get_type()) != format!("{:?}", rhs.get_type()) {
+                rhs = self.context.new_cast(None, rhs, lhs.get_type());
+            }
+        }
         self.context.new_comparison(None, op.to_gcc_comparison(), lhs, rhs)
     }
 
@@ -1316,7 +1344,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         block.add_eval(None, self.context.new_call(None, memset, &[ptr, fill_byte, size]));
     }
 
-    fn select(&mut self, cond: RValue<'gcc>, then_val: RValue<'gcc>, else_val: RValue<'gcc>) -> RValue<'gcc> {
+    fn select(&mut self, cond: RValue<'gcc>, then_val: RValue<'gcc>, mut else_val: RValue<'gcc>) -> RValue<'gcc> {
         let func = self.current_func();
         let variable = func.new_local(None, then_val.get_type(), "selectVar");
         let then_block = func.new_block("then");
@@ -1327,6 +1355,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         then_block.add_assignment(None, variable, then_val);
         then_block.end_with_jump(None, after_block);
 
+        if then_val.get_type() != else_val.get_type() {
+            else_val = self.context.new_cast(None, else_val, then_val.get_type());
+        }
         else_block.add_assignment(None, variable, else_val);
         else_block.end_with_jump(None, after_block);
 
@@ -1365,7 +1396,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         assert_eq!(idx as usize as u64, idx);
         let value_type = aggregate_value.get_type();
 
-        if value_type.is_array() {
+        if value_type.is_array().is_some() {
             let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
             let element = self.context.new_array_access(None, aggregate_value, index);
             element.get_address(None)
@@ -1389,7 +1420,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let value_type = aggregate_value.get_type();
 
         let lvalue =
-            if value_type.is_array() {
+            if value_type.is_array().is_some() {
                 let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
                 self.context.new_array_access(None, aggregate_value, index)
             }
@@ -1672,6 +1703,19 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 None,
             );
         }*/
+    }
+}
+
+impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
+    pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
+        let return_type = v1.get_type();
+        let params = [
+            self.context.new_parameter(None, return_type, "v1"),
+            self.context.new_parameter(None, return_type, "v2"),
+            self.context.new_parameter(None, mask.get_type(), "mask"),
+        ];
+        let shuffle = self.context.new_function(None, FunctionType::Extern, return_type, &params, "_mm_shuffle_epi8", false);
+        self.context.new_call(None, shuffle, &[v1, v2, mask])
     }
 }
 

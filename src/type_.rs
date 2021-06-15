@@ -4,6 +4,7 @@ use gccjit::{RValue, Struct, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods};
 use rustc_codegen_ssa::common::TypeKind;
 use rustc_middle::bug;
+use rustc_middle::ty;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_target::abi::{AddressSpace, Align, Integer, Size};
 
@@ -66,6 +67,39 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // FIXME(eddyb) We could find a better approximation if ity.align < align.
         let ity = Integer::approximate_align(self, align);
         self.type_from_integer(ity)
+    }
+
+    pub fn type_int_from_ty(&self, t: ty::IntTy) -> Type<'gcc> {
+        match t {
+            ty::IntTy::Isize => self.type_isize(),
+            ty::IntTy::I8 => self.type_i8(),
+            ty::IntTy::I16 => self.type_i16(),
+            ty::IntTy::I32 => self.type_i32(),
+            ty::IntTy::I64 => self.type_i64(),
+            ty::IntTy::I128 => self.type_i128(),
+        }
+    }
+
+    pub fn type_uint_from_ty(&self, t: ty::UintTy) -> Type<'gcc> {
+        match t {
+            ty::UintTy::Usize => self.type_isize(),
+            ty::UintTy::U8 => self.type_i8(),
+            ty::UintTy::U16 => self.type_i16(),
+            ty::UintTy::U32 => self.type_i32(),
+            ty::UintTy::U64 => self.type_i64(),
+            ty::UintTy::U128 => self.type_i128(),
+        }
+    }
+
+    pub fn type_float_from_ty(&self, t: ty::FloatTy) -> Type<'gcc> {
+        match t {
+            ty::FloatTy::F32 => self.type_f32(),
+            ty::FloatTy::F64 => self.type_f64(),
+        }
+    }
+
+    pub fn type_vector(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
+        self.context.new_vector_type(ty, len)
     }
 }
 
@@ -153,8 +187,18 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn element_type(&self, ty: Type<'gcc>) -> Type<'gcc> {
-        unimplemented!();
-        //unsafe { llvm::LLVMGetElementType(ty) }
+        if let Some(typ) = ty.is_array() {
+            typ
+        }
+        else if let Some(vector_type) = ty.is_vector() {
+            vector_type.get_element_type()
+        }
+        else if let Some(typ) = ty.get_pointee() {
+            typ
+        }
+        else {
+            unreachable!()
+        }
     }
 
     fn vector_length(&self, ty: Type<'gcc>) -> usize {

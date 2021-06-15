@@ -23,6 +23,7 @@ use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn const_bytes(&self, bytes: &[u8]) -> RValue<'gcc> {
+        panic!();
         bytes_in_context(self, bytes)
     }
 
@@ -79,6 +80,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
 
         self.const_int(self.isize_type, i)
+    }
+
+    pub fn const_vector(&self, elements: &[RValue<'gcc>]) -> RValue<'gcc> {
+        self.context.new_rvalue_from_vector(None, elements[0].get_type(), elements)
     }
 }
 

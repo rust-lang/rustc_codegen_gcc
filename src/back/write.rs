@@ -170,9 +170,9 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
                     .prof
                     .generic_activity_with_arg("LLVM_module_codegen_emit_obj", &module.name[..]);
                 //with_codegen(tm, llmod, config.no_builtins, |cpm| {
-                    //println!("1: {}", module.name);
+                    println!("1: {}", module.name);
                     match &*module.name {
-                        "coretests.4ywh8hhw-cgu.12" | "coretests.4ywh8hhw-cgu.15" | "coretests.4ywh8hhw-cgu.14" => {
+                        "std_example.7rcbfp3g-cgu.15" => {
                             println!("Dumping reproducer {}", module.name);
                             let _ = fs::create_dir("/tmp/reproducers");
                             // FIXME: segfault in dump_reproducer_to_file() might be caused by
@@ -183,6 +183,9 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
                         },
                         _ => (),
                     }
+                    /*let _ = fs::create_dir("/tmp/dumps");
+                    context.dump_to_file(&format!("/tmp/dumps/{}.c", module.name), true);
+                    println!("Dumped {}", module.name);*/
                     //println!("Compile module {}", module.name);
                     context.compile_to_file(OutputKind::ObjectFile, obj_out.to_str().expect("path to str"));
                 //})?;
