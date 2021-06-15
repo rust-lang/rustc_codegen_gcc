@@ -40,13 +40,17 @@ $RUSTC example/mini_core_hello_world.rs --crate-name mini_core_hello_world --cra
 $RUN_WRAPPER ./target/out/mini_core_hello_world abc bcd
 # (echo "break set -n main"; echo "run"; sleep 1; echo "si -c 10"; sleep 1; echo "frame variable") | lldb -- ./target/out/mini_core_hello_world abc bcd
 
-echo "[BUILD] sysroot"
-time ./build_sysroot/build_sysroot.sh
+#echo "[BUILD] sysroot"
+#time ./build_sysroot/build_sysroot.sh
 
 echo "[AOT] arbitrary_self_types_pointers_and_wrappers"
 $RUSTC example/arbitrary_self_types_pointers_and_wrappers.rs --crate-name arbitrary_self_types_pointers_and_wrappers --crate-type bin --target $TARGET_TRIPLE
 $RUN_WRAPPER ./target/out/arbitrary_self_types_pointers_and_wrappers
 
+echo "[AOT] alloc_system"
+$RUSTC example/alloc_system.rs --crate-type lib --target "$TARGET_TRIPLE"
+
+# FIXME: this requires linking an additional lib for __popcountdi2
 #echo "[AOT] alloc_example"
 #$RUSTC example/alloc_example.rs --crate-type bin --target $TARGET_TRIPLE
 #$RUN_WRAPPER ./target/out/alloc_example
@@ -58,23 +62,24 @@ $RUN_WRAPPER ./target/out/arbitrary_self_types_pointers_and_wrappers
     #echo "[JIT] std_example (skipped)"
 #fi
 
-#echo "[AOT] dst_field_align"
+echo "[AOT] dst_field_align"
 # FIXME Re-add -Zmir-opt-level=2 once rust-lang/rust#67529 is fixed.
-#$RUSTC example/dst-field-align.rs --crate-name dst_field_align --crate-type bin --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/dst_field_align || (echo $?; false)
+$RUSTC example/dst-field-align.rs --crate-name dst_field_align --crate-type bin --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/dst_field_align || (echo $?; false)
 
 echo "[AOT] std_example"
 $RUSTC example/std_example.rs --crate-type bin --target $TARGET_TRIPLE
 $RUN_WRAPPER ./target/out/std_example --target $TARGET_TRIPLE
 
-#echo "[AOT] subslice-patterns-const-eval"
-#$RUSTC example/subslice-patterns-const-eval.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/subslice-patterns-const-eval
+echo "[AOT] subslice-patterns-const-eval"
+$RUSTC example/subslice-patterns-const-eval.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/subslice-patterns-const-eval
 
-#echo "[AOT] track-caller-attribute"
-#$RUSTC example/track-caller-attribute.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/track-caller-attribute
+echo "[AOT] track-caller-attribute"
+$RUSTC example/track-caller-attribute.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/track-caller-attribute
 
+# FIXME: this requires linking an additional lib for __popcountdi2
 #echo "[BUILD] mod_bench"
 #$RUSTC example/mod_bench.rs --crate-type bin --target $TARGET_TRIPLE
 
@@ -100,24 +105,23 @@ $RUN_WRAPPER ./target/out/std_example --target $TARGET_TRIPLE
 #fi
 #popd
 
-pushd build_sysroot/sysroot_src/library/core/tests
-echo "[TEST] libcore"
-rm -r ./target || true
-../../../../../cargo.sh test
-popd
-
-# TODO: uncomment when having SIMD support.
-#pushd regex
-#echo "[TEST] rust-lang/regex example shootout-regex-dna"
-#../cargo.sh clean
-## Make sure `[codegen mono items] start` doesn't poison the diff
-#../cargo.sh build --example shootout-regex-dna
-#cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
-#diff -u res.txt examples/regexdna-output.txt
-
-#echo "[TEST] rust-lang/regex tests"
-#../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
+#pushd build_sysroot/sysroot_src/library/core/tests
+#echo "[TEST] libcore"
+#rm -r ./target || true
+#../../../../../cargo.sh test
 #popd
+
+pushd regex
+echo "[TEST] rust-lang/regex example shootout-regex-dna"
+../cargo.sh clean
+# Make sure `[codegen mono items] start` doesn't poison the diff
+../cargo.sh build --example shootout-regex-dna
+cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
+diff -u res.txt examples/regexdna-output.txt
+
+echo "[TEST] rust-lang/regex tests"
+../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
+popd
 
 #echo
 #echo "[BENCH COMPILE] mod_bench"
@@ -146,10 +150,10 @@ git fetch
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
 export RUSTFLAGS=
 
-##git apply ../rust_lang.patch
+#git apply ../rust_lang.patch
 
 
-#rm config.toml || true
+rm config.toml || true
 
 cat > config.toml <<EOF
 [rust]
@@ -161,6 +165,7 @@ rustc = "$HOME/.rustup/toolchains/$rust_toolchain-$TARGET_TRIPLE/bin/rustc"
 EOF
 
 rustc -V | cut -d' ' -f3 | tr -d '('
+
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
 rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
 for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do

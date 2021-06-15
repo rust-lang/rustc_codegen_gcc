@@ -1,3 +1,5 @@
+mod simd;
+
 use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::MemFlags;
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -18,6 +20,7 @@ use crate::common::TypeReflection;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 use crate::va_arg::emit_va_arg;
+use crate::intrinsic::simd::generic_simd_intrinsic;
 
 fn get_simple_intrinsic<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, name: Symbol) -> Option<Function<'gcc>> {
     let gcc_name = match name {
@@ -323,11 +326,10 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     }
 
                 _ if name_str.starts_with("simd_") => {
-                    unimplemented!();
-                    /*match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {
+                    match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {
                         Ok(llval) => llval,
                         Err(()) => return,
-                    }*/
+                    }
                 }
 
                 _ => bug!("unknown intrinsic '{}'", name),

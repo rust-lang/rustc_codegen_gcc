@@ -94,7 +94,6 @@ fn main() {
 
     println!("{:?}", std::intrinsics::caller_location());
 
-    // TODO: implement SIMD
     /*unsafe {
         test_simd();
     }*/
@@ -106,8 +105,7 @@ fn main() {
     println!("End");
 }
 
-/*
-#[target_feature(enable = "sse2")]
+/*#[target_feature(enable = "sse2")]
 unsafe fn test_simd() {
     let x = _mm_setzero_si128();
     let y = _mm_set1_epi16(7);
@@ -115,7 +113,7 @@ unsafe fn test_simd() {
     let cmp_eq = _mm_cmpeq_epi8(y, y);
     let cmp_lt = _mm_cmplt_epi8(y, y);
 
-    assert_eq!(std::mem::transmute::<_, [u16; 8]>(or), [7, 7, 7, 7, 7, 7, 7, 7]);
+    /*assert_eq!(std::mem::transmute::<_, [u16; 8]>(or), [7, 7, 7, 7, 7, 7, 7, 7]);
     assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_eq), [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff]);
     assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_lt), [0, 0, 0, 0, 0, 0, 0, 0]);
 
@@ -131,8 +129,8 @@ unsafe fn test_simd() {
     //test_mm_extract_epi8();
 
     let mask1 = _mm_movemask_epi8(dbg!(_mm_setr_epi8(255u8 as i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
-    assert_eq!(mask1, 1);
-}
+    assert_eq!(mask1, 1);*/
+}*/
 
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_slli_si128() {
@@ -260,7 +258,7 @@ unsafe fn test_mm_extract_epi8() {
     let r2 = _mm_extract_epi8(a, 19);
     assert_eq!(r1, 0xFF);
     assert_eq!(r2, 3);
-}*/
+}
 
 #[derive(PartialEq)]
 enum LoopState {
