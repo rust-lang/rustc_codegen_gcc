@@ -142,6 +142,8 @@ $RUN_WRAPPER ./target/out/track-caller-attribute
 echo
 echo "[TEST] rust-lang/rust"
 
+rust_toolchain=$(cat rust-toolchain)
+
 git clone https://github.com/rust-lang/rust.git --depth=1 || true
 cd rust
 git fetch
@@ -157,10 +159,12 @@ cat > config.toml <<EOF
 [rust]
 codegen-backends = []
 [build]
+cargo = "/usr/bin/cargo"
 local-rebuild = true
-rustc = "$HOME/.rustup/toolchains/nightly-$TARGET_TRIPLE/bin/rustc"
+rustc = "$HOME/.rustup/toolchains/$rust_toolchain-$TARGET_TRIPLE/bin/rustc"
 EOF
 
+rustc -V | cut -d' ' -f3 | tr -d '('
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
 rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
 for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
@@ -176,4 +180,4 @@ done
 RUSTC_ARGS="-Zpanic-abort-tests -Zcodegen-backend="$(pwd)"/../target/"$CHANNEL"/librustc_codegen_gcc."$dylib_ext" --sysroot "$(pwd)"/../build_sysroot/sysroot -Cpanic=abort"
 
 echo "[TEST] rustc test suite"
-./x.py test --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" 2>&1 | tee log.txt
+COMPILETEST_FORCE_STAGE0=1 ./x.py test --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" 2>&1 | tee log.txt
