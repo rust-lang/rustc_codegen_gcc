@@ -140,10 +140,10 @@ echo "[TEST] rust-lang/rust"
 
 rust_toolchain=$(cat rust-toolchain)
 
-git clone https://github.com/rust-lang/rust.git --depth=1 || true
+git clone https://github.com/rust-lang/rust.git || true
 cd rust
 git fetch
-#git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
+git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
 export RUSTFLAGS=
 
 ##git apply ../rust_lang.patch

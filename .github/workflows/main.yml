@@ -59,6 +59,12 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('rust-toolchain') }}
 
+    - name: Cache Rust repo
+      uses: actions/cache@v1.1.2
+      with:
+        path: rust
+        key: ${{ runner.os }}-rust-${{ hashFiles('rust-toolchain') }}
+
     - name: Prepare dependencies
       run: |
         git config --global user.email "user@example.com"
