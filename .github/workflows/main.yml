@@ -14,6 +14,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Install packages
+      run: sudo apt-get install ninja-build
+
     - name: Download artifact
       uses: dawidd6/action-download-artifact@v2
       with:
@@ -58,12 +61,6 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('rust-toolchain') }}
-
-    - name: Cache Rust repo
-      uses: actions/cache@v1.1.2
-      with:
-        path: rust
-        key: ${{ runner.os }}-rust-${{ hashFiles('rust-toolchain') }}
 
     - name: Prepare dependencies
       run: |

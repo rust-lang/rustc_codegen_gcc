@@ -155,7 +155,7 @@ cat > config.toml <<EOF
 [rust]
 codegen-backends = []
 [build]
-cargo = "/usr/bin/cargo"
+cargo = "$(which cargo)"
 local-rebuild = true
 rustc = "$HOME/.rustup/toolchains/$rust_toolchain-$TARGET_TRIPLE/bin/rustc"
 EOF
@@ -173,7 +173,8 @@ done
 #rm src/test/ui/macros/same-sequence-span.rs || true # Proc macro .rustc section not found?
 #rm src/test/ui/suggestions/issue-61963.rs || true # ^
 
-#RUSTC_ARGS="-Zpanic-abort-tests -Zcodegen-backend="$(pwd)"/../target/"$CHANNEL"/librustc_codegen_gcc."$dylib_ext" --sysroot "$(pwd)"/../build_sysroot/sysroot -Cpanic=abort"
+RUSTC_ARGS="-Zpanic-abort-tests -Zcodegen-backend="$(pwd)"/../target/"$CHANNEL"/librustc_codegen_gcc."$dylib_ext" --sysroot "$(pwd)"/../build_sysroot/sysroot -Cpanic=abort"
 
 echo "[TEST] rustc test suite"
-COMPILETEST_FORCE_STAGE0=1 ./x.py test --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" 2>&1 | tee log.txt
+# TODO: remove excluded tests when they stop stalling.
+COMPILETEST_FORCE_STAGE0=1 ./x.py test --run always --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" --exclude src/test/ui/numbers-arithmetic/saturating-float-casts.rs --exclude src/test/ui/issues/issue-50811.rs
