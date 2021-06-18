@@ -165,7 +165,6 @@ rustc = "$HOME/.rustup/toolchains/$rust_toolchain-$TARGET_TRIPLE/bin/rustc"
 EOF
 
 rustc -V | cut -d' ' -f3 | tr -d '('
-
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
 rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
 for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
