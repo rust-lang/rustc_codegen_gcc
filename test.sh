@@ -105,11 +105,11 @@ $RUN_WRAPPER ./target/out/track-caller-attribute
 #fi
 #popd
 
-#pushd build_sysroot/sysroot_src/library/core/tests
-#echo "[TEST] libcore"
-#rm -r ./target || true
-#../../../../../cargo.sh test
-#popd
+pushd build_sysroot/sysroot_src/library/core/tests
+echo "[TEST] libcore"
+rm -r ./target || true
+../../../../../cargo.sh test
+popd
 
 #pushd regex
 #echo "[TEST] rust-lang/regex example shootout-regex-dna"
