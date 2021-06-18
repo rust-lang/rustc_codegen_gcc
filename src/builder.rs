@@ -150,16 +150,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
         let expected = self.context.new_cast(None, cmp.get_address(None), void_ptr_type);
 
-        // NOTE: not sure why, but we need to cast to the signed type.
-        let new_src_type =
-            if size == 64 {
-                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
-                self.cx.long_type
-            }
-            else {
-                src.get_type().to_signed(&self.cx)
-            };
-        let src = self.context.new_cast(None, src, new_src_type);
+        // NOTE: not sure why, but we have the wrong type here.
+        let int_type = compare_exchange.get_param(2).to_rvalue().get_type();
+        let src = self.context.new_cast(None, src, int_type);
         self.context.new_call(None, compare_exchange, &[dst, expected, src, weak, order, failure_order])
     }
 
@@ -1124,7 +1117,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // FIXME: fix libgccjit to allow comparing an integer type with an aligned integer type because
         // the following cast is required to avoid this error:
         // gcc_jit_context_new_call: mismatching types for argument 2 of function "__atomic_store_4": assignment to param arg1 (type: int) from loadedValue3577 (type: unsigned int  __attribute__((aligned(4))))
-        let int_type = self.cx.int_type_from_size(size.bytes());
+        let int_type = atomic_store.get_param(1).to_rvalue().get_type();
         let value = self.context.new_cast(None, value, int_type);
         self.llbb()
             .add_eval(None, self.context.new_call(None, atomic_store, &[ptr, value, ordering]));
@@ -1576,15 +1569,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let void_ptr_type = self.context.new_type::<*mut ()>();
         let volatile_void_ptr_type = void_ptr_type.make_volatile();
         let dst = self.context.new_cast(None, dst, volatile_void_ptr_type);
-        // NOTE: not sure why, but we need to cast to the signed type.
-        let new_src_type =
-            if size == 8 {
-                // TODO: use sized types (uint64_t, …) when libgccjit supports them.
-                self.cx.long_type
-            }
-            else {
-                src.get_type().to_signed(&self.cx)
-            };
+        // NOTE: not sure why, but we have the wrong type here.
+        let new_src_type = atomic_function.get_param(1).to_rvalue().get_type();
         let src = self.context.new_cast(None, src, new_src_type);
         let res = self.context.new_call(None, atomic_function, &[dst, src, order]);
         self.context.new_cast(None, res, src.get_type())
