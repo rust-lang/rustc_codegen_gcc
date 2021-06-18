@@ -16,6 +16,7 @@
 /*extern crate flate2;
 extern crate libc;*/
 extern crate rustc_ast;
+extern crate rustc_attr;
 extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_errors;
@@ -35,6 +36,7 @@ extern crate rustc_driver;
 mod abi;
 mod allocator;
 mod archive;
+mod attributes;
 mod asm;
 mod back;
 mod base;

@@ -1,3 +1,5 @@
+use gccjit::{Function, ToRValue};
+use rustc_attr::InlineAttr;
 use rustc_codegen_ssa::traits::PreDefineMethods;
 use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 use rustc_middle::mir::mono::{Linkage, Visibility};
@@ -7,7 +9,9 @@ use rustc_span::def_id::DefId;
 use rustc_target::abi::LayoutOf;
 use rustc_target::abi::call::FnAbi;
 
+use crate::attributes;
 use crate::base;
+use crate::common::TypeReflection;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
@@ -51,8 +55,26 @@ impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
         //debug!("predefine_fn: instance = {:?}", instance);
 
+        let func: Function = unsafe { std::mem::transmute(decl) };
+
+        let mut set_attributes = true;
+        for i in 0..func.get_param_count() {
+            let param = func.get_param(i as i32);
+            // FIXME: 128-bit integers seem to break inlining in libgccjit.
+            // Here's an example function that causes the ICE:
+            // #[inline(always)]
+            // pub fn overflowing_add(a: i128, b: i128) -> (i128, bool) {
+            //     (a + b, false)
+            // }
+            if param.to_rvalue().get_type().is_u128(self) || param.to_rvalue().get_type().is_i128(self) {
+                set_attributes = false;
+            }
+        }
+
         // TODO: use inline attribute from there in linkage.set() above:
-        //attributes::from_fn_attrs(self, decl, instance);
+        if set_attributes {
+            attributes::from_fn_attrs(self, func, instance);
+        }
 
         //self.instances.borrow_mut().insert(instance, decl);
     }
