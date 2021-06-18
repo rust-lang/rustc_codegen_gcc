@@ -106,61 +106,66 @@ rm -r ./target || true
 ../../../../../cargo.sh test
 popd
 
-pushd regex
-echo "[TEST] rust-lang/regex example shootout-regex-dna"
-../cargo.sh clean
-# Make sure `[codegen mono items] start` doesn't poison the diff
-../cargo.sh build --example shootout-regex-dna
-cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
-diff -u res.txt examples/regexdna-output.txt
+# TODO: uncomment when having SIMD support.
+#pushd regex
+#echo "[TEST] rust-lang/regex example shootout-regex-dna"
+#../cargo.sh clean
+## Make sure `[codegen mono items] start` doesn't poison the diff
+#../cargo.sh build --example shootout-regex-dna
+#cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
+#diff -u res.txt examples/regexdna-output.txt
 
-echo "[TEST] rust-lang/regex tests"
-../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
-popd
+#echo "[TEST] rust-lang/regex tests"
+#../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
+#popd
 
-echo
-echo "[BENCH COMPILE] mod_bench"
+#echo
+#echo "[BENCH COMPILE] mod_bench"
 
-COMPILE_MOD_BENCH_INLINE="$RUSTC example/mod_bench.rs --crate-type bin -Zmir-opt-level=3 -O --crate-name mod_bench_inline"
-COMPILE_MOD_BENCH_LLVM_0="rustc example/mod_bench.rs --crate-type bin -Copt-level=0 -o target/out/mod_bench_llvm_0 -Cpanic=abort"
-COMPILE_MOD_BENCH_LLVM_1="rustc example/mod_bench.rs --crate-type bin -Copt-level=1 -o target/out/mod_bench_llvm_1 -Cpanic=abort"
-COMPILE_MOD_BENCH_LLVM_2="rustc example/mod_bench.rs --crate-type bin -Copt-level=2 -o target/out/mod_bench_llvm_2 -Cpanic=abort"
-COMPILE_MOD_BENCH_LLVM_3="rustc example/mod_bench.rs --crate-type bin -Copt-level=3 -o target/out/mod_bench_llvm_3 -Cpanic=abort"
+#COMPILE_MOD_BENCH_INLINE="$RUSTC example/mod_bench.rs --crate-type bin -Zmir-opt-level=3 -O --crate-name mod_bench_inline"
+#COMPILE_MOD_BENCH_LLVM_0="rustc example/mod_bench.rs --crate-type bin -Copt-level=0 -o target/out/mod_bench_llvm_0 -Cpanic=abort"
+#COMPILE_MOD_BENCH_LLVM_1="rustc example/mod_bench.rs --crate-type bin -Copt-level=1 -o target/out/mod_bench_llvm_1 -Cpanic=abort"
+#COMPILE_MOD_BENCH_LLVM_2="rustc example/mod_bench.rs --crate-type bin -Copt-level=2 -o target/out/mod_bench_llvm_2 -Cpanic=abort"
+#COMPILE_MOD_BENCH_LLVM_3="rustc example/mod_bench.rs --crate-type bin -Copt-level=3 -o target/out/mod_bench_llvm_3 -Cpanic=abort"
 
-# Use 100 runs, because a single compilations doesn't take more than ~150ms, so it isn't very slow
-hyperfine --runs ${COMPILE_RUNS:-100} "$COMPILE_MOD_BENCH_INLINE" "$COMPILE_MOD_BENCH_LLVM_0" "$COMPILE_MOD_BENCH_LLVM_1" "$COMPILE_MOD_BENCH_LLVM_2" "$COMPILE_MOD_BENCH_LLVM_3"
+## Use 100 runs, because a single compilations doesn't take more than ~150ms, so it isn't very slow
+#hyperfine --runs ${COMPILE_RUNS:-100} "$COMPILE_MOD_BENCH_INLINE" "$COMPILE_MOD_BENCH_LLVM_0" "$COMPILE_MOD_BENCH_LLVM_1" "$COMPILE_MOD_BENCH_LLVM_2" "$COMPILE_MOD_BENCH_LLVM_3"
 
-echo
-echo "[BENCH RUN] mod_bench"
-hyperfine --runs ${RUN_RUNS:-10} ./target/out/mod_bench{,_inline} ./target/out/mod_bench_llvm_*
+#echo
+#echo "[BENCH RUN] mod_bench"
+#hyperfine --runs ${RUN_RUNS:-10} ./target/out/mod_bench{,_inline} ./target/out/mod_bench_llvm_*
 
 echo
 echo "[TEST] rust-lang/rust"
 
-#git clone https://github.com/rust-lang/rust.git --depth=1 || true
-#cd rust
-##git fetch
-##git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
-#export RUSTFLAGS=
+rust_toolchain=$(cat rust-toolchain)
+
+git clone https://github.com/rust-lang/rust.git --depth=1 || true
+cd rust
+git fetch
+#git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
+export RUSTFLAGS=
 
 ##git apply ../rust_lang.patch
 
 
 #rm config.toml || true
 
-#cat > config.toml <<EOF
-#[rust]
-#codegen-backends = []
-#[build]
-#local-rebuild = true
-#rustc = "$HOME/.rustup/toolchains/nightly-$TARGET_TRIPLE/bin/rustc"
-#EOF
+cat > config.toml <<EOF
+[rust]
+codegen-backends = []
+[build]
+cargo = "/usr/bin/cargo"
+local-rebuild = true
+rustc = "$HOME/.rustup/toolchains/$rust_toolchain-$TARGET_TRIPLE/bin/rustc"
+EOF
 
-#git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
-#rm -r src/test/ui/{asm-*,abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
-#for test in $(rg --files-with-matches "asm!|catch_unwind|should_panic|thread|lto" src/test/ui); do
-  #rm $test
-#done
+rustc -V | cut -d' ' -f3 | tr -d '('
+git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
+rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
+for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
+  rm $test
+done
 #rm src/test/ui/consts/const-size_of-cycle.rs || true # Error file path difference
 #rm src/test/ui/impl-trait/impl-generic-mismatch.rs || true # ^
 #rm src/test/ui/type_length_limit.rs || true
@@ -170,5 +175,5 @@ echo "[TEST] rust-lang/rust"
 
 #RUSTC_ARGS="-Zpanic-abort-tests -Zcodegen-backend="$(pwd)"/../target/"$CHANNEL"/librustc_codegen_gcc."$dylib_ext" --sysroot "$(pwd)"/../build_sysroot/sysroot -Cpanic=abort"
 
-#echo "[TEST] rustc test suite"
-#./x.py test --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" 2>&1 | tee log.txt
+echo "[TEST] rustc test suite"
+COMPILETEST_FORCE_STAGE0=1 ./x.py test --stage 0 src/test/ui/ --rustc-args "$RUSTC_ARGS" 2>&1 | tee log.txt
