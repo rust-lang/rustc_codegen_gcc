@@ -62,6 +62,7 @@ use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
 use rustc_codegen_ssa::back::write::{CodegenContext, FatLTOInput, ModuleConfig, TargetMachineFactoryFn};
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule};
+use rustc_codegen_ssa::target_features::supported_target_features;
 use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, ModuleBufferMethods, ThinBufferMethods, WriteBackendMethods};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{ErrorReported, Handler};
@@ -129,6 +130,10 @@ impl CodegenBackend for GccCodegenBackend {
         });
 
         Ok(())
+    }
+
+    fn target_features(&self, sess: &Session) -> Vec<Symbol> {
+        target_features(sess)
     }
 }
 
@@ -309,4 +314,26 @@ fn handle_native(name: &str) -> &str {
 pub fn target_cpu(sess: &Session) -> &str {
     let name = sess.opts.cg.target_cpu.as_ref().unwrap_or(&sess.target.cpu);
     handle_native(name)
+}
+
+pub fn target_features(sess: &Session) -> Vec<Symbol> {
+    supported_target_features(sess)
+        .iter()
+        .filter_map(
+            |&(feature, gate)| {
+                if sess.is_nightly_build() || gate.is_none() { Some(feature) } else { None }
+            },
+        )
+        .filter(|feature| {
+            if feature.starts_with("sse") {
+                return true;
+            }
+            //println!("Feature: {}", feature);
+            /*let llvm_feature = to_llvm_feature(sess, feature);
+            let cstr = CString::new(llvm_feature).unwrap();
+            unsafe { llvm::LLVMRustHasFeature(target_machine, cstr.as_ptr()) }*/
+            false
+        })
+        .map(|feature| Symbol::intern(feature))
+        .collect()
 }

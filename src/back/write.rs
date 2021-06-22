@@ -170,7 +170,7 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
                     .prof
                     .generic_activity_with_arg("LLVM_module_codegen_emit_obj", &module.name[..]);
                 //with_codegen(tm, llmod, config.no_builtins, |cpm| {
-                    println!("1: {}", module.name);
+                    //println!("1: {}", module.name);
                     match &*module.name {
                         "std_example.7rcbfp3g-cgu.15" => {
                             println!("Dumping reproducer {}", module.name);

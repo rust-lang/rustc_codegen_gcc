@@ -1,3 +1,4 @@
+pub mod llvm;
 mod simd;
 
 use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};

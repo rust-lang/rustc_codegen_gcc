@@ -14,7 +14,8 @@ path = "tests/lib.rs"
 harness = false
 
 [dependencies]
-gccjit = { git = "https://github.com/antoyo/gccjit.rs", branch = "feature/rustc" }
+#gccjit = { git = "https://github.com/antoyo/gccjit.rs", branch = "feature/rustc" }
+gccjit = { path = "/home/bouanto/Ordinateur/Programmation/Rust/Projets/gccjit.rs" }
 
 target-lexicon = "0.10.0"
 

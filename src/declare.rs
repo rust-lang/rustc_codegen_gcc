@@ -6,6 +6,7 @@ use rustc_target::abi::call::FnAbi;
 
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
+use crate::intrinsic::llvm;
 use crate::mangled_std_symbols::{ARGV_INIT_ARRAY, ARGV_INIT_WRAPPER};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -170,11 +171,8 @@ fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llv
         llvm::LLVMRustGetOrInsertFunction(cx.llmod, name.as_ptr().cast(), name.len(), ty)
     };*/
 
-    if name == "llvm.x86.xgetbv" {
-        // TODO: support other LLVM intrinsics.
-        let func = cx.context.get_builtin_function("__builtin_trap");
-        cx.functions.borrow_mut().insert(name.to_string(), func);
-        return func;
+    if name.starts_with("llvm.") {
+        return llvm::intrinsic(name, cx);
     }
     let func =
         if cx.functions.borrow().contains_key(name) {

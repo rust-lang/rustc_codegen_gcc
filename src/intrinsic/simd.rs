@@ -13,6 +13,8 @@ use crate::builder::Builder;
 use crate::context::CodegenCx;
 
 pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, name: Symbol, callee_ty: Ty<'tcx>, args: &[OperandRef<'tcx, RValue<'gcc>>], ret_ty: Ty<'tcx>, llret_ty: Type<'gcc>, span: Span) -> Result<RValue<'gcc>, ()> {
+    //println!("Generic simd: {}", name);
+
     // macros for error handling:
     macro_rules! emit_error {
         ($msg: tt) => {

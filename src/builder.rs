@@ -361,10 +361,15 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local or call add_eval().
         let gcc_func = func_ptr.get_type().is_function_ptr_type().expect("function ptr");
-        let return_type = gcc_func.get_return_type();
+        let mut return_type = gcc_func.get_return_type();
         let current_block = self.current_block.borrow().expect("block");
         let void_type = self.context.new_type::<()>();
         let current_func = current_block.get_function();
+
+        // FIXME: As a temporary workaround for unsupported LLVM intrinsics.
+        if gcc_func.get_param_count() == 0 && format!("{:?}", func_ptr) == "__builtin_ia32_pmovmskb128" {
+            return_type = self.int_type;
+        }
 
         if return_type != void_type {
             unsafe { RETURN_VALUE_COUNT += 1 };
@@ -374,14 +379,16 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             if gcc_func.get_param_count() == 0 {
-                // As a temporary workaround for unsupported LLVM intrinsics.
+                // FIXME: As a temporary workaround for unsupported LLVM intrinsics.
                 current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &[]));
             }
             else {
                 current_block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             }
             // Return dummy value when not having return value.
-            self.context.new_rvalue_from_long(self.isize_type, 0)
+            let result = current_func.new_local(None, self.isize_type, "dummyValueThatShouldNeverBeUsed");
+            current_block.add_assignment(None, result, self.context.new_rvalue_from_long(self.isize_type, 0));
+            result.to_rvalue()
         }
     }
 
@@ -550,7 +557,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn add(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        if a.get_type() != b.get_type() {
+        // FIXME: this should not be required.
+        if format!("{:?}", a.get_type()) != format!("{:?}", b.get_type()) {
             b = self.context.new_cast(None, b, a.get_type());
         }
         a + b
@@ -1158,15 +1166,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             element.get_address(None)
         }
         else if let Some(vector_type) = value_type.is_vector() {
-            let count = vector_type.get_num_units();
-            let element_type = vector_type.get_element_type();
-            let indexes = vec![self.context.new_rvalue_from_long(element_type, i64::try_from(idx).expect("i64::try_from")); count as usize];
-            let indexes = self.context.new_rvalue_from_vector(None, value_type, &indexes);
-            let variable = self.current_func.borrow().expect("func")
-                .new_local(None, value_type, "vectorVar");
-            self.current_block.borrow().expect("block")
-                .add_assignment(None, variable, value + indexes);
-            variable.get_address(None)
+            let array_type = vector_type.get_element_type().make_pointer();
+            let array = self.bitcast(ptr, array_type);
+            let index = self.context.new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
+            let element = self.context.new_array_access(None, array, index);
+            element.get_address(None)
         }
         else if let Some(struct_type) = value_type.is_struct() {
             ptr.dereference_field(None, struct_type.get_field(idx as i32)).get_address(None)
@@ -1186,11 +1190,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn sext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
         // TODO: check that it indeed sign extend the value.
         //println!("Sext {:?} to {:?}", value, dest_ty);
-        println!("Value type: {:?}", value.get_type());
-        println!("Value type is vec: {:?}", value.get_type().is_vector().is_some());
         //if let Some(vector_type) = value.get_type().is_vector() {
         if let Some(vector_type) = dest_ty.is_vector() {
-            println!("Vector unit {:?}", vector_type.get_num_units());
             // TODO: nothing to do as it is only for LLVM?
             return value;
             /*let dest_type = self.context.new_vector_type(dest_ty, vector_type.get_num_units() as u64);
