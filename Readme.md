@@ -7,7 +7,7 @@ This is a GCC codegen for rustc, which means it can be loaded by the existing ru
 ## Motivation
 
 The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
-A secondary goal is to check if using the gcc backend will provide any compilation speed improvement.
+A secondary goal is to check if using the gcc backend will provide any run-time speed improvement for the programs compiled using rustc.
 
 ## Building
 
