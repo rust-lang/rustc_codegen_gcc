@@ -1,9 +1,9 @@
-use gccjit::{Function, FunctionType};
+use gccjit::Function;
 
 use crate::context::CodegenCx;
 
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
-    let gcc_name =
+    let _gcc_name =
         match name {
             "llvm.x86.xgetbv" => {
                 let gcc_name = "__builtin_trap";
@@ -19,7 +19,8 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         };
 
     println!("Get target builtin");
-    let func = cx.context.get_target_builtin_function(gcc_name);
+    unimplemented!();
+    /*let func = cx.context.get_target_builtin_function(gcc_name);
     cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-    func
+    func*/
 }

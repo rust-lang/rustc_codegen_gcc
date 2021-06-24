@@ -6,7 +6,7 @@ use rustc_middle::bug;
 use rustc_middle::ty::{self, Ty, TypeFoldable};
 use rustc_middle::ty::layout::{FnAbiExt, TyAndLayout};
 use rustc_middle::ty::print::with_no_trimmed_paths;
-use rustc_target::abi::{self, Abi, Align, F32, F64, FieldsShape, Int, Integer, LayoutOf, Pointer, PointeeInfo, Size, TyAndLayoutMethods, Variants};
+use rustc_target::abi::{self, Abi, F32, F64, FieldsShape, Int, Integer, LayoutOf, Pointer, PointeeInfo, Size, TyAndLayoutMethods, Variants};
 use rustc_target::abi::call::{CastTarget, FnAbi, Reg};
 
 use crate::abi::{FnAbiGccExt, GccType};
@@ -14,19 +14,6 @@ use crate::context::CodegenCx;
 use crate::type_::struct_fields;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn align_of(&self, ty: Ty<'tcx>) -> Align {
-        self.layout_of(ty).align.abi
-    }
-
-    pub fn size_of(&self, ty: Ty<'tcx>) -> Size {
-        self.layout_of(ty).size
-    }
-
-    pub fn size_and_align_of(&self, ty: Ty<'tcx>) -> (Size, Align) {
-        let layout = self.layout_of(ty);
-        (layout.size, layout.align.abi)
-    }
-
     fn type_from_unsigned_integer(&self, i: Integer) -> Type<'gcc> {
         use Integer::*;
         match i {
@@ -372,7 +359,7 @@ impl<'gcc, 'tcx> LayoutTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         fn_abi.ptr_to_gcc_type(self)
     }
 
-    fn reg_backend_type(&self, ty: &Reg) -> Type<'gcc> {
+    fn reg_backend_type(&self, _ty: &Reg) -> Type<'gcc> {
         unimplemented!();
         //ty.gcc_type(self)
     }

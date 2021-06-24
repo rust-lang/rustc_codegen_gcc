@@ -14,17 +14,16 @@ path = "tests/lib.rs"
 harness = false
 
 [dependencies]
-#gccjit = { git = "https://github.com/antoyo/gccjit.rs", branch = "feature/rustc" }
-gccjit = { path = "/home/bouanto/Ordinateur/Programmation/Rust/Projets/gccjit.rs" }
+gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
 
 target-lexicon = "0.10.0"
 
 ar = "0.8.0"
 
 [dependencies.object]
-version = "0.18.0"
+version = "0.25.0"
 default-features = false
-features = ["read", "std", "write"] # We don't need WASM support
+features = ["read", "std", "write"] # We don't need WASM support.
 
 [dev-dependencies]
 lang_tester = "0.3.9"

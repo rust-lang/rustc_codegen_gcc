@@ -81,7 +81,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         global
     }
 
-    pub fn declare_cfn(&self, name: &str, fn_type: Type<'gcc>) -> RValue<'gcc> {
+    pub fn declare_cfn(&self, name: &str, _fn_type: Type<'gcc>) -> RValue<'gcc> {
         // TODO: use the fn_type parameter.
         let const_string = self.context.new_type::<u8>().make_pointer().make_pointer();
         let return_type = self.type_i32();
@@ -151,21 +151,21 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.globals.borrow().get(name).cloned()
     }
 
-    fn get_defined_value(&self, name: &str) -> Option<RValue<'gcc>> {
+    /*fn get_defined_value(&self, name: &str) -> Option<RValue<'gcc>> {
         // TODO: gcc does not allow global initialization.
         None
         /*self.get_declared_value(name).and_then(|val| {
             let declaration = unsafe { llvm::LLVMIsDeclaration(val) != 0 };
             if !declaration { Some(val) } else { None }
         })*/
-    }
+    }*/
 }
 
 /// Declare a function.
 ///
 /// If there’s a value with the same name already declared, the function will
 /// update the declaration and return existing Value instead.
-fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llvm::CallConv*/, return_type: Type<'gcc>, param_types: &[Type<'gcc>], variadic: bool) -> Function<'gcc> {
+fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, _callconv: () /*llvm::CallConv*/, return_type: Type<'gcc>, param_types: &[Type<'gcc>], variadic: bool) -> Function<'gcc> {
     //debug!("declare_raw_fn(name={:?}, ty={:?})", name, ty);
     /*let llfn = unsafe {
         llvm::LLVMRustGetOrInsertFunction(cx.llmod, name.as_ptr().cast(), name.len(), ty)

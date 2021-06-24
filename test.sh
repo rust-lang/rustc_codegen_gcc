@@ -111,17 +111,17 @@ rm -r ./target || true
 ../../../../../cargo.sh test
 popd
 
-pushd regex
-echo "[TEST] rust-lang/regex example shootout-regex-dna"
-../cargo.sh clean
-# Make sure `[codegen mono items] start` doesn't poison the diff
-../cargo.sh build --example shootout-regex-dna
-cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
-diff -u res.txt examples/regexdna-output.txt
+#pushd regex
+#echo "[TEST] rust-lang/regex example shootout-regex-dna"
+#../cargo.sh clean
+## Make sure `[codegen mono items] start` doesn't poison the diff
+#../cargo.sh build --example shootout-regex-dna
+#cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
+#diff -u res.txt examples/regexdna-output.txt
 
-echo "[TEST] rust-lang/regex tests"
-../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
-popd
+#echo "[TEST] rust-lang/regex tests"
+#../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
+#popd
 
 #echo
 #echo "[BENCH COMPILE] mod_bench"

@@ -12,7 +12,7 @@ use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
-    fn predefine_static(&self, def_id: DefId, linkage: Linkage, visibility: Visibility, symbol_name: &str) {
+    fn predefine_static(&self, def_id: DefId, _linkage: Linkage, _visibility: Visibility, symbol_name: &str) {
         let attrs = self.tcx.codegen_fn_attrs(def_id);
         let instance = Instance::mono(self.tcx, def_id);
         let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
@@ -35,13 +35,13 @@ impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         self.instances.borrow_mut().insert(instance, global);
     }
 
-    fn predefine_fn(&self, instance: Instance<'tcx>, linkage: Linkage, visibility: Visibility, symbol_name: &str) {
+    fn predefine_fn(&self, instance: Instance<'tcx>, linkage: Linkage, _visibility: Visibility, symbol_name: &str) {
         assert!(!instance.substs.needs_infer() && !instance.substs.has_param_types_or_consts());
 
         let fn_abi = FnAbi::of_instance(self, instance, &[]);
         self.linkage.set(base::linkage_to_gcc(linkage));
-        let decl = self.declare_fn(symbol_name, &fn_abi);
-        let attrs = self.tcx.codegen_fn_attrs(instance.def_id());
+        let _decl = self.declare_fn(symbol_name, &fn_abi);
+        //let attrs = self.tcx.codegen_fn_attrs(instance.def_id());
 
         // TODO: call set_link_section() to allow initializing argc/argv.
         //base::set_link_section(decl, &attrs);

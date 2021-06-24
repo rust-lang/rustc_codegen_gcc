@@ -1,8 +1,8 @@
 use gccjit::{RValue, Type};
-use rustc_codegen_ssa::base::{compare_simd_types, wants_msvc_seh};
-use rustc_codegen_ssa::common::{IntPredicate, TypeKind, span_invalid_monomorphization_error};
+use rustc_codegen_ssa::base::compare_simd_types;
+use rustc_codegen_ssa::common::{TypeKind, span_invalid_monomorphization_error};
 use rustc_codegen_ssa::mir::operand::OperandRef;
-use rustc_codegen_ssa::traits::{BaseTypeMethods, BuilderMethods, ConstMethods};
+use rustc_codegen_ssa::traits::{BaseTypeMethods, BuilderMethods};
 use rustc_hir as hir;
 use rustc_middle::span_bug;
 use rustc_middle::ty::layout::HasTyCtxt;
@@ -10,7 +10,6 @@ use rustc_middle::ty::{self, Ty};
 use rustc_span::{Span, Symbol, sym};
 
 use crate::builder::Builder;
-use crate::context::CodegenCx;
 
 pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, name: Symbol, callee_ty: Ty<'tcx>, args: &[OperandRef<'tcx, RValue<'gcc>>], ret_ty: Ty<'tcx>, llret_ty: Type<'gcc>, span: Span) -> Result<RValue<'gcc>, ()> {
     //println!("Generic simd: {}", name);
@@ -154,7 +153,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             out_ty
         );
 
-        let total_len = u128::from(in_len) * 2;
+        //let total_len = u128::from(in_len) * 2;
 
         let vector = args[2].immediate();
 

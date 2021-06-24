@@ -11,7 +11,7 @@ use rustc_codegen_ssa::traits::{ArgAbiMethods, BaseTypeMethods, BuilderMethods, 
 use rustc_middle::bug;
 use rustc_middle::ty::{self, Instance, Ty};
 use rustc_span::{Span, Symbol, symbol::kw, sym};
-use rustc_target::abi::{self, LayoutOf, Primitive};
+use rustc_target::abi::LayoutOf;
 use rustc_target::abi::call::{ArgAbi, FnAbi, PassMode};
 use rustc_target::spec::PanicStrategy;
 
@@ -20,7 +20,6 @@ use crate::builder::Builder;
 use crate::common::TypeReflection;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
-use crate::va_arg::emit_va_arg;
 use crate::intrinsic::simd::generic_simd_intrinsic;
 
 fn get_simple_intrinsic<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, name: Symbol) -> Option<Function<'gcc>> {
@@ -162,13 +161,13 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         ptr = self.pointercast(ptr, self.type_ptr_to(ty.gcc_type(self)));
                     }
                     let load = self.volatile_load(ptr);
-                    let align = if name == sym::unaligned_volatile_load {
+                    // TODO
+                    /*let align = if name == sym::unaligned_volatile_load {
                         1
                     } else {
                         self.align_of(tp_ty).bytes() as u32
                     };
-                    // TODO
-                    /*unsafe {
+                    unsafe {
                       llvm::LLVMSetAlignment(load, align);
                       }*/
                     self.to_immediate(load, self.layout_of(tp_ty))
@@ -363,7 +362,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.expect(value, true);
     }
 
-    fn expect(&mut self, cond: Self::Value, expected: bool) -> Self::Value {
+    fn expect(&mut self, cond: Self::Value, _expected: bool) -> Self::Value {
         // TODO
         /*let expect = self.context.get_builtin_function("__builtin_expect");
         let expect: RValue<'gcc> = unsafe { std::mem::transmute(expect) };
@@ -379,13 +378,13 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn va_start(&mut self, va_list: RValue<'gcc>) -> RValue<'gcc> {
+    fn va_start(&mut self, _va_list: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*let intrinsic = self.cx().get_intrinsic("llvm.va_start");
         self.call(intrinsic, &[va_list], None)*/
     }
 
-    fn va_end(&mut self, va_list: RValue<'gcc>) -> RValue<'gcc> {
+    fn va_end(&mut self, _va_list: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*let intrinsic = self.cx().get_intrinsic("llvm.va_end");
         self.call(intrinsic, &[va_list], None)*/
@@ -530,44 +529,6 @@ fn int_type_width_signed<'gcc, 'tcx>(ty: Ty<'tcx>, cx: &CodegenCx<'gcc, 'tcx>) -
             },
             false,
         )),
-        _ => None,
-    }
-}
-
-fn copy_intrinsic<'cx, 'gcc, 'tcx>(bx: &mut Builder<'cx, 'gcc, 'tcx>, allow_overlap: bool, volatile: bool, ty: Ty<'tcx>, dst: RValue<'gcc>, src: RValue<'gcc>, count: RValue<'gcc>) {
-    let (size, align) = bx.size_and_align_of(ty);
-    let size = bx.mul(bx.const_usize(size.bytes()), count);
-    let flags =
-        if volatile {
-            MemFlags::VOLATILE
-        }
-        else {
-            MemFlags::empty()
-        };
-    if allow_overlap {
-        bx.memmove(dst, align, src, align, size, flags);
-    }
-    else {
-        bx.memcpy(dst, align, src, align, size, flags);
-    }
-}
-
-fn memset_intrinsic<'cx, 'gcc, 'tcx>(bx: &mut Builder<'cx, 'gcc, 'tcx>, volatile: bool, ty: Ty<'tcx>, dst: RValue<'gcc>, val: RValue<'gcc>, count: RValue<'gcc>) {
-    let (size, align) = bx.size_and_align_of(ty);
-    let context = &bx.cx.context;
-    let usize_type = bx.cx.usize_type;
-    let a = context.new_cast(None, bx.const_usize(size.bytes()), usize_type);
-    let count = context.new_cast(None, count, usize_type);
-    let size = bx.mul(a, count);
-    let flags = if volatile { MemFlags::VOLATILE } else { MemFlags::empty() };
-    bx.memset(dst, val, size, align, flags);
-}
-
-// Returns the width of a float Ty
-// Returns None if the type is not a float
-fn float_type_width(ty: Ty<'_>) -> Option<u64> {
-    match ty.kind() {
-        ty::Float(t) => Some(t.bit_width()),
         _ => None,
     }
 }
@@ -799,7 +760,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.context.new_cast(None, res, arg_type)
     }
 
-    fn count_trailing_zeroes(&self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+    fn count_trailing_zeroes(&self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
         let arg_type = arg.get_type();
         let (count_trailing_zeroes, expected_type) =
             if arg_type.is_uchar(&self.cx) || arg_type.is_ushort(&self.cx) || arg_type.is_uint(&self.cx) {
@@ -869,23 +830,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
         self.cx.int_width(typ) as i64
-    }
-
-    fn overflow_intrinsic_call(&mut self, intrinsic: &str, lhs: RValue<'gcc>, rhs: RValue<'gcc>, result: &PlaceRef<'tcx, RValue<'gcc>>) {
-        let func = self.context.get_builtin_function(intrinsic);
-
-        // Convert `i1` to a `bool`, and write it to the out parameter
-        let res = self.current_func()
-            // TODO: is it correct to use rhs type instead of the parameter typ?
-            .new_local(None, rhs.get_type(), "binopOverflowResult")
-            .get_address(None);
-        let overflow = self.overflow_call(func, &[lhs, rhs, res], None);
-        let val = res.dereference(None).to_rvalue();
-
-        let dest = result.project_field(self, 0);
-        self.store(val, dest.llval, dest.align);
-        let dest = result.project_field(self, 1);
-        self.store(overflow, dest.llval, dest.align);
     }
 
     fn pop_count(&self, value: RValue<'gcc>) -> RValue<'gcc> {
@@ -1057,7 +1001,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 }
 
-fn try_intrinsic<'gcc, 'tcx>(bx: &mut Builder<'_, 'gcc, 'tcx>, try_func: RValue<'gcc>, data: RValue<'gcc>, catch_func: RValue<'gcc>, dest: RValue<'gcc>) {
+fn try_intrinsic<'gcc, 'tcx>(bx: &mut Builder<'_, 'gcc, 'tcx>, try_func: RValue<'gcc>, data: RValue<'gcc>, _catch_func: RValue<'gcc>, dest: RValue<'gcc>) {
     if bx.sess().panic_strategy() == PanicStrategy::Abort {
         bx.call(try_func, &[data], None);
         // Return 0 unconditionally from the intrinsic call;
@@ -1082,7 +1026,7 @@ fn try_intrinsic<'gcc, 'tcx>(bx: &mut Builder<'_, 'gcc, 'tcx>, try_func: RValue<
 // instructions are meant to work for all targets, as of the time of this
 // writing, however, LLVM does not recommend the usage of these new instructions
 // as the old ones are still more optimized.
-fn codegen_msvc_try<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, try_func: RValue<'gcc>, data: RValue<'gcc>, catch_func: RValue<'gcc>, dest: RValue<'gcc>) {
+/*fn codegen_msvc_try<'a, 'gcc, 'tcx>(_bx: &mut Builder<'a, 'gcc, 'tcx>, _try_func: RValue<'gcc>, _data: RValue<'gcc>, _catch_func: RValue<'gcc>, _dest: RValue<'gcc>) {
     unimplemented!();
     /*let llfn = get_rust_try_fn(bx, &mut |mut bx| {
         bx.set_personality_fn(bx.eh_personality());
@@ -1201,7 +1145,7 @@ fn codegen_msvc_try<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, try_func: 
     let ret = bx.call(llfn, &[try_func, data, catch_func], None);
     let i32_align = bx.tcx().data_layout.i32_align.abi;
     bx.store(ret, dest, i32_align);*/
-}
+}*/
 
 // Definition of the standard `try` function for Rust using the GNU-like model
 // of exceptions (e.g., the normal semantics of LLVM's `landingpad` and `invoke`
@@ -1214,7 +1158,7 @@ fn codegen_msvc_try<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, try_func: 
 // function calling it, and that function may already have other personality
 // functions in play. By calling a shim we're guaranteed that our shim will have
 // the right personality function.
-fn codegen_gnu_try<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, try_func: RValue<'gcc>, data: RValue<'gcc>, catch_func: RValue<'gcc>, dest: RValue<'gcc>) {
+/*fn codegen_gnu_try<'a, 'gcc, 'tcx>(_bx: &mut Builder<'a, 'gcc, 'tcx>, _try_func: RValue<'gcc>, _data: RValue<'gcc>, _catch_func: RValue<'gcc>, _dest: RValue<'gcc>) {
     unimplemented!();
     /*let llfn = get_rust_try_fn(bx, &mut |mut bx| {
         // Codegens the shims described above:
@@ -1267,4 +1211,4 @@ fn codegen_gnu_try<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, try_func: R
     let ret = bx.call(llfn, &[try_func, data, catch_func], None);
     let i32_align = bx.tcx().data_layout.i32_align.abi;
     bx.store(ret, dest, i32_align);*/
-}
+}*/

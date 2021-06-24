@@ -1,5 +1,3 @@
-use std::ffi::CStr;
-
 use gccjit::{RValue, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, ConstMethods, DerivedTypeMethods, StaticMethods};
 use rustc_hir as hir;
@@ -55,199 +53,197 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
     }
 
     fn codegen_static(&self, def_id: DefId, is_mutable: bool) {
-        unsafe {
-            let attrs = self.tcx.codegen_fn_attrs(def_id);
+        let attrs = self.tcx.codegen_fn_attrs(def_id);
 
-            let instance = Instance::mono(self.tcx, def_id);
-            let name = &*self.tcx.symbol_name(instance).name;
+        let instance = Instance::mono(self.tcx, def_id);
+        let name = &*self.tcx.symbol_name(instance).name;
 
-            let (value, alloc) =
-                match codegen_static_initializer(&self, def_id) {
-                    Ok(value) => value,
-                    // Error has already been reported
-                    Err(_) => return,
-                };
+        let (value, alloc) =
+            match codegen_static_initializer(&self, def_id) {
+                Ok(value) => value,
+                // Error has already been reported
+                Err(_) => return,
+            };
 
-            let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
-            let global = self.get_static(def_id);
+        let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
+        let global = self.get_static(def_id);
 
-            // boolean SSA values are i1, but they have to be stored in i8 slots,
-            // otherwise some LLVM optimization passes don't work as expected
-            let mut val_llty = self.val_ty(value);
-            let value =
-                if val_llty == self.type_i1() {
-                    val_llty = self.type_i8();
-                    unimplemented!();
-                    //llvm::LLVMConstZExt(value, val_llty)
-                }
-                else {
-                    value
-                };
-
-            let instance = Instance::mono(self.tcx, def_id);
-            let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
-            let gcc_type = self.layout_of(ty).gcc_type(self, true);
-
-            let global =
-                if val_llty == gcc_type {
-                    global
-                }
-                else {
-                    // If we created the global with the wrong type,
-                    // correct the type.
-                    /*let name = llvm::get_value_name(global).to_vec();
-                    llvm::set_value_name(global, b"");
-
-                    let linkage = llvm::LLVMRustGetLinkage(global);
-                    let visibility = llvm::LLVMRustGetVisibility(global);*/
-
-                    let new_global = self.get_or_insert_global(&name, val_llty, is_tls, attrs.link_section);
-
-                    /*llvm::LLVMRustSetLinkage(new_global, linkage);
-                      llvm::LLVMRustSetVisibility(new_global, visibility);*/
-
-                    // To avoid breaking any invariants, we leave around the old
-                    // global for the moment; we'll replace all references to it
-                    // with the new global later. (See base::codegen_backend.)
-                    //self.statics_to_rauw.borrow_mut().push((global, new_global));
-                    new_global
-                };
-            // TODO
-            //set_global_alignment(&self, global, self.align_of(ty));
-            //llvm::LLVMSetInitializer(global, value);
-            let value = self.rvalue_as_lvalue(value);
-            let value = value.get_address(None);
-            let lvalue = global.dereference(None);
-            let dest_typ = global.get_type();
-            let value = self.context.new_cast(None, value, dest_typ);
-
-            // NOTE: do not init the variables related to argc/argv because it seems we cannot
-            // overwrite those variables.
-            // FIXME: correctly support global variable initialization.
-            let skip_init = [
-                ARGV_INIT_ARRAY,
-                ARGC,
-                ARGV,
-            ];
-            if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
-                // TODO: switch to set_initializer when libgccjit supports that.
-                let memcpy = self.context.get_builtin_function("memcpy");
-                let dst = self.context.new_cast(None, global, self.type_i8p());
-                let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
-                let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size().bytes() as i64);
-                self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
+        // boolean SSA values are i1, but they have to be stored in i8 slots,
+        // otherwise some LLVM optimization passes don't work as expected
+        let val_llty = self.val_ty(value);
+        let value =
+            if val_llty == self.type_i1() {
+                //val_llty = self.type_i8();
+                unimplemented!();
+                //llvm::LLVMConstZExt(value, val_llty)
             }
+            else {
+                value
+            };
 
-            // As an optimization, all shared statics which do not have interior
-            // mutability are placed into read-only memory.
-            if !is_mutable {
-                if self.type_is_freeze(ty) {
-                    // TODO
-                    //llvm::LLVMSetGlobalConstant(global, llvm::True);
-                }
+        let instance = Instance::mono(self.tcx, def_id);
+        let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
+        let gcc_type = self.layout_of(ty).gcc_type(self, true);
+
+        let global =
+            if val_llty == gcc_type {
+                global
             }
+            else {
+                // If we created the global with the wrong type,
+                // correct the type.
+                /*let name = llvm::get_value_name(global).to_vec();
+                llvm::set_value_name(global, b"");
 
-            //debuginfo::create_global_var_metadata(&self, def_id, global);
+                let linkage = llvm::LLVMRustGetLinkage(global);
+                let visibility = llvm::LLVMRustGetVisibility(global);*/
 
-            if attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL) {
-                // Do not allow LLVM to change the alignment of a TLS on macOS.
-                //
-                // By default a global's alignment can be freely increased.
-                // This allows LLVM to generate more performant instructions
-                // e.g., using load-aligned into a SIMD register.
-                //
-                // However, on macOS 10.10 or below, the dynamic linker does not
-                // respect any alignment given on the TLS (radar 24221680).
-                // This will violate the alignment assumption, and causing segfault at runtime.
-                //
-                // This bug is very easy to trigger. In `println!` and `panic!`,
-                // the `LOCAL_STDOUT`/`LOCAL_STDERR` handles are stored in a TLS,
-                // which the values would be `mem::replace`d on initialization.
-                // The implementation of `mem::replace` will use SIMD
-                // whenever the size is 32 bytes or higher. LLVM notices SIMD is used
-                // and tries to align `LOCAL_STDOUT`/`LOCAL_STDERR` to a 32-byte boundary,
-                // which macOS's dyld disregarded and causing crashes
-                // (see issues #51794, #51758, #50867, #48866 and #44056).
-                //
-                // To workaround the bug, we trick LLVM into not increasing
-                // the global's alignment by explicitly assigning a section to it
-                // (equivalent to automatically generating a `#[link_section]` attribute).
-                // See the comment in the `GlobalValue::canIncreaseAlignment()` function
-                // of `lib/IR/Globals.cpp` for why this works.
-                //
-                // When the alignment is not increased, the optimized `mem::replace`
-                // will use load-unaligned instructions instead, and thus avoiding the crash.
-                //
-                // We could remove this hack whenever we decide to drop macOS 10.10 support.
-                if self.tcx.sess.target.options.is_like_osx {
-                    // The `inspect` method is okay here because we checked relocations, and
-                    // because we are doing this access to inspect the final interpreter state
-                    // (not as part of the interpreter execution).
-                    //
-                    // FIXME: This check requires that the (arbitrary) value of undefined bytes
-                    // happens to be zero. Instead, we should only check the value of defined bytes
-                    // and set all undefined bytes to zero if this allocation is headed for the
-                    // BSS.
-                    let all_bytes_are_zero = alloc.relocations().is_empty()
-                        && alloc
-                            .inspect_with_uninit_and_ptr_outside_interpreter(0..alloc.len())
-                            .iter()
-                            .all(|&byte| byte == 0);
+                let new_global = self.get_or_insert_global(&name, val_llty, is_tls, attrs.link_section);
 
-                    let sect_name = if all_bytes_are_zero {
-                        CStr::from_bytes_with_nul_unchecked(b"__DATA,__thread_bss\0")
-                    } else {
-                        CStr::from_bytes_with_nul_unchecked(b"__DATA,__thread_data\0")
-                    };
-                    unimplemented!();
-                    //llvm::LLVMSetSection(global, sect_name.as_ptr());
-                }
-            }
+                /*llvm::LLVMRustSetLinkage(new_global, linkage);
+                  llvm::LLVMRustSetVisibility(new_global, visibility);*/
 
-            // Wasm statics with custom link sections get special treatment as they
-            // go into custom sections of the wasm executable.
-            if self.tcx.sess.opts.target_triple.triple().starts_with("wasm32") {
-                if let Some(section) = attrs.link_section {
-                    unimplemented!();
-                    /*let section = llvm::LLVMMDStringInContext(
-                        self.llcx,
-                        section.as_str().as_ptr().cast(),
-                        section.as_str().len() as c_uint,
-                    );
-                    assert!(alloc.relocations().is_empty());
+                // To avoid breaking any invariants, we leave around the old
+                // global for the moment; we'll replace all references to it
+                // with the new global later. (See base::codegen_backend.)
+                //self.statics_to_rauw.borrow_mut().push((global, new_global));
+                new_global
+            };
+        // TODO
+        //set_global_alignment(&self, global, self.align_of(ty));
+        //llvm::LLVMSetInitializer(global, value);
+        let value = self.rvalue_as_lvalue(value);
+        let value = value.get_address(None);
+        let dest_typ = global.get_type();
+        let value = self.context.new_cast(None, value, dest_typ);
 
-                    // The `inspect` method is okay here because we checked relocations, and
-                    // because we are doing this access to inspect the final interpreter state (not
-                    // as part of the interpreter execution).
-                    let bytes =
-                        alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..alloc.len());
-                    let alloc = llvm::LLVMMDStringInContext(
-                        self.llcx,
-                        bytes.as_ptr().cast(),
-                        bytes.len() as c_uint,
-                    );
-                    let data = [section, alloc];
-                    let meta = llvm::LLVMMDNodeInContext(self.llcx, data.as_ptr(), 2);
-                    llvm::LLVMAddNamedMetadataOperand(
-                        self.llmod,
-                        "wasm.custom_sections\0".as_ptr().cast(),
-                        meta,
-                    );*/
-                }
-            } else {
+        // NOTE: do not init the variables related to argc/argv because it seems we cannot
+        // overwrite those variables.
+        // FIXME: correctly support global variable initialization.
+        let skip_init = [
+            ARGV_INIT_ARRAY,
+            ARGC,
+            ARGV,
+        ];
+        if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
+            // TODO: switch to set_initializer when libgccjit supports that.
+            let memcpy = self.context.get_builtin_function("memcpy");
+            let dst = self.context.new_cast(None, global, self.type_i8p());
+            let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
+            let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size().bytes() as i64);
+            self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
+        }
+
+        // As an optimization, all shared statics which do not have interior
+        // mutability are placed into read-only memory.
+        if !is_mutable {
+            if self.type_is_freeze(ty) {
                 // TODO
-                //base::set_link_section(global, &attrs);
+                //llvm::LLVMSetGlobalConstant(global, llvm::True);
             }
+        }
 
-            if attrs.flags.contains(CodegenFnAttrFlags::USED) {
-                self.add_used_global(global);
+        //debuginfo::create_global_var_metadata(&self, def_id, global);
+
+        if attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL) {
+            // Do not allow LLVM to change the alignment of a TLS on macOS.
+            //
+            // By default a global's alignment can be freely increased.
+            // This allows LLVM to generate more performant instructions
+            // e.g., using load-aligned into a SIMD register.
+            //
+            // However, on macOS 10.10 or below, the dynamic linker does not
+            // respect any alignment given on the TLS (radar 24221680).
+            // This will violate the alignment assumption, and causing segfault at runtime.
+            //
+            // This bug is very easy to trigger. In `println!` and `panic!`,
+            // the `LOCAL_STDOUT`/`LOCAL_STDERR` handles are stored in a TLS,
+            // which the values would be `mem::replace`d on initialization.
+            // The implementation of `mem::replace` will use SIMD
+            // whenever the size is 32 bytes or higher. LLVM notices SIMD is used
+            // and tries to align `LOCAL_STDOUT`/`LOCAL_STDERR` to a 32-byte boundary,
+            // which macOS's dyld disregarded and causing crashes
+            // (see issues #51794, #51758, #50867, #48866 and #44056).
+            //
+            // To workaround the bug, we trick LLVM into not increasing
+            // the global's alignment by explicitly assigning a section to it
+            // (equivalent to automatically generating a `#[link_section]` attribute).
+            // See the comment in the `GlobalValue::canIncreaseAlignment()` function
+            // of `lib/IR/Globals.cpp` for why this works.
+            //
+            // When the alignment is not increased, the optimized `mem::replace`
+            // will use load-unaligned instructions instead, and thus avoiding the crash.
+            //
+            // We could remove this hack whenever we decide to drop macOS 10.10 support.
+            if self.tcx.sess.target.options.is_like_osx {
+                // The `inspect` method is okay here because we checked relocations, and
+                // because we are doing this access to inspect the final interpreter state
+                // (not as part of the interpreter execution).
+                //
+                // FIXME: This check requires that the (arbitrary) value of undefined bytes
+                // happens to be zero. Instead, we should only check the value of defined bytes
+                // and set all undefined bytes to zero if this allocation is headed for the
+                // BSS.
+                /*let all_bytes_are_zero = alloc.relocations().is_empty()
+                    && alloc
+                        .inspect_with_uninit_and_ptr_outside_interpreter(0..alloc.len())
+                        .iter()
+                        .all(|&byte| byte == 0);
+
+                let sect_name = if all_bytes_are_zero {
+                    CStr::from_bytes_with_nul_unchecked(b"__DATA,__thread_bss\0")
+                } else {
+                    CStr::from_bytes_with_nul_unchecked(b"__DATA,__thread_data\0")
+                };*/
+                unimplemented!();
+                //llvm::LLVMSetSection(global, sect_name.as_ptr());
             }
+        }
+
+        // Wasm statics with custom link sections get special treatment as they
+        // go into custom sections of the wasm executable.
+        if self.tcx.sess.opts.target_triple.triple().starts_with("wasm32") {
+            if let Some(_section) = attrs.link_section {
+                unimplemented!();
+                /*let section = llvm::LLVMMDStringInContext(
+                    self.llcx,
+                    section.as_str().as_ptr().cast(),
+                    section.as_str().len() as c_uint,
+                );
+                assert!(alloc.relocations().is_empty());
+
+                // The `inspect` method is okay here because we checked relocations, and
+                // because we are doing this access to inspect the final interpreter state (not
+                // as part of the interpreter execution).
+                let bytes =
+                    alloc.inspect_with_uninit_and_ptr_outside_interpreter(0..alloc.len());
+                let alloc = llvm::LLVMMDStringInContext(
+                    self.llcx,
+                    bytes.as_ptr().cast(),
+                    bytes.len() as c_uint,
+                );
+                let data = [section, alloc];
+                let meta = llvm::LLVMMDNodeInContext(self.llcx, data.as_ptr(), 2);
+                llvm::LLVMAddNamedMetadataOperand(
+                    self.llmod,
+                    "wasm.custom_sections\0".as_ptr().cast(),
+                    meta,
+                );*/
+            }
+        } else {
+            // TODO
+            //base::set_link_section(global, &attrs);
+        }
+
+        if attrs.flags.contains(CodegenFnAttrFlags::USED) {
+            self.add_used_global(global);
         }
     }
 
     /// Add a global value to a list to be stored in the `llvm.used` variable, an array of i8*.
-    fn add_used_global(&self, global: RValue<'gcc>) {
-        let cast = self.context.new_cast(None, global, self.type_i8p());
+    fn add_used_global(&self, _global: RValue<'gcc>) {
+        // TODO
+        //let cast = self.context.new_cast(None, global, self.type_i8p());
         //self.used_statics.borrow_mut().push(cast);
     }
 }

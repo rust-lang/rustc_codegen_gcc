@@ -16,8 +16,8 @@ use crate::context::CodegenCx;
 impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn set_function_source_hash(
         &mut self,
-        instance: Instance<'tcx>,
-        function_source_hash: u64,
+        _instance: Instance<'tcx>,
+        _function_source_hash: u64,
     ) -> bool {
         unimplemented!();
         /*if let Some(coverage_context) = self.coverage_context() {
@@ -34,10 +34,9 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         } else {
             false
         }*/
-        false
     }
 
-    fn add_coverage_counter(&mut self, instance: Instance<'tcx>, id: CounterValueReference, region: CodeRegion) -> bool {
+    fn add_coverage_counter(&mut self, _instance: Instance<'tcx>, _id: CounterValueReference, _region: CodeRegion) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding counter to coverage_regions: instance={:?}, function_source_hash={}, id={:?}, \
@@ -57,7 +56,7 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         false
     }
 
-    fn add_coverage_counter_expression(&mut self, instance: Instance<'tcx>, id: InjectedExpressionId, lhs: ExpressionOperandId, op: Op, rhs: ExpressionOperandId, region: Option<CodeRegion>) -> bool {
+    fn add_coverage_counter_expression(&mut self, _instance: Instance<'tcx>, _id: InjectedExpressionId, _lhs: ExpressionOperandId, _op: Op, _rhs: ExpressionOperandId, _region: Option<CodeRegion>) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding counter expression to coverage_regions: instance={:?}, id={:?}, {:?} {:?} {:?}, \
@@ -77,7 +76,7 @@ impl<'a, 'gcc, 'tcx> CoverageInfoBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx
         false
     }
 
-    fn add_coverage_unreachable(&mut self, instance: Instance<'tcx>, region: CodeRegion) -> bool {
+    fn add_coverage_unreachable(&mut self, _instance: Instance<'tcx>, _region: CodeRegion) -> bool {
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!(
                 "adding unreachable code to coverage_regions: instance={:?}, at {:?}",
@@ -103,7 +102,7 @@ impl<'gcc, 'tcx> CoverageInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         //mapgen::finalize(self)
     }
 
-    fn get_pgo_func_name_var(&self, instance: Instance<'tcx>) -> RValue<'gcc> {
+    fn get_pgo_func_name_var(&self, _instance: Instance<'tcx>) -> RValue<'gcc> {
         unimplemented!();
         /*if let Some(coverage_context) = self.coverage_context() {
             debug!("getting pgo_func_name_var for instance={:?}", instance);
@@ -132,7 +131,7 @@ impl<'gcc, 'tcx> CoverageInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     /// same counter ID used in the injected `instrprof.increment` intrinsic
     /// call. Since the function is never called, all other `CodeRegion`s can be
     /// added as `unreachable_region`s.
-    fn define_unused_fn(&self, def_id: DefId) {
+    fn define_unused_fn(&self, _def_id: DefId) {
         unimplemented!();
         /*let instance = declare_unused_fn(self, &def_id);
         codegen_unused_fn_and_counter(self, instance);

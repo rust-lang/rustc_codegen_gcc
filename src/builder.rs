@@ -160,11 +160,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.llbb().add_assignment(None, lvalue, value);
     }
 
-    fn assign_op(&self, lvalue: LValue<'gcc>, binary_op: BinaryOp, value: RValue<'gcc>) {
-        self.block.expect("block").add_assignment_op(None, lvalue, binary_op, value);
-    }
-
-    fn check_call<'b>(&mut self, typ: &str, func: Function<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
+    fn check_call<'b>(&mut self, _typ: &str, func: Function<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
         //let mut fn_ty = self.cx.val_ty(func);
         // Strip off pointers
         /*while self.cx.type_kind(fn_ty) == TypeKind::Pointer {
@@ -205,7 +201,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .into_iter()
             .zip(args.iter())
             .enumerate()
-            .map(|(i, (expected_ty, &actual_val))| {
+            .map(|(_i, (expected_ty, &actual_val))| {
                 let actual_ty = actual_val.get_type();
                 if expected_ty != actual_ty {
                     /*debug!(
@@ -229,7 +225,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         Cow::Owned(casted_args)
     }
 
-    fn check_ptr_call<'b>(&mut self, typ: &str, func_ptr: RValue<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
+    fn check_ptr_call<'b>(&mut self, _typ: &str, func_ptr: RValue<'gcc>, args: &'b [RValue<'gcc>]) -> Cow<'b, [RValue<'gcc>]> {
         //let mut fn_ty = self.cx.val_ty(func);
         // Strip off pointers
         /*while self.cx.type_kind(fn_ty) == TypeKind::Pointer {
@@ -269,7 +265,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .into_iter()
             .zip(args.iter())
             .enumerate()
-            .map(|(i, (expected_ty, &actual_val))| {
+            .map(|(_i, (expected_ty, &actual_val))| {
                 let actual_ty = actual_val.get_type();
                 if expected_ty != actual_ty {
                     /*debug!(
@@ -323,7 +319,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.block.expect("block").get_function()
     }
 
-    fn function_call(&mut self, func: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
+    fn function_call(&mut self, func: RValue<'gcc>, args: &[RValue<'gcc>], _funclet: Option<&Funclet>) -> RValue<'gcc> {
         //debug!("call {:?} with args ({:?})", func, args);
 
         // TODO: remove when the API supports a different type for functions.
@@ -351,7 +347,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn function_ptr_call(&mut self, func_ptr: RValue<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
+    fn function_ptr_call(&mut self, func_ptr: RValue<'gcc>, args: &[RValue<'gcc>], _funclet: Option<&Funclet>) -> RValue<'gcc> {
         //debug!("func ptr call {:?} with args ({:?})", func, args);
 
         let args = self.check_ptr_call("call", func_ptr, args);
@@ -392,7 +388,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn overflow_call(&mut self, func: Function<'gcc>, args: &[RValue<'gcc>], funclet: Option<&Funclet>) -> RValue<'gcc> {
+    pub fn overflow_call(&mut self, func: Function<'gcc>, args: &[RValue<'gcc>], _funclet: Option<&Funclet>) -> RValue<'gcc> {
         //debug!("overflow_call {:?} with args ({:?})", func, args);
 
         //let bundle = funclet.map(|funclet| funclet.bundle());
@@ -518,7 +514,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.block.expect("block").end_with_switch(None, value, default_block, &gcc_cases);
     }
 
-    fn invoke(&mut self, func: RValue<'gcc>, args: &[RValue<'gcc>], then: Block<'gcc>, catch: Block<'gcc>, funclet: Option<&Funclet>) -> RValue<'gcc> {
+    fn invoke(&mut self, _func: RValue<'gcc>, _args: &[RValue<'gcc>], _then: Block<'gcc>, _catch: Block<'gcc>, _funclet: Option<&Funclet>) -> RValue<'gcc> {
         unimplemented!();
         /*debug!("invoke {:?} with args ({:?})", func, args);
 
@@ -770,7 +766,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         a * b
     }
 
-    fn fadd_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn fadd_fast(&mut self, _lhs: RValue<'gcc>, _rhs: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let instr = llvm::LLVMBuildFAdd(self.llbuilder, lhs, rhs, UNNAMED);
@@ -779,7 +775,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn fsub_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn fsub_fast(&mut self, _lhs: RValue<'gcc>, _rhs: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let instr = llvm::LLVMBuildFSub(self.llbuilder, lhs, rhs, UNNAMED);
@@ -788,7 +784,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn fmul_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn fmul_fast(&mut self, _lhs: RValue<'gcc>, _rhs: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let instr = llvm::LLVMBuildFMul(self.llbuilder, lhs, rhs, UNNAMED);
@@ -797,7 +793,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn fdiv_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn fdiv_fast(&mut self, _lhs: RValue<'gcc>, _rhs: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let instr = llvm::LLVMBuildFDiv(self.llbuilder, lhs, rhs, UNNAMED);
@@ -806,7 +802,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn frem_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    fn frem_fast(&mut self, _lhs: RValue<'gcc>, _rhs: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let instr = llvm::LLVMBuildFRem(self.llbuilder, lhs, rhs, UNNAMED);
@@ -903,7 +899,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.current_func().new_local(None, aligned_type, &format!("stack_var_{}", self.stack_var_count.get())).get_address(None)
     }
 
-    fn dynamic_alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {
+    fn dynamic_alloca(&mut self, _ty: Type<'gcc>, _align: Align) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let alloca = llvm::LLVMBuildAlloca(self.llbuilder, ty, UNNAMED);
@@ -912,7 +908,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn array_alloca(&mut self, ty: Type<'gcc>, len: RValue<'gcc>, align: Align) -> RValue<'gcc> {
+    fn array_alloca(&mut self, _ty: Type<'gcc>, _len: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let alloca = llvm::LLVMBuildArrayAlloca(self.llbuilder, ty, len, UNNAMED);
@@ -921,7 +917,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn load(&mut self, ptr: RValue<'gcc>, align: Align) -> RValue<'gcc> {
+    fn load(&mut self, ptr: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
         let block = self.llbb();
         let function = block.get_function();
         // NOTE: instead of returning the dereference here, we have to assign it to a variable in
@@ -983,7 +979,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 OperandValue::Ref(place.llval, Some(llextra), place.align)
             }
             else if place.layout.is_gcc_immediate() {
-                let mut const_llval = None;
+                let const_llval = None;
                 /*unsafe {
                     if let Some(global) = llvm::LLVMIsAGlobalVariable(place.llval) {
                         if llvm::LLVMIsGlobalConstant(global) == llvm::True {
@@ -1052,7 +1048,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         next_bx
     }
 
-    fn range_metadata(&mut self, load: RValue<'gcc>, range: Range<u128>) {
+    fn range_metadata(&mut self, _load: RValue<'gcc>, _range: Range<u128>) {
         // TODO
         /*if self.sess().target.target.arch == "amdgpu" {
             // amdgpu/LLVM does something weird and thinks a i64 value is
@@ -1077,7 +1073,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn nonnull_metadata(&mut self, load: RValue<'gcc>) {
+    fn nonnull_metadata(&mut self, _load: RValue<'gcc>) {
         // TODO
         /*unsafe {
             llvm::LLVMSetMetadata(
@@ -1092,7 +1088,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.store_with_flags(val, ptr, align, MemFlags::empty())
     }
 
-    fn store_with_flags(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align, flags: MemFlags) -> RValue<'gcc> {
+    fn store_with_flags(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, _align: Align, _flags: MemFlags) -> RValue<'gcc> {
         //debug!("Store {:?} -> {:?} ({:?})", val, ptr, flags);
         let ptr = self.check_store(val, ptr);
         self.llbb().add_assignment(None, ptr.dereference(None), val);
@@ -1191,7 +1187,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // TODO: check that it indeed sign extend the value.
         //println!("Sext {:?} to {:?}", value, dest_ty);
         //if let Some(vector_type) = value.get_type().is_vector() {
-        if let Some(vector_type) = dest_ty.is_vector() {
+        if dest_ty.is_vector().is_some() {
             // TODO: nothing to do as it is only for LLVM?
             return value;
             /*let dest_type = self.context.new_vector_type(dest_ty, vector_type.get_num_units() as u64);
@@ -1248,7 +1244,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.cx.const_bitcast(value, dest_ty)
     }
 
-    fn intcast(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>, is_signed: bool) -> RValue<'gcc> {
+    fn intcast(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>, _is_signed: bool) -> RValue<'gcc> {
         // NOTE: is_signed is for value, not dest_typ.
         //println!("intcast: {:?} ({:?}) -> {:?}", value, value.get_type(), dest_typ);
         self.cx.context.new_cast(None, value, dest_typ)
@@ -1298,7 +1294,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             return;
         }
         let size = self.intcast(size, self.type_size_t(), false);
-        let is_volatile = flags.contains(MemFlags::VOLATILE);
+        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let dst = self.pointercast(dst, self.type_i8p());
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
         let memcpy = self.context.get_builtin_function("memcpy");
@@ -1316,7 +1312,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             return;
         }
         let size = self.intcast(size, self.type_size_t(), false);
-        let is_volatile = flags.contains(MemFlags::VOLATILE);
+        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let dst = self.pointercast(dst, self.type_i8p());
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
 
@@ -1326,8 +1322,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         block.add_eval(None, self.context.new_call(None, memmove, &[dst, src, size]));
     }
 
-    fn memset(&mut self, ptr: RValue<'gcc>, fill_byte: RValue<'gcc>, size: RValue<'gcc>, align: Align, flags: MemFlags) {
-        let is_volatile = flags.contains(MemFlags::VOLATILE);
+    fn memset(&mut self, ptr: RValue<'gcc>, fill_byte: RValue<'gcc>, size: RValue<'gcc>, _align: Align, flags: MemFlags) {
+        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let ptr = self.pointercast(ptr, self.type_i8p());
         let memset = self.context.get_builtin_function("memset");
         let block = self.block.expect("block");
@@ -1364,17 +1360,17 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     #[allow(dead_code)]
-    fn va_arg(&mut self, list: RValue<'gcc>, ty: Type<'gcc>) -> RValue<'gcc> {
+    fn va_arg(&mut self, _list: RValue<'gcc>, _ty: Type<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         //unsafe { llvm::LLVMBuildVAArg(self.llbuilder, list, ty, UNNAMED) }
     }
 
-    fn extract_element(&mut self, vec: RValue<'gcc>, idx: RValue<'gcc>) -> RValue<'gcc> {
+    fn extract_element(&mut self, _vec: RValue<'gcc>, _idx: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         //unsafe { llvm::LLVMBuildExtractElement(self.llbuilder, vec, idx, UNNAMED) }
     }
 
-    fn vector_splat(&mut self, num_elts: usize, elt: RValue<'gcc>) -> RValue<'gcc> {
+    fn vector_splat(&mut self, _num_elts: usize, _elt: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             let elt_ty = self.cx.val_ty(elt);
@@ -1449,26 +1445,26 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         aggregate_value
     }
 
-    fn landing_pad(&mut self, ty: Type<'gcc>, pers_fn: RValue<'gcc>, num_clauses: usize) -> RValue<'gcc> {
+    fn landing_pad(&mut self, _ty: Type<'gcc>, _pers_fn: RValue<'gcc>, _num_clauses: usize) -> RValue<'gcc> {
         unimplemented!();
         /*unsafe {
             llvm::LLVMBuildLandingPad(self.llbuilder, ty, pers_fn, num_clauses as c_uint, UNNAMED)
         }*/
     }
 
-    fn set_cleanup(&mut self, landing_pad: RValue<'gcc>) {
+    fn set_cleanup(&mut self, _landing_pad: RValue<'gcc>) {
         unimplemented!();
         /*unsafe {
             llvm::LLVMSetCleanup(landing_pad, llvm::True);
         }*/
     }
 
-    fn resume(&mut self, exn: RValue<'gcc>) -> RValue<'gcc> {
+    fn resume(&mut self, _exn: RValue<'gcc>) -> RValue<'gcc> {
         unimplemented!();
         //unsafe { llvm::LLVMBuildResume(self.llbuilder, exn) }
     }
 
-    fn cleanup_pad(&mut self, parent: Option<RValue<'gcc>>, args: &[RValue<'gcc>]) -> Funclet {
+    fn cleanup_pad(&mut self, _parent: Option<RValue<'gcc>>, _args: &[RValue<'gcc>]) -> Funclet {
         unimplemented!();
         /*let name = const_cstr!("cleanuppad");
         let ret = unsafe {
@@ -1483,14 +1479,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         Funclet::new(ret.expect("LLVM does not have support for cleanuppad"))*/
     }
 
-    fn cleanup_ret(&mut self, funclet: &Funclet, unwind: Option<Block<'gcc>>) -> RValue<'gcc> {
+    fn cleanup_ret(&mut self, _funclet: &Funclet, _unwind: Option<Block<'gcc>>) -> RValue<'gcc> {
         unimplemented!();
         /*let ret =
             unsafe { llvm::LLVMRustBuildCleanupRet(self.llbuilder, funclet.cleanuppad(), unwind) };
         ret.expect("LLVM does not have support for cleanupret")*/
     }
 
-    fn catch_pad(&mut self, parent: RValue<'gcc>, args: &[RValue<'gcc>]) -> Funclet {
+    fn catch_pad(&mut self, _parent: RValue<'gcc>, _args: &[RValue<'gcc>]) -> Funclet {
         unimplemented!();
         /*let name = const_cstr!("catchpad");
         let ret = unsafe {
@@ -1505,7 +1501,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         Funclet::new(ret.expect("LLVM does not have support for catchpad"))*/
     }
 
-    fn catch_switch(&mut self, parent: Option<RValue<'gcc>>, unwind: Option<Block<'gcc>>, num_handlers: usize) -> RValue<'gcc> {
+    fn catch_switch(&mut self, _parent: Option<RValue<'gcc>>, _unwind: Option<Block<'gcc>>, _num_handlers: usize) -> RValue<'gcc> {
         unimplemented!();
         /*let name = const_cstr!("catchswitch");
         let ret = unsafe {
@@ -1520,14 +1516,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         ret.expect("LLVM does not have support for catchswitch")*/
     }
 
-    fn add_handler(&mut self, catch_switch: RValue<'gcc>, handler: Block<'gcc>) {
+    fn add_handler(&mut self, _catch_switch: RValue<'gcc>, _handler: Block<'gcc>) {
         unimplemented!();
         /*unsafe {
             llvm::LLVMRustAddHandler(catch_switch, handler);
         }*/
     }
 
-    fn set_personality_fn(&mut self, personality: RValue<'gcc>) {
+    fn set_personality_fn(&mut self, _personality: RValue<'gcc>) {
         unimplemented!();
         /*unsafe {
             llvm::LLVMSetPersonalityFn(self.llfn(), personality);
@@ -1611,12 +1607,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn lifetime_start(&mut self, ptr: RValue<'gcc>, size: Size) {
+    fn lifetime_start(&mut self, _ptr: RValue<'gcc>, _size: Size) {
         // TODO
         //self.call_lifetime_intrinsic("llvm.lifetime.start.p0i8", ptr, size);
     }
 
-    fn lifetime_end(&mut self, ptr: RValue<'gcc>, size: Size) {
+    fn lifetime_end(&mut self, _ptr: RValue<'gcc>, _size: Size) {
         // TODO
         //self.call_lifetime_intrinsic("llvm.lifetime.end.p0i8", ptr, size);
     }
@@ -1625,7 +1621,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // FIXME: remove when having a proper API.
         let gcc_func = unsafe { std::mem::transmute(func) };
         if self.functions.borrow().values().find(|value| **value == gcc_func).is_some() {
-            let gcc_func = self.cx.rvalue_as_function(func);
             self.function_call(func, args, funclet)
         }
         else {
@@ -1649,7 +1644,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.cx
     }
 
-    fn do_not_inline(&mut self, llret: RValue<'gcc>) {
+    fn do_not_inline(&mut self, _llret: RValue<'gcc>) {
         unimplemented!();
         //llvm::Attribute::NoInline.apply_callsite(llvm::AttributePlace::Function, llret);
     }
@@ -1672,15 +1667,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         val
     }
 
-    fn fptoui_sat(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+    fn fptoui_sat(&mut self, _val: RValue<'gcc>, _dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
         None
     }
 
-    fn fptosi_sat(&mut self, val: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+    fn fptosi_sat(&mut self, _val: RValue<'gcc>, _dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
         None
     }
 
-    fn instrprof_increment(&mut self, fn_name: RValue<'gcc>, hash: RValue<'gcc>, num_counters: RValue<'gcc>, index: RValue<'gcc>) {
+    fn instrprof_increment(&mut self, _fn_name: RValue<'gcc>, _hash: RValue<'gcc>, _num_counters: RValue<'gcc>, _index: RValue<'gcc>) {
         unimplemented!();
         /*debug!(
             "instrprof_increment() with args ({:?}, {:?}, {:?}, {:?})",

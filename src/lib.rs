@@ -67,11 +67,8 @@ use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, ModuleBuffe
 use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{ErrorReported, Handler};
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
-use rustc_middle::middle::cstore::{EncodedMetadata, MetadataLoader};
-use rustc_middle::ty::{
-    query::Providers,
-    TyCtxt,
-};
+use rustc_middle::middle::cstore::EncodedMetadata;
+use rustc_middle::ty::TyCtxt;
 use rustc_session::config::{Lto, OptLevel, OutputFilenames};
 use rustc_session::Session;
 use rustc_span::Symbol;
@@ -212,7 +209,7 @@ impl WriteBackendMethods for GccCodegenBackend {
         let module =
             match modules.remove(0) {
                 FatLTOInput::InMemory(module) => module,
-                FatLTOInput::Serialized { name, buffer } => {
+                FatLTOInput::Serialized { .. } => {
                     unimplemented!();
                     /*info!("pushing serialized module {:?}", name);
                     let buffer = SerializedModule::Local(buffer);
@@ -264,9 +261,9 @@ impl WriteBackendMethods for GccCodegenBackend {
     }
 }
 
-fn target_triple(sess: &Session) -> target_lexicon::Triple {
+/*fn target_triple(sess: &Session) -> target_lexicon::Triple {
     sess.target.llvm_target.parse().unwrap()
-}
+}*/
 
 /// This is the entrypoint for a hot plugged rustc_codegen_gccjit
 #[no_mangle]
@@ -324,10 +321,11 @@ pub fn target_features(sess: &Session) -> Vec<Symbol> {
                 if sess.is_nightly_build() || gate.is_none() { Some(feature) } else { None }
             },
         )
-        .filter(|feature| {
-            if feature.starts_with("sse") {
+        .filter(|_feature| {
+            /*if feature.starts_with("sse") {
                 return true;
-            }
+            }*/
+            // TODO: implement a way to get enabled feature in libgccjit.
             //println!("Feature: {}", feature);
             /*let llvm_feature = to_llvm_feature(sess, feature);
             let cstr = CString::new(llvm_feature).unwrap();

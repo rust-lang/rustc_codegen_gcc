@@ -117,7 +117,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         true*/
     }
 
-    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
+    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, _span: &[Span]) {
         let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
         let intel_dialect =
@@ -135,7 +135,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         let mut current_number = 0;
         for (idx, op) in operands.iter().enumerate() {
             match *op {
-                InlineAsmOperandRef::Out { reg, late, place } => {
+                InlineAsmOperandRef::Out { place, .. } => {
                     let ty =
                         match place {
                             Some(place) => place.layout.gcc_type(self.cx, false),
@@ -155,7 +155,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     current_number += 1;
                     output_vars.insert(idx, var);
                 }
-                InlineAsmOperandRef::InOut { reg, late, out_place, .. } => {
+                InlineAsmOperandRef::InOut { out_place, .. } => {
                     let ty =
                         match out_place {
                             Some(place) => place.layout.gcc_type(self.cx, false),
@@ -218,7 +218,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                 template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
                             }
                         },
-                        InlineAsmOperandRef::Out { reg, place: None, .. } => {
+                        InlineAsmOperandRef::Out { place: None, .. } => {
                             unimplemented!("Out None");
                         },
                         InlineAsmOperandRef::In { reg, .. }
@@ -321,35 +321,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
         }
 
-        // Collect input operands
-        //let mut constraints = vec![];
-        //let mut op_idx = FxHashMap::default();
-        //let mut inputs = vec![];
-        for (idx, op) in operands.iter().enumerate() {
-            match *op {
-                InlineAsmOperandRef::In { reg, value } => {
-                    //inputs.push(value.immediate());
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push(reg_to_gcc(reg));
-                }
-                InlineAsmOperandRef::InOut { reg, late: _, in_value, out_place: _ } => {
-                    //inputs.push(in_value.immediate());
-                    //constraints.push(format!("{}", op_idx[&idx]));
-                }
-                InlineAsmOperandRef::SymFn { instance } => {
-                    //inputs.push(self.cx.get_fn(instance));
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push("s".to_string());
-                }
-                InlineAsmOperandRef::SymStatic { def_id } => {
-                    //inputs.push(self.cx.get_static(def_id));
-                    //op_idx.insert(idx, constraints.len());
-                    //constraints.push("s".to_string());
-                }
-                _ => {}
-            }
-        }
-
         /*if !options.contains(InlineAsmOptions::PRESERVES_FLAGS) {
             match asm_arch {
                 InlineAsmArch::AArch64 | InlineAsmArch::Arm => {
@@ -409,8 +380,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         // Write results to outputs
         for (idx, op) in operands.iter().enumerate() {
-            if let InlineAsmOperandRef::Out { reg, place: Some(place), .. }
-            | InlineAsmOperandRef::InOut { reg, out_place: Some(place), .. } = *op
+            if let InlineAsmOperandRef::Out { place: Some(place), .. }
+            | InlineAsmOperandRef::InOut { out_place: Some(place), .. } = *op
             {
                 OperandValue::Immediate(output_vars[&idx].to_rvalue()).store(self, place);
             }
@@ -628,9 +599,9 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
             _ => unreachable!(),
         },
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
-        InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::xmm_reg)
-        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::ymm_reg)
-        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::zmm_reg) => unimplemented!() /*match (reg, modifier) {
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
+        | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg)
+        | InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!() /*match (reg, modifier) {
             (X86InlineAsmRegClass::xmm_reg, None) => Some('x'),
             (X86InlineAsmRegClass::ymm_reg, None) => Some('t'),
             (X86InlineAsmRegClass::zmm_reg, None) => Some('g'),

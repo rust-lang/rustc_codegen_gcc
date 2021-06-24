@@ -132,7 +132,7 @@ unsafe fn test_simd() {
     assert_eq!(mask1, 1);*/
 }*/
 
-#[target_feature(enable = "sse2")]
+/*#[target_feature(enable = "sse2")]
 unsafe fn test_mm_slli_si128() {
     #[rustfmt::skip]
     let a = _mm_setr_epi8(
@@ -258,7 +258,7 @@ unsafe fn test_mm_extract_epi8() {
     let r2 = _mm_extract_epi8(a, 19);
     assert_eq!(r1, 0xFF);
     assert_eq!(r2, 3);
-}
+}*/
 
 #[derive(PartialEq)]
 enum LoopState {
