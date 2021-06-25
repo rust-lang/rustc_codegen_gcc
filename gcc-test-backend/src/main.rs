@@ -1,54 +1,175 @@
-fn main() {
-    const A: i8 = 0b0101100;
-    const B: i8 = 0b0100001;
-    const C: i8 = 0b1111001;
+#![feature(link_llvm_intrinsics)]
 
-    const _0: i8 = 0;
-    const _1: i8 = !0;
+use core::arch::x86_64::__m128i;
 
-    assert_eq!(A.rotate_left(6).rotate_right(2).rotate_right(4), A);
-    assert_eq!(B.rotate_left(3).rotate_left(2).rotate_right(5), B);
-    assert_eq!(C.rotate_left(6).rotate_right(2).rotate_right(4), C);
-
-    /*fn rotate_left(x: u32, mut n: u32) -> u32 {
-        //(x << n) | (x >> (-(n as i32) & 31))
-        //println!("{}", 0 << 32);
-        let second_shift = 32 - (n % 32);
-        n %= 32;
-        (x << n) | (x >> second_shift)
-    }
-
-    fn irotate_left(x: i32, mut n: u32) -> i32 {
-        let x = x as u32;
-        let second_shift = 32 - (n % 32);
-        n %= 32;
-        ((x << n) | (x >> second_shift)) as i32
-    }
-
-    assert_eq!(rotate_left(2, 48), 131072);
-    assert_eq!(irotate_left(2, 48), 131072);
-    assert_eq!(irotate_left(-2, 48), -65537);
-    assert_eq!(irotate_left(_1, 124), _1);*/
-
-    /*const _2: u32 = 0;
-    assert_eq!(rotate_left(_2, 16), _2);
-    assert_eq!(rotate_left(_2, 32), _2);
-    assert_eq!(_2.rotate_left(32), _2);*/
-
-    // Rotating these should make no difference
-    //
-    // We test using 124 bits because to ensure that overlong bit shifts do
-    // not cause undefined behaviour. See #10183.
-    assert_eq!(_0.rotate_left(124), _0);
-    println!("{:b}", _1);
-    assert_eq!(_1.rotate_left(124), _1);
-
-    // Rotating by 0 should have no effect
-    assert_eq!(A.rotate_left(0), A);
-    assert_eq!(B.rotate_left(0), B);
-    assert_eq!(C.rotate_left(0), C);
-    // Rotating by a multiple of word size should also have no effect
-    assert_eq!(A.rotate_left(128), A);
-    assert_eq!(B.rotate_left(128), B);
-    assert_eq!(C.rotate_left(128), C);
+unsafe fn _mm_movemask_epi8(a: i128) -> i32 {
+    pmovmskb(a)
 }
+
+#[allow(improper_ctypes)]
+extern "C" {
+    #[link_name = "llvm.x86.sse2.pmovmskb.128"]
+    fn pmovmskb(a: i128) -> i32;
+}
+
+fn main() {
+    unsafe {
+        _mm_movemask_epi8(12);
+    }
+}
+
+/*#![feature(core_intrinsics, generators, generator_trait, is_sorted)]
+
+use std::arch::x86_64::*;
+
+fn main() {
+    unsafe {
+        test_simd();
+    }
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_simd() {
+    /*let x = _mm_setzero_si128();
+    let y = _mm_set1_epi16(7);
+    let or = _mm_or_si128(x, y);
+    let cmp_eq = _mm_cmpeq_epi8(y, y);
+    let cmp_lt = _mm_cmplt_epi8(y, y);*/
+
+    /*assert_eq!(std::mem::transmute::<_, [u16; 8]>(or), [7, 7, 7, 7, 7, 7, 7, 7]);
+    assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_eq), [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff]);
+    assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_lt), [0, 0, 0, 0, 0, 0, 0, 0]);*/
+
+    /*test_mm_slli_si128();
+    test_mm_movemask_epi8();
+    test_mm256_movemask_epi8();*/
+    test_mm_add_epi8();
+    test_mm_add_pd();
+    /*test_mm_cvtepi8_epi16();
+    test_mm_cvtsi128_si64();
+
+    // FIXME(#666) implement `#[rustc_arg_required_const(..)]` support
+    //test_mm_extract_epi8();
+
+    let mask1 = _mm_movemask_epi8(dbg!(_mm_setr_epi8(255u8 as i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
+    assert_eq!(mask1, 1);*/
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_slli_si128() {
+    let a = _mm_setr_epi8(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    );
+    let r = _mm_slli_si128(a, 1);
+    let e = _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    assert_eq_m128i(r, e);
+
+    let a = _mm_setr_epi8(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    );
+    let r = _mm_slli_si128(a, 15);
+    let e = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+    assert_eq_m128i(r, e);
+
+    let a = _mm_setr_epi8(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    );
+    let r = _mm_slli_si128(a, 16);
+    assert_eq_m128i(r, _mm_set1_epi8(0));
+
+    let a = _mm_setr_epi8(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    );
+    let r = _mm_slli_si128(a, -1);
+    assert_eq_m128i(_mm_set1_epi8(0), r);
+
+    let a = _mm_setr_epi8(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    );
+    let r = _mm_slli_si128(a, -0x80000000);
+    assert_eq_m128i(r, _mm_set1_epi8(0));
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_movemask_epi8() {
+    let a = _mm_setr_epi8(
+        0b1000_0000u8 as i8, 0b0, 0b1000_0000u8 as i8, 0b01,
+        0b0101, 0b1111_0000u8 as i8, 0, 0,
+        0, 0, 0b1111_0000u8 as i8, 0b0101,
+        0b01, 0b1000_0000u8 as i8, 0b0, 0b1000_0000u8 as i8,
+    );
+    let r = _mm_movemask_epi8(a);
+    assert_eq!(r, 0b10100100_00100101);
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn test_mm256_movemask_epi8() {
+    let a = _mm256_set1_epi8(-1);
+    let r = _mm256_movemask_epi8(a);
+    let e = -1;
+    assert_eq!(r, e);
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_add_epi8() {
+    let a = _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    let b = _mm_setr_epi8(
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+    );
+    let r = _mm_add_epi8(a, b);
+    let e = _mm_setr_epi8(
+        16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46,
+    );
+    assert_eq_m128i(r, e);
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_add_pd() {
+    let a = _mm_setr_pd(1.0, 2.0);
+    let b = _mm_setr_pd(5.0, 10.0);
+    let r = _mm_add_pd(a, b);
+    assert_eq_m128d(r, _mm_setr_pd(6.0, 12.0));
+}
+
+fn assert_eq_m128i(x: std::arch::x86_64::__m128i, y: std::arch::x86_64::__m128i) {
+    unsafe {
+        assert_eq!(std::mem::transmute::<_, [u8; 16]>(x), std::mem::transmute::<_, [u8; 16]>(y));
+    }
+}
+
+#[target_feature(enable = "sse2")]
+pub unsafe fn assert_eq_m128d(a: __m128d, b: __m128d) {
+    if _mm_movemask_pd(_mm_cmpeq_pd(a, b)) != 0b11 {
+        panic!("{:?} != {:?}", a, b);
+    }
+}
+
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_cvtsi128_si64() {
+    let r = _mm_cvtsi128_si64(std::mem::transmute::<[i64; 2], _>([5, 0]));
+    assert_eq!(r, 5);
+}
+
+#[target_feature(enable = "sse4.1")]
+unsafe fn test_mm_cvtepi8_epi16() {
+    let a = _mm_set1_epi8(10);
+    let r = _mm_cvtepi8_epi16(a);
+    let e = _mm_set1_epi16(10);
+    assert_eq_m128i(r, e);
+    let a = _mm_set1_epi8(-10);
+    let r = _mm_cvtepi8_epi16(a);
+    let e = _mm_set1_epi16(-10);
+    assert_eq_m128i(r, e);
+}
+
+#[target_feature(enable = "sse4.1")]
+unsafe fn test_mm_extract_epi8() {
+    let a = _mm_setr_epi8(
+        -1, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15
+    );
+    let r1 = _mm_extract_epi8(a, 0);
+    let r2 = _mm_extract_epi8(a, 19);
+    assert_eq!(r1, 0xFF);
+    assert_eq!(r2, 3);
+}*/

@@ -126,14 +126,13 @@ unsafe fn zeroed<T>() -> T {
 fn take_f32(_f: f32) {}
 fn take_unique(_u: Unique<()>) {}
 
-// TODO: uncomment when u128 are supported.
-/*fn return_u128_pair() -> (u128, u128) {
+fn return_u128_pair() -> (u128, u128) {
     (0, 0)
 }
 
 fn call_return_u128_pair() {
     return_u128_pair();
-}*/
+}
 
 fn main() {
     take_unique(Unique {
@@ -284,9 +283,8 @@ fn main() {
     let slice_ptr = &[] as *const [u8];
     slice_ptr as *const u8;
 
-    // TODO: reenable when supporting TLS.
-    /*#[cfg(not(jit))]
-    test_tls();*/
+    #[cfg(not(jit))]
+    test_tls();
 }
 
 #[repr(C)]
@@ -417,10 +415,10 @@ pub enum E2<X> {
 
 fn check_niche_behavior () {
     if let E1::V2 { .. } = (E1::V1 { f: true }) {
-        unsafe { intrinsics::abort(); }
+        intrinsics::abort();
     }
 
     if let E2::V1 { .. } = E2::V3::<Infallible> {
-        unsafe { intrinsics::abort(); }
+        intrinsics::abort();
     }
 }

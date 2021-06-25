@@ -22,14 +22,12 @@ use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::bug;
 use rustc_middle::mir::mono::CodegenUnit;
 use rustc_middle::ty::{self, Instance, ParamEnv, PolyExistentialTraitRef, Ty, TyCtxt};
-use rustc_middle::ty::layout::{FnAbiExt, HasParamEnv, HasTyCtxt, LayoutError, TyAndLayout};
+use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, LayoutError, TyAndLayout};
 use rustc_session::Session;
 use rustc_span::{Span, Symbol, DUMMY_SP};
 use rustc_target::abi::{HasDataLayout, LayoutOf, PointeeInfo, Size, TargetDataLayout, VariantIdx};
-use rustc_target::abi::call::FnAbi;
 use rustc_target::spec::{HasTargetSpec, Target, TlsModel};
 
-use crate::abi::FnAbiGccExt;
 use crate::callee::get_fn;
 use crate::declare::mangle_name;
 
@@ -107,6 +105,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     /// Cache of globals.
     pub globals: RefCell<FxHashMap<String, RValue<'gcc>>>,
+    // TODO: remove global_names.
     pub global_names: RefCell<FxHashMap<RValue<'gcc>, String>>,
 
     /// A counter that is used for generating local symbol names
@@ -248,22 +247,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    pub fn int_type_from_size(&self, size: u64) -> Type<'gcc> {
-        match size {
-            1 => self.i8_type,
-            2 => self.i16_type,
-            4 => self.i32_type,
-            8 => self.long_type, // NOTE: for atomic_store.
-            16 => self.i128_type,
-            _ => unimplemented!(),
-        }
-    }
-
-    // TODO: remove this method and global_names.
-    pub fn get_global_name(&self, value: RValue<'gcc>) -> Option<String> {
-        self.global_names.borrow().get(&value).cloned()
-    }
-
     pub fn lvalue_to_rvalue(&self, value: LValue<'gcc>) -> RValue<'gcc> {
         #[cfg(debug_assertions)]
         self.lvalues.borrow_mut().insert(value);
@@ -313,17 +296,17 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn get_fn_addr(&self, instance: Instance<'tcx>) -> RValue<'gcc> {
-        let symbol = self.tcx.symbol_name(instance).name;
+        //let symbol = self.tcx.symbol_name(instance).name;
 
         let func = get_fn(self, instance);
         let func = self.rvalue_as_function(func);
         let ptr = func.get_address(None);
 
         // TODO: don't do this twice: i.e. in declare_fn and here.
-        let fn_abi = FnAbi::of_instance(self, instance, &[]);
-        let (return_type, params, _) = fn_abi.gcc_type(self);
+        //let fn_abi = FnAbi::of_instance(self, instance, &[]);
+        //let (return_type, params, _) = fn_abi.gcc_type(self);
         // FIXME: the rustc API seems to call get_fn_addr() when not needed (e.g. for FFI).
-        let pointer_type = ptr.get_type();
+        //let pointer_type = ptr.get_type();
 
         self.normal_function_addresses.borrow_mut().insert(ptr);
 
@@ -396,12 +379,12 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         //&self.used_statics
     }
 
-    fn set_frame_pointer_elimination(&self, llfn: RValue<'gcc>) {
+    fn set_frame_pointer_elimination(&self, _llfn: RValue<'gcc>) {
         // TODO
         //attributes::set_frame_pointer_elimination(self, llfn)
     }
 
-    fn apply_target_cpu_attr(&self, llfn: RValue<'gcc>) {
+    fn apply_target_cpu_attr(&self, _llfn: RValue<'gcc>) {
         // TODO
         //attributes::apply_target_cpu_attr(self, llfn)
     }
