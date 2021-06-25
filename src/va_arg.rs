@@ -1,4 +1,4 @@
-use gccjit::{RValue, ToRValue, Type};
+/*use gccjit::{RValue, ToRValue, Type};
 use rustc_codegen_ssa::mir::operand::OperandRef;
 use rustc_codegen_ssa::{
     common::IntPredicate,
@@ -86,7 +86,7 @@ fn emit_aapcs_va_arg<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, list: Ope
     let mut maybe_reg = bx.build_sibling_block("va_arg.maybe_reg");
     let mut in_reg = bx.build_sibling_block("va_arg.in_reg");
     let mut on_stack = bx.build_sibling_block("va_arg.on_stack");
-    let mut end = bx.build_sibling_block("va_arg.end");
+    let end = bx.build_sibling_block("va_arg.end");
     let zero = bx.const_i32(0);
     let offset_align = Align::from_bytes(4).unwrap();
     assert!(bx.tcx().sess.target.endian == Endian::Little);
@@ -176,4 +176,4 @@ pub(super) fn emit_va_arg<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, addr
         // https://llvm.org/docs/LangRef.html#va-arg-instruction
         _ => bx.va_arg(addr.immediate(), bx.cx.layout_of(target_ty).gcc_type(bx.cx, true)),
     }
-}
+}*/

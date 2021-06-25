@@ -31,7 +31,6 @@ pub struct ArArchiveBuilder<'a> {
     // Don't use `HashMap` here, as the order is important. `rust.metadata.bin` must always be at
     // the end of an archive for linkers to not get confused.
     entries: Vec<(String, ArchiveEntry)>,
-    update_symbols: bool,
 }
 
 impl<'a> ArchiveBuilder<'a> for ArArchiveBuilder<'a> {
@@ -72,7 +71,6 @@ impl<'a> ArchiveBuilder<'a> for ArArchiveBuilder<'a> {
             config,
             src_archives,
             entries,
-            update_symbols: false,
         }
     }
 
@@ -140,7 +138,6 @@ impl<'a> ArchiveBuilder<'a> for ArArchiveBuilder<'a> {
     }
 
     fn update_symbols(&mut self) {
-        self.update_symbols = true;
     }
 
     fn build(mut self) {
@@ -238,7 +235,7 @@ impl<'a> ArchiveBuilder<'a> for ArArchiveBuilder<'a> {
         }
     }
 
-    fn inject_dll_import_lib(&mut self, lib_name: &str, dll_imports: &[DllImport], tmpdir: &MaybeTempDir) {
+    fn inject_dll_import_lib(&mut self, _lib_name: &str, _dll_imports: &[DllImport], _tmpdir: &MaybeTempDir) {
         unimplemented!();
     }
 }

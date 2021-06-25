@@ -15,7 +15,7 @@ use crate::context::CodegenCx;
 impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
     // FIXME(eddyb) find a common convention for all of the debuginfo-related
     // names (choose between `dbg`, `debug`, `debuginfo`, `debug_info` etc.).
-    fn dbg_var_addr(&mut self, dbg_var: Self::DIVariable, scope_metadata: Self::DIScope, variable_alloca: Self::Value, direct_offset: Size, indirect_offsets: &[Size]) {
+    fn dbg_var_addr(&mut self, _dbg_var: Self::DIVariable, _scope_metadata: Self::DIScope, _variable_alloca: Self::Value, _direct_offset: Size, _indirect_offsets: &[Size]) {
         unimplemented!();
         /*let cx = self.cx();
 
@@ -91,7 +91,7 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
         //gdb::insert_reference_to_gdb_debug_scripts_section_global(self)
     }
 
-    fn set_var_name(&mut self, value: RValue<'gcc>, name: &str) {
+    fn set_var_name(&mut self, _value: RValue<'gcc>, _name: &str) {
         unimplemented!();
         // Avoid wasting time if LLVM value names aren't even enabled.
         /*if self.sess().fewer_names() {
@@ -115,7 +115,7 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn set_dbg_loc(&mut self, dbg_loc: Self::DILocation) {
+    fn set_dbg_loc(&mut self, _dbg_loc: Self::DILocation) {
         unimplemented!();
         /*unsafe {
             let dbg_loc_as_llval = llvm::LLVMRustMetadataAsValue(self.cx().llcx, dbg_loc);
@@ -125,16 +125,16 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
 }
 
 impl<'gcc, 'tcx> DebugInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
-    fn create_vtable_metadata(&self, ty: Ty<'tcx>, vtable: Self::Value) {
+    fn create_vtable_metadata(&self, _ty: Ty<'tcx>, _vtable: Self::Value) {
         //metadata::create_vtable_metadata(self, ty, vtable)
     }
 
-    fn create_function_debug_context(&self, instance: Instance<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, llfn: RValue<'gcc>, mir: &mir::Body<'tcx>) -> Option<FunctionDebugContext<Self::DIScope, Self::DILocation>> {
+    fn create_function_debug_context(&self, _instance: Instance<'tcx>, _fn_abi: &FnAbi<'tcx, Ty<'tcx>>, _llfn: RValue<'gcc>, _mir: &mir::Body<'tcx>) -> Option<FunctionDebugContext<Self::DIScope, Self::DILocation>> {
         // TODO
         None
     }
 
-    fn extend_scope_to_file(&self, scope_metadata: Self::DIScope, file: &SourceFile) -> Self::DIScope {
+    fn extend_scope_to_file(&self, _scope_metadata: Self::DIScope, _file: &SourceFile) -> Self::DIScope {
         unimplemented!();
     }
 
@@ -142,11 +142,11 @@ impl<'gcc, 'tcx> DebugInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         //unimplemented!();
     }
 
-    fn create_dbg_var(&self, variable_name: Symbol, variable_type: Ty<'tcx>, scope_metadata: Self::DIScope, variable_kind: VariableKind, span: Span) -> Self::DIVariable {
+    fn create_dbg_var(&self, _variable_name: Symbol, _variable_type: Ty<'tcx>, _scope_metadata: Self::DIScope, _variable_kind: VariableKind, _span: Span) -> Self::DIVariable {
         unimplemented!();
     }
 
-    fn dbg_scope_fn(&self, instance: Instance<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, maybe_definition_llfn: Option<RValue<'gcc>>) -> Self::DIScope {
+    fn dbg_scope_fn(&self, _instance: Instance<'tcx>, _fn_abi: &FnAbi<'tcx, Ty<'tcx>>, _maybe_definition_llfn: Option<RValue<'gcc>>) -> Self::DIScope {
         unimplemented!();
         /*let def_id = instance.def_id();
         let containing_scope = get_containing_scope(self, instance);
@@ -390,7 +390,7 @@ impl<'gcc, 'tcx> DebugInfoMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         }*/
     }
 
-    fn dbg_loc(&self, scope: Self::DIScope, inlined_at: Option<Self::DILocation>, span: Span) -> Self::DILocation {
+    fn dbg_loc(&self, _scope: Self::DIScope, _inlined_at: Option<Self::DILocation>, _span: Span) -> Self::DILocation {
         unimplemented!();
         /*let DebugLoc { line, col, .. } = self.lookup_debug_loc(span.lo());
 

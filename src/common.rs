@@ -26,7 +26,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         bytes_in_context(self, bytes)
     }
 
-    fn const_cstr(&self, symbol: Symbol, null_terminated: bool) -> RValue<'gcc> {
+    fn const_cstr(&self, symbol: Symbol, _null_terminated: bool) -> RValue<'gcc> {
+        // TODO: handle null_terminated.
         if let Some(&value) = self.const_cstr_cache.borrow().get(&symbol) {
             return value.to_rvalue();
         }
@@ -71,15 +72,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         ptr.dereference(None).to_rvalue()
     }
 
-    pub fn const_isize(&self, i: i64) -> RValue<'gcc> {
-        let bit_size = self.data_layout().pointer_size.bits();
-        if bit_size < 64 {
-            // make sure it doesn't overflow
-            assert!(i < (1 << bit_size));
-        }
-
-        self.const_int(self.isize_type, i)
-    }
+    /*pub fn const_vector(&self, elements: &[RValue<'gcc>]) -> RValue<'gcc> {
+        self.context.new_rvalue_from_vector(None, elements[0].get_type(), elements)
+    }*/
 }
 
 pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) -> RValue<'gcc> {
@@ -178,12 +173,12 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         self.const_uint(self.usize_type, i)
     }
 
-    fn const_u8(&self, i: u8) -> RValue<'gcc> {
+    fn const_u8(&self, _i: u8) -> RValue<'gcc> {
         unimplemented!();
         //self.const_uint(self.type_i8(), i as u64)
     }
 
-    fn const_real(&self, t: Type<'gcc>, val: f64) -> RValue<'gcc> {
+    fn const_real(&self, _t: Type<'gcc>, _val: f64) -> RValue<'gcc> {
         unimplemented!();
         //unsafe { llvm::LLVMConstReal(t, val) }
     }
@@ -213,13 +208,13 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         self.lvalue_to_rvalue(structure)
     }
 
-    fn const_to_opt_uint(&self, v: RValue<'gcc>) -> Option<u64> {
+    fn const_to_opt_uint(&self, _v: RValue<'gcc>) -> Option<u64> {
         // TODO
         None
         //try_as_const_integral(v).map(|v| unsafe { llvm::LLVMConstIntGetZExtValue(v) })
     }
 
-    fn const_to_opt_u128(&self, v: RValue<'gcc>, sign_ext: bool) -> Option<u128> {
+    fn const_to_opt_u128(&self, _v: RValue<'gcc>, _sign_ext: bool) -> Option<u128> {
         // TODO
         None
         /*try_as_const_integral(v).and_then(|v| unsafe {

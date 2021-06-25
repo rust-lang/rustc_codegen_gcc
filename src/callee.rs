@@ -81,7 +81,7 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
             // TODO
             //attributes::from_fn_attrs(cx, func, instance);
 
-            let instance_def_id = instance.def_id();
+            //let instance_def_id = instance.def_id();
 
             // TODO
             /*if cx.use_dll_storage_attrs && tcx.is_dllimport_foreign_item(instance_def_id) {

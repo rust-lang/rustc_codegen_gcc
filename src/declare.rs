@@ -6,6 +6,7 @@ use rustc_target::abi::call::FnAbi;
 
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
+use crate::intrinsic::llvm;
 use crate::mangled_std_symbols::{ARGV_INIT_ARRAY, ARGV_INIT_WRAPPER};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -80,7 +81,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         global
     }
 
-    pub fn declare_cfn(&self, name: &str, fn_type: Type<'gcc>) -> RValue<'gcc> {
+    pub fn declare_cfn(&self, name: &str, _fn_type: Type<'gcc>) -> RValue<'gcc> {
         // TODO: use the fn_type parameter.
         let const_string = self.context.new_type::<u8>().make_pointer().make_pointer();
         let return_type = self.type_i32();
@@ -150,31 +151,28 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.globals.borrow().get(name).cloned()
     }
 
-    fn get_defined_value(&self, name: &str) -> Option<RValue<'gcc>> {
+    /*fn get_defined_value(&self, name: &str) -> Option<RValue<'gcc>> {
         // TODO: gcc does not allow global initialization.
         None
         /*self.get_declared_value(name).and_then(|val| {
             let declaration = unsafe { llvm::LLVMIsDeclaration(val) != 0 };
             if !declaration { Some(val) } else { None }
         })*/
-    }
+    }*/
 }
 
 /// Declare a function.
 ///
 /// If there’s a value with the same name already declared, the function will
 /// update the declaration and return existing Value instead.
-fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, callconv: () /*llvm::CallConv*/, return_type: Type<'gcc>, param_types: &[Type<'gcc>], variadic: bool) -> Function<'gcc> {
+fn declare_raw_fn<'gcc>(cx: &CodegenCx<'gcc, '_>, name: &str, _callconv: () /*llvm::CallConv*/, return_type: Type<'gcc>, param_types: &[Type<'gcc>], variadic: bool) -> Function<'gcc> {
     //debug!("declare_raw_fn(name={:?}, ty={:?})", name, ty);
     /*let llfn = unsafe {
         llvm::LLVMRustGetOrInsertFunction(cx.llmod, name.as_ptr().cast(), name.len(), ty)
     };*/
 
-    if name == "llvm.x86.xgetbv" {
-        // TODO: support other LLVM intrinsics.
-        let func = cx.context.get_builtin_function("__builtin_trap");
-        cx.functions.borrow_mut().insert(name.to_string(), func);
-        return func;
+    if name.starts_with("llvm.") {
+        return llvm::intrinsic(name, cx);
     }
     let func =
         if cx.functions.borrow().contains_key(name) {

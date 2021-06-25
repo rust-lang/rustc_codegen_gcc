@@ -30,9 +30,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         */
     }
 
-    pub fn type_bool(&self) -> Type<'gcc> {
+    /*pub fn type_bool(&self) -> Type<'gcc> {
         self.bool_type
-    }
+    }*/
 
     pub fn type_void(&self) -> Type<'gcc> {
         self.context.new_type::<()>()
@@ -67,6 +67,39 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let ity = Integer::approximate_align(self, align);
         self.type_from_integer(ity)
     }
+
+    /*pub fn type_int_from_ty(&self, t: ty::IntTy) -> Type<'gcc> {
+        match t {
+            ty::IntTy::Isize => self.type_isize(),
+            ty::IntTy::I8 => self.type_i8(),
+            ty::IntTy::I16 => self.type_i16(),
+            ty::IntTy::I32 => self.type_i32(),
+            ty::IntTy::I64 => self.type_i64(),
+            ty::IntTy::I128 => self.type_i128(),
+        }
+    }
+
+    pub fn type_uint_from_ty(&self, t: ty::UintTy) -> Type<'gcc> {
+        match t {
+            ty::UintTy::Usize => self.type_isize(),
+            ty::UintTy::U8 => self.type_i8(),
+            ty::UintTy::U16 => self.type_i16(),
+            ty::UintTy::U32 => self.type_i32(),
+            ty::UintTy::U64 => self.type_i64(),
+            ty::UintTy::U128 => self.type_i128(),
+        }
+    }
+
+    pub fn type_float_from_ty(&self, t: ty::FloatTy) -> Type<'gcc> {
+        match t {
+            ty::FloatTy::F32 => self.type_f32(),
+            ty::FloatTy::F64 => self.type_f64(),
+        }
+    }
+
+    pub fn type_vector(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
+        self.context.new_vector_type(ty, len)
+    }*/
 }
 
 impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
@@ -110,7 +143,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         self.context.new_function_pointer_type(None, return_type, params, false)
     }
 
-    fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
+    fn type_struct(&self, fields: &[Type<'gcc>], _packed: bool) -> Type<'gcc> {
         let types = fields.to_vec();
         if let Some(typ) = self.struct_types.borrow().get(fields) {
             return typ.clone();
@@ -119,7 +152,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             .map(|(index, field)| self.context.new_field(None, *field, &format!("field{}_TODO", index)))
             .collect();
         // TODO: use packed.
-        let name = types.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
+        //let name = types.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
         //let typ = self.context.new_struct_type(None, format!("struct{}", name), &fields).as_type();
         let typ = self.context.new_struct_type(None, "struct", &fields).as_type();
         self.struct_types.borrow_mut().insert(types, typ);
@@ -147,17 +180,27 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         ty.make_pointer()
     }
 
-    fn type_ptr_to_ext(&self, ty: Type<'gcc>, address_space: AddressSpace) -> Type<'gcc> {
+    fn type_ptr_to_ext(&self, ty: Type<'gcc>, _address_space: AddressSpace) -> Type<'gcc> {
         // TODO: use address_space
         ty.make_pointer()
     }
 
     fn element_type(&self, ty: Type<'gcc>) -> Type<'gcc> {
-        unimplemented!();
-        //unsafe { llvm::LLVMGetElementType(ty) }
+        if let Some(typ) = ty.is_array() {
+            typ
+        }
+        else if let Some(vector_type) = ty.is_vector() {
+            vector_type.get_element_type()
+        }
+        else if let Some(typ) = ty.get_pointee() {
+            typ
+        }
+        else {
+            unreachable!()
+        }
     }
 
-    fn vector_length(&self, ty: Type<'gcc>) -> usize {
+    fn vector_length(&self, _ty: Type<'gcc>) -> usize {
         unimplemented!();
         //unsafe { llvm::LLVMGetVectorSize(ty) as usize }
     }
@@ -219,7 +262,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.type_array(self.type_from_integer(unit), size / unit_size)
     }
 
-    pub fn set_struct_body(&self, typ: Struct<'gcc>, fields: &[Type<'gcc>], packed: bool) {
+    pub fn set_struct_body(&self, typ: Struct<'gcc>, fields: &[Type<'gcc>], _packed: bool) {
         // TODO: use packed.
         let fields: Vec<_> = fields.iter().enumerate()
             .map(|(index, field)| self.context.new_field(None, *field, &format!("field_{}", index)))
@@ -227,13 +270,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         typ.set_fields(None, &fields);
     }
 
-    fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
+    /*fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
         // TODO: use packed.
         let fields: Vec<_> = fields.iter().enumerate()
             .map(|(index, field)| self.context.new_field(None, *field, &format!("field_{}", index)))
             .collect();
         return self.context.new_struct_type(None, "unnamedStruct", &fields).as_type();
-    }
+    }*/
 
     pub fn type_named_struct(&self, name: &str) -> Struct<'gcc> {
         self.context.new_opaque_struct_type(None, name)

@@ -62,15 +62,13 @@ use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
 use rustc_codegen_ssa::back::write::{CodegenContext, FatLTOInput, ModuleConfig, TargetMachineFactoryFn};
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule};
+use rustc_codegen_ssa::target_features::supported_target_features;
 use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, ModuleBufferMethods, ThinBufferMethods, WriteBackendMethods};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{ErrorReported, Handler};
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
-use rustc_middle::middle::cstore::{EncodedMetadata, MetadataLoader};
-use rustc_middle::ty::{
-    query::Providers,
-    TyCtxt,
-};
+use rustc_middle::middle::cstore::EncodedMetadata;
+use rustc_middle::ty::TyCtxt;
 use rustc_session::config::{Lto, OptLevel, OutputFilenames};
 use rustc_session::Session;
 use rustc_span::Symbol;
@@ -129,6 +127,10 @@ impl CodegenBackend for GccCodegenBackend {
         });
 
         Ok(())
+    }
+
+    fn target_features(&self, sess: &Session) -> Vec<Symbol> {
+        target_features(sess)
     }
 }
 
@@ -207,7 +209,7 @@ impl WriteBackendMethods for GccCodegenBackend {
         let module =
             match modules.remove(0) {
                 FatLTOInput::InMemory(module) => module,
-                FatLTOInput::Serialized { name, buffer } => {
+                FatLTOInput::Serialized { .. } => {
                     unimplemented!();
                     /*info!("pushing serialized module {:?}", name);
                     let buffer = SerializedModule::Local(buffer);
@@ -259,9 +261,9 @@ impl WriteBackendMethods for GccCodegenBackend {
     }
 }
 
-fn target_triple(sess: &Session) -> target_lexicon::Triple {
+/*fn target_triple(sess: &Session) -> target_lexicon::Triple {
     sess.target.llvm_target.parse().unwrap()
-}
+}*/
 
 /// This is the entrypoint for a hot plugged rustc_codegen_gccjit
 #[no_mangle]
@@ -309,4 +311,27 @@ fn handle_native(name: &str) -> &str {
 pub fn target_cpu(sess: &Session) -> &str {
     let name = sess.opts.cg.target_cpu.as_ref().unwrap_or(&sess.target.cpu);
     handle_native(name)
+}
+
+pub fn target_features(sess: &Session) -> Vec<Symbol> {
+    supported_target_features(sess)
+        .iter()
+        .filter_map(
+            |&(feature, gate)| {
+                if sess.is_nightly_build() || gate.is_none() { Some(feature) } else { None }
+            },
+        )
+        .filter(|_feature| {
+            /*if feature.starts_with("sse") {
+                return true;
+            }*/
+            // TODO: implement a way to get enabled feature in libgccjit.
+            //println!("Feature: {}", feature);
+            /*let llvm_feature = to_llvm_feature(sess, feature);
+            let cstr = CString::new(llvm_feature).unwrap();
+            unsafe { llvm::LLVMRustHasFeature(target_machine, cstr.as_ptr()) }*/
+            false
+        })
+        .map(|feature| Symbol::intern(feature))
+        .collect()
 }

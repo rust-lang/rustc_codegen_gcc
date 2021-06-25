@@ -47,6 +47,10 @@ echo "[AOT] arbitrary_self_types_pointers_and_wrappers"
 $RUSTC example/arbitrary_self_types_pointers_and_wrappers.rs --crate-name arbitrary_self_types_pointers_and_wrappers --crate-type bin --target $TARGET_TRIPLE
 $RUN_WRAPPER ./target/out/arbitrary_self_types_pointers_and_wrappers
 
+echo "[AOT] alloc_system"
+$RUSTC example/alloc_system.rs --crate-type lib --target "$TARGET_TRIPLE"
+
+# FIXME: this requires linking an additional lib for __popcountdi2
 #echo "[AOT] alloc_example"
 #$RUSTC example/alloc_example.rs --crate-type bin --target $TARGET_TRIPLE
 #$RUN_WRAPPER ./target/out/alloc_example
@@ -58,23 +62,24 @@ $RUN_WRAPPER ./target/out/arbitrary_self_types_pointers_and_wrappers
     #echo "[JIT] std_example (skipped)"
 #fi
 
-#echo "[AOT] dst_field_align"
+echo "[AOT] dst_field_align"
 # FIXME Re-add -Zmir-opt-level=2 once rust-lang/rust#67529 is fixed.
-#$RUSTC example/dst-field-align.rs --crate-name dst_field_align --crate-type bin --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/dst_field_align || (echo $?; false)
+$RUSTC example/dst-field-align.rs --crate-name dst_field_align --crate-type bin --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/dst_field_align || (echo $?; false)
 
 echo "[AOT] std_example"
 $RUSTC example/std_example.rs --crate-type bin --target $TARGET_TRIPLE
 $RUN_WRAPPER ./target/out/std_example --target $TARGET_TRIPLE
 
-#echo "[AOT] subslice-patterns-const-eval"
-#$RUSTC example/subslice-patterns-const-eval.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/subslice-patterns-const-eval
+echo "[AOT] subslice-patterns-const-eval"
+$RUSTC example/subslice-patterns-const-eval.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/subslice-patterns-const-eval
 
-#echo "[AOT] track-caller-attribute"
-#$RUSTC example/track-caller-attribute.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
-#$RUN_WRAPPER ./target/out/track-caller-attribute
+echo "[AOT] track-caller-attribute"
+$RUSTC example/track-caller-attribute.rs --crate-type bin -Cpanic=abort --target $TARGET_TRIPLE
+$RUN_WRAPPER ./target/out/track-caller-attribute
 
+# FIXME: this requires linking an additional lib for __popcountdi2
 #echo "[BUILD] mod_bench"
 #$RUSTC example/mod_bench.rs --crate-type bin --target $TARGET_TRIPLE
 
@@ -106,7 +111,6 @@ rm -r ./target || true
 ../../../../../cargo.sh test
 popd
 
-# TODO: uncomment when having SIMD support.
 #pushd regex
 #echo "[TEST] rust-lang/regex example shootout-regex-dna"
 #../cargo.sh clean
@@ -146,10 +150,10 @@ git fetch
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
 export RUSTFLAGS=
 
-##git apply ../rust_lang.patch
+#git apply ../rust_lang.patch
 
 
-#rm config.toml || true
+rm config.toml || true
 
 cat > config.toml <<EOF
 [rust]

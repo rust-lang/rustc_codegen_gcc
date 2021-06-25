@@ -109,7 +109,7 @@ pub(crate) unsafe fn codegen(tcx: TyCtxt<'_>, mods: &mut GccContext, kind: Alloc
         .enumerate()
         .map(|(i, _)| func.get_param(i as i32).to_rvalue())
         .collect::<Vec<_>>();
-    let ret = context.new_call(None, callee, &args);
+    let _ret = context.new_call(None, callee, &args);
     //llvm::LLVMSetTailCall(ret, True);
     block.end_with_void_return(None);
 }
