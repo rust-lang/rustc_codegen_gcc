@@ -144,22 +144,13 @@ pub(crate) unsafe fn codegen(cgcx: &CodegenContext<GccCodegenBackend>, _diag_han
         }
 
         if config.emit_asm {
-            unimplemented!();
-            /*let _timer = cgcx
+            let _timer = cgcx
                 .prof
                 .generic_activity_with_arg("LLVM_module_codegen_emit_asm", &module.name[..]);
             let path = cgcx.output_filenames.temp_path(OutputType::Assembly, module_name);
+            context.compile_to_file(OutputKind::Assembler, path.to_str().expect("path to str"));
 
-            // We can't use the same module for asm and object code output,
-            // because that triggers various errors like invalid IR or broken
-            // binaries. So we must clone the module to produce the asm output
-            // if we are also producing object code.
-            let llmod = if let EmitObj::ObjectCode(_) = config.emit_obj {
-                llvm::LLVMCloneModule(llmod)
-            } else {
-                llmod
-            };
-            with_codegen(tm, llmod, config.no_builtins, |cpm| {
+            /*with_codegen(tm, llmod, config.no_builtins, |cpm| {
                 write_output_file(diag_handler, tm, cpm, llmod, &path, llvm::FileType::AssemblyFile)
             })?;*/
         }
