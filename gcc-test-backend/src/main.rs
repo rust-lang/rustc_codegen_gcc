@@ -1,21 +1,11 @@
-#![feature(link_llvm_intrinsics)]
-
-use core::arch::x86_64::__m128i;
-
-unsafe fn _mm_movemask_epi8(a: i128) -> i32 {
-    pmovmskb(a)
-}
-
-#[allow(improper_ctypes)]
-extern "C" {
-    #[link_name = "llvm.x86.sse2.pmovmskb.128"]
-    fn pmovmskb(a: i128) -> i32;
-}
-
 fn main() {
-    unsafe {
-        _mm_movemask_epi8(12);
-    }
+    const A: i64 = 0b0101100;
+    const B: i64 = 0b0100001;
+    const C: i64 = 0b1111001;
+
+    assert_eq!(A.count_zeros(), i64::BITS - 3);
+    assert_eq!(B.count_zeros(), i64::BITS - 2);
+    assert_eq!(C.count_zeros(), i64::BITS - 5);
 }
 
 /*#![feature(core_intrinsics, generators, generator_trait, is_sorted)]

@@ -833,44 +833,76 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn pop_count(&self, value: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME: this seems to generate a call to a function from a library that is not linked by
-        // core, but linked by std.
+        // TODO: use the optimized version with fewer operations.
         let value_type = value.get_type();
-        let (popcount, expected_type) =
-            if value_type.is_uchar(&self.cx) || value_type.is_ushort(&self.cx) || value_type.is_uint(&self.cx) {
-                // TODO: implement more efficient version for uchar and ushort?
-                ("__builtin_popcount", self.cx.uint_type)
-            }
-            else if value_type.is_ulong(&self.cx) {
-                ("__builtin_popcountl", self.cx.ulong_type)
-            }
-            else if value_type.is_ulonglong(&self.cx) {
-                ("__builtin_popcountll", self.cx.ulonglong_type)
-            }
-            else if value_type.is_u128(&self.cx) {
-                // TODO: maybe there's a more efficient implementation.
-                let popcount = self.context.get_builtin_function("__builtin_popcountll");
-                let sixty_four = self.context.new_rvalue_from_long(value_type, 64);
-                let high = self.context.new_cast(None, value >> sixty_four, self.cx.ulonglong_type);
-                let high = self.context.new_call(None, popcount, &[high]);
-                let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
-                let low = self.context.new_call(None, popcount, &[low]);
-                return high + low;
-            }
-            else {
-                unimplemented!("popcount for {:?}", value_type);
-            };
 
-        let popcount = self.context.get_builtin_function(popcount);
+        if value_type.is_u128(&self.cx) {
+            // TODO: implement in the normal algorithm below to have a more efficient
+            // implementation (that does not require a call to __popcountdi2).
+            let popcount = self.context.get_builtin_function("__builtin_popcountll");
+            let sixty_four = self.context.new_rvalue_from_long(value_type, 64);
+            let high = self.context.new_cast(None, value >> sixty_four, self.cx.ulonglong_type);
+            let high = self.context.new_call(None, popcount, &[high]);
+            let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
+            let low = self.context.new_call(None, popcount, &[low]);
+            return high + low;
+        }
 
-        let value =
-            if value_type != expected_type {
-                self.context.new_cast(None, value, expected_type)
-            }
-            else {
-                value
-            };
-        self.context.new_call(None, popcount, &[value])
+        // First step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x5555555555555555);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 1);
+        let right = shifted & mask;
+        let value = left + right;
+
+        // Second step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x3333333333333333);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 2);
+        let right = shifted & mask;
+        let value = left + right;
+
+        // Third step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x0F0F0F0F0F0F0F0F);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 4);
+        let right = shifted & mask;
+        let value = left + right;
+
+        if value_type.is_u8(&self.cx) {
+            return value;
+        }
+
+        // Fourth step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x00FF00FF00FF00FF);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 8);
+        let right = shifted & mask;
+        let value = left + right;
+
+        if value_type.is_u16(&self.cx) {
+            return value;
+        }
+
+        // Fifth step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x0000FFFF0000FFFF);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 16);
+        let right = shifted & mask;
+        let value = left + right;
+
+        if value_type.is_u32(&self.cx) {
+            return value;
+        }
+
+        // Sixth step.
+        let mask = self.context.new_rvalue_from_long(value_type, 0x00000000FFFFFFFF);
+        let left = value & mask;
+        let shifted = value >> self.context.new_rvalue_from_int(value_type, 32);
+        let right = shifted & mask;
+        let value = left + right;
+
+        value
     }
 
     // Algorithm from: https://blog.regehr.org/archives/1063
