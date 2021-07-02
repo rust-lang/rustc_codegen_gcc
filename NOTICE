@@ -1,5 +1,5 @@
 rustc_codegen_gccjit
-Copyright 2020 Antoni Boucher
+Copyright 2020-2021 Antoni Boucher
 
 Portions of this library comes from rustc_codegen_cranelift
 (https://github.com/bjorn3/rustc_codegen_cranelift — commit
@@ -20,3 +20,5 @@ The following files and directories come partially or entirely from rustc_codege
  * test.sh
  * build_sysroot
  * .github/workflows
+
+The libgccjit patches in the gcc-patches directory are licensed under the GPLv3 license.
