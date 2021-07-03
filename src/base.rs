@@ -75,6 +75,9 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
         let context = Context::default();
         // TODO: only set on x86 platforms.
         context.add_command_line_option("-masm=intel");
+        for arg in &tcx.sess.opts.cg.llvm_args {
+            context.add_command_line_option(arg);
+        }
         //context.set_dump_code_on_compile(true);
         if env::var("CG_GCCJIT_DUMP_GIMPLE").as_deref() == Ok("1") {
             context.set_dump_initial_gimple(true);

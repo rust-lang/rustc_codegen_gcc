@@ -16,6 +16,9 @@ harness = false
 [dependencies]
 gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
 
+# Local copy.
+#gccjit = { path = "../gccjit.rs" }
+
 target-lexicon = "0.10.0"
 
 ar = "0.8.0"
