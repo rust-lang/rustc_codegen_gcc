@@ -1,8 +1,8 @@
 #!/bin/bash --verbose
 set -e
 
-rustup component add rust-src rustc-dev llvm-tools-preview
-./build_sysroot/prepare_sysroot_src.sh
+source prepare_build.sh
+
 cargo install hyperfine || echo "Skipping hyperfine install"
 
 git clone https://github.com/rust-lang/regex.git || echo "rust-lang/regex has already been cloned"

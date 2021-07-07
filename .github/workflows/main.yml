@@ -62,6 +62,12 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('rust-toolchain') }}
 
+    - name: Build
+      run: |
+        ./prepare_build.sh
+        ./build.sh
+        ./clean_all.sh
+
     - name: Prepare dependencies
       run: |
         git config --global user.email "user@example.com"

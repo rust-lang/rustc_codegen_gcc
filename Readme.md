@@ -21,6 +21,13 @@ You can also use my [fork of gcc](https://github.com/antoyo/gcc) which already i
 ```bash
 $ git clone https://github.com/antoyo/rustc_codegen_gcc.git
 $ cd rustc_codegen_gcc
+$ ./prepare_build.sh # download and patch sysroot src
+$ ./build.sh --release
+```
+
+To run the tests:
+
+```bash
 $ ./prepare.sh # download and patch sysroot src and install hyperfine for benchmarking
 $ ./test.sh --release
 ```
