@@ -20,5 +20,3 @@ The following files and directories come partially or entirely from rustc_codege
  * test.sh
  * build_sysroot
  * .github/workflows
-
-The libgccjit patches in the gcc-patches directory are licensed under the GPLv3 license.
