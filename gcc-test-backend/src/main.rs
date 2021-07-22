@@ -1,11 +1,10 @@
 fn main() {
-    const A: i64 = 0b0101100;
-    const B: i64 = 0b0100001;
-    const C: i64 = 0b1111001;
+    let a = [0, 0, 3]; // FIXME: This is casted to 0x7fff00000003. Seems like Rust is generating the code for this (but it could be the memcmp gcc builtin).
+    let b = [0, 0, 3];
+    /*let a = [1, 2, 3];
+    let b = [1, 2, 3];*/
 
-    assert_eq!(A.count_zeros(), i64::BITS - 3);
-    assert_eq!(B.count_zeros(), i64::BITS - 2);
-    assert_eq!(C.count_zeros(), i64::BITS - 5);
+    assert_eq!(a, b);
 }
 
 /*#![feature(core_intrinsics, generators, generator_trait, is_sorted)]

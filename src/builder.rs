@@ -102,7 +102,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 AtomicOrdering::AcquireRelease | AtomicOrdering::Release => AtomicOrdering::Acquire,
                 _ => order.clone(),
             };
-        let previous_value = self.atomic_load(dst, load_ordering.clone(), Size::from_bytes(size));
+        let previous_value = self.atomic_load(dst.get_type(), dst, load_ordering.clone(), Size::from_bytes(size));
         let previous_var = func.new_local(None, previous_value.get_type(), "previous_value");
         let return_value = func.new_local(None, previous_value.get_type(), "return_value");
         self.llbb().add_assignment(None, previous_var, previous_value);
@@ -917,7 +917,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }*/
     }
 
-    fn load(&mut self, ptr: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
+    fn load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
+        // TODO: use ty.
         let block = self.llbb();
         let function = block.get_function();
         // NOTE: instead of returning the dereference here, we have to assign it to a variable in
@@ -932,14 +933,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         loaded_value.to_rvalue()
     }
 
-    fn volatile_load(&mut self, ptr: RValue<'gcc>) -> RValue<'gcc> {
+    fn volatile_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: use ty.
         //println!("5: volatile load: {:?} to {:?}", ptr, ptr.get_type().make_volatile());
         let ptr = self.context.new_cast(None, ptr, ptr.get_type().make_volatile());
         //println!("6");
         ptr.dereference(None).to_rvalue()
     }
 
-    fn atomic_load(&mut self, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) -> RValue<'gcc> {
+    fn atomic_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) -> RValue<'gcc> {
+        // TODO: use ty.
         // TODO: handle alignment.
         let atomic_load = self.context.get_builtin_function(&format!("__atomic_load_{}", size.bytes()));
         let ordering = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
@@ -988,7 +991,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                     }
                 }*/
                 let llval = const_llval.unwrap_or_else(|| {
-                    let load = self.load(place.llval, place.align);
+                    let load = self.load(place.llval.get_type(), place.llval, place.align);
                     if let abi::Abi::Scalar(ref scalar) = place.layout.abi {
                         scalar_load_metadata(self, load, scalar);
                     }
@@ -1001,7 +1004,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
                 let mut load = |i, scalar: &abi::Scalar, align| {
                     let llptr = self.struct_gep(place.llval, i as u64);
-                    let load = self.load(llptr, align);
+                    let load = self.load(llptr.get_type(), llptr, align);
                     scalar_load_metadata(self, load, scalar);
                     if scalar.is_bool() { self.trunc(load, self.type_i1()) } else { load }
                 };
@@ -1288,7 +1291,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn memcpy(&mut self, dst: RValue<'gcc>, dst_align: Align, src: RValue<'gcc>, src_align: Align, size: RValue<'gcc>, flags: MemFlags) {
         if flags.contains(MemFlags::NONTEMPORAL) {
             // HACK(nox): This is inefficient but there is no nontemporal memcpy.
-            let val = self.load(src, src_align);
+            let val = self.load(src.get_type(), src, src_align);
             let ptr = self.pointercast(dst, self.type_ptr_to(self.val_ty(val)));
             self.store_with_flags(val, ptr, dst_align, flags);
             return;
@@ -1306,7 +1309,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn memmove(&mut self, dst: RValue<'gcc>, dst_align: Align, src: RValue<'gcc>, src_align: Align, size: RValue<'gcc>, flags: MemFlags) {
         if flags.contains(MemFlags::NONTEMPORAL) {
             // HACK(nox): This is inefficient but there is no nontemporal memmove.
-            let val = self.load(src, src_align);
+            let val = self.load(src.get_type(), src, src_align);
             let ptr = self.pointercast(dst, self.type_ptr_to(self.val_ty(val)));
             self.store_with_flags(val, ptr, dst_align, flags);
             return;

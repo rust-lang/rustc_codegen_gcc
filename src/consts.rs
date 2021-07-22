@@ -6,7 +6,7 @@ use rustc_middle::{bug, span_bug};
 use rustc_middle::middle::codegen_fn_attrs::{CodegenFnAttrFlags, CodegenFnAttrs};
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::ty::{self, Instance, Ty};
-use rustc_mir::interpret::{self, Allocation, ErrorHandled, read_target_uint};
+use rustc_mir::interpret::{self, Allocation, ErrorHandled, Scalar as InterpScalar, read_target_uint};
 use rustc_span::Span;
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{self, Align, HasDataLayout, LayoutOf, Primitive, Size};
@@ -417,7 +417,7 @@ pub fn const_alloc_to_gcc<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, alloc: &Alloca
     let pointer_size = dl.pointer_size.bytes() as usize;
 
     let mut next_offset = 0;
-    for &(offset, ((), alloc_id)) in alloc.relocations().iter() {
+    for &(offset, alloc_id) in alloc.relocations().iter() {
         let offset = offset.bytes();
         assert_eq!(offset as usize as u64, offset);
         let offset = offset as usize;
@@ -441,7 +441,10 @@ pub fn const_alloc_to_gcc<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, alloc: &Alloca
             .expect("const_alloc_to_llvm: could not read relocation pointer")
             as u64;
         llvals.push(cx.scalar_to_backend(
-            interpret::Pointer::new(alloc_id, Size::from_bytes(ptr_offset)).into(),
+            InterpScalar::from_pointer(
+                interpret::Pointer::new(alloc_id, Size::from_bytes(ptr_offset)),
+                &cx.tcx,
+            ),
             &abi::Scalar { value: Primitive::Pointer, valid_range: 0..=!0 },
             cx.type_i8p(),
         ));

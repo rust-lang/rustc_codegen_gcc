@@ -116,17 +116,11 @@ impl CodegenBackend for GccCodegenBackend {
 
     fn link(&self, sess: &Session, codegen_results: CodegenResults, outputs: &OutputFilenames) -> Result<(), ErrorReported> {
         use rustc_codegen_ssa::back::link::link_binary;
-
-        sess.time("linking", || {
-            link_binary::<crate::archive::ArArchiveBuilder<'_>>(
-                sess,
-                &codegen_results,
-                outputs,
-                &codegen_results.crate_info.local_crate_name.as_str(),
-            );
-        });
-
-        Ok(())
+        link_binary::<crate::archive::ArArchiveBuilder<'_>>(
+            sess,
+            &codegen_results,
+            outputs,
+        )
     }
 
     fn target_features(&self, sess: &Session) -> Vec<Symbol> {

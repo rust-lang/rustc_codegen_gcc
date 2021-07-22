@@ -4,14 +4,14 @@ mod simd;
 use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::MemFlags;
 use rustc_codegen_ssa::base::wants_msvc_seh;
-use rustc_codegen_ssa::common::span_invalid_monomorphization_error;
+use rustc_codegen_ssa::common::{IntPredicate, span_invalid_monomorphization_error};
 use rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{ArgAbiMethods, BaseTypeMethods, BuilderMethods, ConstMethods, IntrinsicCallMethods};
 use rustc_middle::bug;
 use rustc_middle::ty::{self, Instance, Ty};
 use rustc_span::{Span, Symbol, symbol::kw, sym};
-use rustc_target::abi::LayoutOf;
+use rustc_target::abi::{HasDataLayout, LayoutOf};
 use rustc_target::abi::call::{ArgAbi, FnAbi, PassMode};
 use rustc_target::spec::PanicStrategy;
 
@@ -160,7 +160,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     if let PassMode::Cast(ty) = fn_abi.ret.mode {
                         ptr = self.pointercast(ptr, self.type_ptr_to(ty.gcc_type(self)));
                     }
-                    let load = self.volatile_load(ptr);
+                    let load = self.volatile_load(ptr.get_type(), ptr);
                     // TODO
                     /*let align = if name == sym::unaligned_volatile_load {
                         1
@@ -324,6 +324,46 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             }
                         }
                     }
+
+                sym::raw_eq => {
+                    use rustc_target::abi::Abi::*;
+                    let tp_ty = substs.type_at(0);
+                    let layout = self.layout_of(tp_ty).layout;
+                    let use_integer_compare = match layout.abi {
+                        Scalar(_) | ScalarPair(_, _) => true,
+                        Uninhabited | Vector { .. } => false,
+                        Aggregate { .. } => {
+                            // For rusty ABIs, small aggregates are actually passed
+                            // as `RegKind::Integer` (see `FnAbi::adjust_for_abi`),
+                            // so we re-use that same threshold here.
+                            layout.size <= self.data_layout().pointer_size * 2
+                        }
+                    };
+
+                    let a = args[0].immediate();
+                    let b = args[1].immediate();
+                    if layout.size.bytes() == 0 {
+                        self.const_bool(true)
+                    }
+                    else if use_integer_compare {
+                        let integer_ty = self.type_ix(layout.size.bits());
+                        let ptr_ty = self.type_ptr_to(integer_ty);
+                        let a_ptr = self.bitcast(a, ptr_ty);
+                        let a_val = self.load(integer_ty, a_ptr, layout.align.abi);
+                        let b_ptr = self.bitcast(b, ptr_ty);
+                        let b_val = self.load(integer_ty, b_ptr, layout.align.abi);
+                        self.icmp(IntPredicate::IntEQ, a_val, b_val)
+                    }
+                    else {
+                        let void_ptr_type = self.context.new_type::<*const ()>();
+                        let a_ptr = self.bitcast(a, void_ptr_type);
+                        let b_ptr = self.bitcast(b, void_ptr_type);
+                        let n = self.context.new_cast(None, self.const_usize(layout.size.bytes()), self.sizet_type);
+                        let builtin = self.context.get_builtin_function("memcmp");
+                        let cmp = self.context.new_call(None, builtin, &[a_ptr, b_ptr, n]);
+                        self.icmp(IntPredicate::IntEQ, cmp, self.const_i32(0))
+                    }
+                }
 
                 _ if name_str.starts_with("simd_") => {
                     match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {

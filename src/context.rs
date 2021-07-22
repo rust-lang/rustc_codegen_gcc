@@ -379,9 +379,9 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         //&self.used_statics
     }
 
-    fn set_frame_pointer_elimination(&self, _llfn: RValue<'gcc>) {
+    fn set_frame_pointer_type(&self, _llfn: RValue<'gcc>) {
         // TODO
-        //attributes::set_frame_pointer_elimination(self, llfn)
+        //attributes::set_frame_pointer_type(self, llfn)
     }
 
     fn apply_target_cpu_attr(&self, _llfn: RValue<'gcc>) {

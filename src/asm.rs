@@ -413,6 +413,7 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
             constraint.to_string()
         },
         InlineAsmRegOrRegClass::RegClass(reg) => match reg {
+            InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::preg) => unimplemented!(),
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => unimplemented!(),
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg) => unimplemented!(),
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => unimplemented!(),
@@ -438,11 +439,14 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
             InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::freg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
+            InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::vreg) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::mmx_reg) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::reg) => "r",
             InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
             | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
             InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
@@ -460,6 +464,7 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
 fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegClass) -> Type<'gcc> {
     match reg {
         InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => cx.type_i32(),
+        InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::preg) => unimplemented!(),
         InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg)
         | InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => {
             unimplemented!()
@@ -488,12 +493,15 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
         InlineAsmRegClass::PowerPC(PowerPCInlineAsmRegClass::freg) => cx.type_f64(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => cx.type_i32(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => cx.type_f32(),
+        InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::vreg) => cx.type_f32(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => cx.type_i32(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => cx.type_i8(),
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::mmx_reg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => cx.type_f32(),
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => cx.type_i16(),
         InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => cx.type_i32(),
         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
@@ -558,6 +566,7 @@ impl<'gcc, 'tcx> AsmMethods for CodegenCx<'gcc, 'tcx> {
 fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option<char>) -> Option<char> {
     match reg {
         InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::reg) => modifier,
+        InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::preg) => modifier,
         InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg)
         | InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::vreg_low16) => {
             unimplemented!()
@@ -587,6 +596,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
         InlineAsmRegClass::PowerPC(_) => unimplemented!(),
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg)
         | InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
+        InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::vreg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => match modifier {
             None if arch == InlineAsmArch::X86_64 => Some('q'),
@@ -598,6 +608,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
             Some('r') => Some('q'),
             _ => unreachable!(),
         },
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::mmx_reg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg)
@@ -610,6 +621,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
             (_, Some('z')) => Some('g'),
             _ => unreachable!(),
         }*/,
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
         InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {

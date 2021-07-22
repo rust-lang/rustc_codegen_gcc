@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# TODO: rewrite to cargo-make or something like that to only rebuild the sysroot when needed?
+
 #set -x
 set -e
 

@@ -75,7 +75,7 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
         // We assume this is only called for the main function.
         use std::iter;
 
-        for crate_num in self.cx.tcx.all_crate_nums(()).iter().copied().chain(iter::once(LOCAL_CRATE)) {
+        for crate_num in self.cx.tcx.crates(()).iter().copied().chain(iter::once(LOCAL_CRATE)) {
             // FIXME: better way to find if a crate is of proc-macro type?
             if crate_num == LOCAL_CRATE || self.cx.tcx.dep_kind(crate_num) != CrateDepKind::MacrosOnly {
                 // NOTE: proc-macro crates are not included in the executable, so don't call their

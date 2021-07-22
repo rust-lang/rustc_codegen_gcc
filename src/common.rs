@@ -250,9 +250,10 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                     self.const_bitcast(value, ty)
                 }
             }
-            Scalar::Ptr(ptr) => {
+            Scalar::Ptr(ptr, _size) => {
+                let (alloc_id, offset) = ptr.into_parts();
                 let base_addr =
-                    match self.tcx.global_alloc(ptr.alloc_id) {
+                    match self.tcx.global_alloc(alloc_id) {
                         GlobalAlloc::Memory(alloc) => {
                             let init = const_alloc_to_gcc(self, alloc);
                             let value =
@@ -276,7 +277,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                     };
                 let ptr_type = base_addr.get_type();
                 let base_addr = self.const_bitcast(base_addr, self.usize_type);
-                let offset = self.context.new_rvalue_from_long(self.usize_type, ptr.offset.bytes() as i64);
+                let offset = self.context.new_rvalue_from_long(self.usize_type, offset.bytes() as i64);
                 let ptr = self.const_bitcast(base_addr + offset, ptr_type);
                 let value = ptr.dereference(None);
                 if layout.value != Pointer {
@@ -287,6 +288,10 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 }
             }
         }
+    }
+
+    fn const_data_from_alloc(&self, alloc: &Allocation) -> Self::Value {
+        const_alloc_to_gcc(self, alloc)
     }
 
     fn from_const_alloc(&self, layout: TyAndLayout<'tcx>, alloc: &Allocation, offset: Size) -> PlaceRef<'tcx, RValue<'gcc>> {
