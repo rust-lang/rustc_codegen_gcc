@@ -44,7 +44,7 @@ impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
         let fn_abi = FnAbi::of_instance(self, instance, &[]);
         self.linkage.set(base::linkage_to_gcc(linkage));
-        let _decl = self.declare_fn(symbol_name, &fn_abi);
+        let decl = self.declare_fn(symbol_name, &fn_abi);
         //let attrs = self.tcx.codegen_fn_attrs(instance.def_id());
 
         // TODO: call set_link_section() to allow initializing argc/argv.
