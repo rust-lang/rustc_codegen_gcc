@@ -179,6 +179,8 @@ rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macr
 for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
   rm $test
 done
+git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice.rs
+git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice2.rs
 #rm src/test/ui/consts/const-size_of-cycle.rs || true # Error file path difference
 #rm src/test/ui/impl-trait/impl-generic-mismatch.rs || true # ^
 #rm src/test/ui/type_length_limit.rs || true
