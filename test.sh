@@ -182,7 +182,7 @@ for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src
 done
 git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice.rs
 git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice2.rs
-rm src/test/ui/llvm-asm/llvm-asm-in-out-operand.rs || true # TODO: fix inline asm and enable back this test.
+rm src/test/ui/llvm-asm/llvm-asm-in-out-operand.rs || true # TODO: Enable back this test if I ever implement the llvm_asm! macro.
 #rm src/test/ui/consts/const-size_of-cycle.rs || true # Error file path difference
 #rm src/test/ui/impl-trait/impl-generic-mismatch.rs || true # ^
 #rm src/test/ui/type_length_limit.rs || true
