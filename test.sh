@@ -168,10 +168,19 @@ EOF
 
 rustc -V | cut -d' ' -f3 | tr -d '('
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
+
+for test in $(rg -i --files-with-matches "//(\[\w+\])?~|// error-pattern:|// build-fail|// run-fail|-Cllvm-args" src/test/ui); do
+  rm $test
+done
+
+git checkout -- src/test/ui/issues/auxiliary/issue-3136-a.rs # contains //~ERROR, but shouldn't be removed
+
 rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
 for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
   rm $test
 done
+git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice.rs
+git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice2.rs
 #rm src/test/ui/consts/const-size_of-cycle.rs || true # Error file path difference
 #rm src/test/ui/impl-trait/impl-generic-mismatch.rs || true # ^
 #rm src/test/ui/type_length_limit.rs || true
