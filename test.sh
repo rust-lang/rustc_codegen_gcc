@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# TODO: rewrite to cargo-make or something like that to only rebuild the sysroot when needed?
+# TODO: rewrite to cargo-make (or just) or something like that to only rebuild the sysroot when needed?
 
 #set -x
 set -e
@@ -160,6 +160,7 @@ rm config.toml || true
 cat > config.toml <<EOF
 [rust]
 codegen-backends = []
+
 [build]
 cargo = "$(which cargo)"
 local-rebuild = true
@@ -181,6 +182,7 @@ for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src
 done
 git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice.rs
 git checkout src/test/ui/type-alias-impl-trait/auxiliary/cross_crate_ice2.rs
+rm src/test/ui/llvm-asm/llvm-asm-in-out-operand.rs || true # TODO: fix inline asm and enable back this test.
 #rm src/test/ui/consts/const-size_of-cycle.rs || true # Error file path difference
 #rm src/test/ui/impl-trait/impl-generic-mismatch.rs || true # ^
 #rm src/test/ui/type_length_limit.rs || true
