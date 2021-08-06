@@ -21,6 +21,7 @@ extern crate rustc_data_structures;
 extern crate rustc_errors;
 //extern crate rustc_fs_util;
 extern crate rustc_hir;
+extern crate rustc_metadata;
 extern crate rustc_middle;
 extern crate rustc_mir;
 extern crate rustc_session;

@@ -10,6 +10,7 @@ use gccjit::{
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::dep_graph;
 use rustc_middle::middle::cstore::EncodedMetadata;
+use rustc_middle::middle::exported_symbols;
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::mir::mono::Linkage;
 use rustc_codegen_ssa::{ModuleCodegen, ModuleKind};
@@ -134,35 +135,39 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (Modul
     (module, cost)
 }
 
-pub fn write_compressed_metadata<'tcx>(_tcx: TyCtxt<'tcx>, _metadata: &EncodedMetadata, _gcc_module: &mut GccContext) {
-    // TODO
-
-    /*use flate2::write::DeflateEncoder;
-    use flate2::Compression;
+pub fn write_compressed_metadata<'tcx>(tcx: TyCtxt<'tcx>, metadata: &EncodedMetadata, gcc_module: &mut GccContext) {
+    use snap::write::FrameEncoder;
     use std::io::Write;
 
-    let (metadata_llcx, metadata_llmod) = (&*llvm_module.llcx, llvm_module.llmod());
-    let mut compressed = tcx.metadata_encoding_version();
-    DeflateEncoder::new(&mut compressed, Compression::fast())
-        .write_all(&metadata.raw_data)
-        .unwrap();
+    // Historical note:
+    //
+    // When using link.exe it was seen that the section name `.note.rustc`
+    // was getting shortened to `.note.ru`, and according to the PE and COFF
+    // specification:
+    //
+    // > Executable images do not use a string table and do not support
+    // > section names longer than 8 characters
+    //
+    // https://docs.microsoft.com/en-us/windows/win32/debug/pe-format
+    //
+    // As a result, we choose a slightly shorter name! As to why
+    // `.note.rustc` works on MinGW, see
+    // https://github.com/llvm/llvm-project/blob/llvmorg-12.0.0/lld/COFF/Writer.cpp#L1190-L1197
+    let section_name = if tcx.sess.target.is_like_osx { "__DATA,.rustc" } else { ".rustc" };
 
-    let llmeta = common::bytes_in_context(metadata_llcx, &compressed);
-    let llconst = common::struct_in_context(metadata_llcx, &[llmeta], false);
+    let context = &gcc_module.context;
+    let mut compressed = rustc_metadata::METADATA_HEADER.to_vec();
+    FrameEncoder::new(&mut compressed).write_all(&metadata.raw_data).unwrap();
+
     let name = exported_symbols::metadata_symbol_name(tcx);
-    let buf = CString::new(name).unwrap();
-    let llglobal =
-        unsafe { llvm::LLVMAddGlobal(metadata_llmod, common::val_ty(llconst), buf.as_ptr()) };
-    unsafe {
-        llvm::LLVMSetInitializer(llglobal, llconst);
-        let section_name = metadata::metadata_section_name(&tcx.sess.target.target);
-        let name = SmallCStr::new(section_name);
-        llvm::LLVMSetSection(llglobal, name.as_ptr());
+    let typ = context.new_array_type(None, context.new_type::<u8>(), compressed.len() as i32);
+    let global = context.new_global(None, GlobalKind::Exported, typ, name);
+    global.global_set_initializer(&compressed);
+    global.set_link_section(section_name);
 
-        // Also generate a .section directive to force no
-        // flags, at least for ELF outputs, so that the
-        // metadata doesn't get loaded into memory.
-        let directive = format!(".section {}", section_name);
-        llvm::LLVMSetModuleInlineAsm2(metadata_llmod, directive.as_ptr().cast(), directive.len())
-    }*/
+    // Also generate a .section directive to force no
+    // flags, at least for ELF outputs, so that the
+    // metadata doesn't get loaded into memory.
+    let directive = format!(".section {}", section_name);
+    context.add_top_level_asm(None, &directive);
 }
