@@ -22,7 +22,6 @@ gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
 target-lexicon = "0.10.0"
 
 ar = "0.8.0"
-snap = "1"
 
 [dependencies.object]
 version = "0.25.0"

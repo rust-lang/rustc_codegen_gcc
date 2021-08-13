@@ -110,3 +110,9 @@ Or add a breakpoint to `add_error` in gdb and print the line number using:
 ```
 p loc->m_line
 ```
+
+### How to use a custom-build rustc
+
+ * Build the stage1 compiler (`rustup toolchain link debug-current stage2 build/x86_64-unknown-linux-gnu/stage1`).
+ * Clean and rebuild the codegen with `debug-current` in the file `rust-toolchain`.
+ * Add `~/.rustup/toolchains/debug-current/lib/rustlib/x86_64-unknown-linux-gnu/lib` to `LD_LIBRARY_PATH`.
