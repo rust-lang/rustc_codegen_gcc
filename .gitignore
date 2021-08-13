@@ -14,3 +14,4 @@ perf.data.old
 gimple*
 *asm
 res
+gcc-test-backend
