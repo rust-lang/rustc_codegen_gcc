@@ -2,7 +2,12 @@ set -e
 
 export CARGO_INCREMENTAL=0
 
-export GCC_PATH=$(cat gcc_path)
+if [ -f ./gcc_path ]; then 
+    export GCC_PATH=$(cat gcc_path)
+else
+    echo 'Please put the path to your custom build of libgccjit in the file `gcc_path`, see Readme.md for details'
+    exit 1
+fi
 
 unamestr=`uname`
 if [[ "$unamestr" == 'Linux' ]]; then
