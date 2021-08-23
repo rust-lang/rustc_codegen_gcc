@@ -84,7 +84,7 @@ impl AsmOutOperand<'_, '_, '_> {
         let mut res = String::with_capacity(self.constraint.len() + self.late as usize + 1);
 
         res.push(if self.readwrite { '+' } else { '=' });
-        if self.late {
+        if !self.late {
             res.push('&');
         }
 
@@ -248,7 +248,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         for (rust_idx, op) in rust_operands.iter().enumerate() {
             let not_yet = |reg_name| {
                 // TODO(@Commeownist)
-                let err = format!("GCC backend does not support explicit registers such as `{}` just yet", reg_name);
+                let err = format!("GCC backend does not support explicit registers such as `\"{}\"` just yet", reg_name);
                 self.sess().struct_span_err(span[rust_idx], &err)
                     .note("need register variables support in libgccjit")
                     .emit();
@@ -313,20 +313,20 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     match rust_operands[operand_idx] {
                         InlineAsmOperandRef::Out { reg, ..  } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            let gcc_index = outputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let gcc_index = outputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
                             push_to_template(modifier, gcc_index);
                         }
 
                         InlineAsmOperandRef::In { reg, .. } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            let in_gcc_index = inputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let in_gcc_index = inputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
                             let gcc_index = in_gcc_index + outputs.len();
                             push_to_template(modifier, gcc_index);
                         }
 
                         InlineAsmOperandRef::SymFn { .. } 
                         | InlineAsmOperandRef::SymStatic { .. } => {
-                            let in_gcc_index = inputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let in_gcc_index = inputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
                             let gcc_index = in_gcc_index + outputs.len();
                             push_to_template(None, gcc_index);
                         }
@@ -335,7 +335,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
 
                             // The input register is tied to the input, so we can just use the index of the output register
-                            let gcc_index = outputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let gcc_index = outputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
                             push_to_template(modifier, gcc_index);
                         }
 
