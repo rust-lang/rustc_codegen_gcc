@@ -1,148 +1,356 @@
-use gccjit::{RValue, ToRValue, Type};
+use gccjit::{LValue, RValue, ToRValue, Type};
 use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::operand::OperandValue;
 use rustc_codegen_ssa::mir::place::PlaceRef;
-use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef, InlineAsmOperandRef};
-use rustc_data_structures::fx::FxHashMap;
+use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef, InlineAsmOperandRef, MiscMethods};
+
 use rustc_hir::LlvmInlineAsmInner;
 use rustc_middle::bug;
 use rustc_span::Span;
 use rustc_target::asm::*;
 
+use std::borrow::Cow;
+
 use crate::builder::Builder;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
+
+// Rust asm! and GCC Extended Asm semantics differ substantially.
+//
+// 1. Rust asm operands go along as one list of operands. Operands themselves indicate 
+//    if they're "in" or "out". "In" and "out" operands can interleave. One operand can be 
+//    both "in" and "out" (`inout(reg)`).
+//
+//    GCC asm has two different lists for "in" and "out" operands. In terms of gccjit, 
+//    this means that all "out" operands must go before "in" operands. "In" and "out" operands 
+//    cannot interleave.
+//
+// 2. Operand lists in both Rust and GCC are indexed. Index starts from 0. Indexes are important 
+//    because the asm template refers to operands by index.
+//
+//    Mapping from Rust to GCC index would be 1-1 if it wasn't for...
+//
+// 3. Clobbers. GCC has a separate list of clobbers, and clobbers don't have indexes. 
+//    Contrary, Rust expresses clobbers through "out" operands that aren't tied to 
+//    a variable (`_`),  and such "clobbers" do have index.
+//
+// 4. Furthermore, GCC Extended Asm does not support explicit register constraints 
+//    (like `out("eax")`) directly, offering so-called "local register variables" 
+//    as a workaround. This variables need to be declared and initialized *before* 
+//    the Extended Asm block but *after* normal local variables.
+//
+// With that in mind, let's see how we translate Rust syntax to GCC 
+// (from now on, `CC` stands for "constraint code"):
+//
+// * `out(reg_class) var`   -> translated to output operand: `"=CC"(var)`
+// * `in(reg_class) var`    -> translated to input operand: `"CC"(var)`
+//
+// * `out(reg_class) _` -> translated to one `=r(tmp)`, where "tmp" is a temporary unused variable
+//
+// * `out("explicit register") _` -> not translated to any operands, register is simply added to clobbers list
+//
+// * `inout(reg_class) in_var => out_var` -> translated to two operands: 
+//                              output: `"+CC"(in_var)`
+//                              input:  `"num"(out_var)` where num is the GCC index 
+//                                       of the corresponding output operand
+//
+// * `inout(reg_class) in_var => _` -> same as `inout(reg_class) in_var => tmp`, 
+//                                      where "tmp" is a temporary unused variable
+//
+// * `out/in/inout("explicit register") var` -> translated to one or two operands as described above 
+//                                              with `"r"(var)` constraint, 
+//                                              and one register variable assigned to the desired register.
+// 
+
+struct AsmOutOperand<'a, 'tcx, 'gcc> {
+    rust_idx: usize,
+    constraint: &'a str,
+    late: bool,
+    readwrite: bool,
+
+    tmp_var: LValue<'gcc>,
+    out_place: Option<PlaceRef<'tcx, RValue<'gcc>>>
+}
+
+struct AsmInOperand<'a, 'tcx> {
+    rust_idx: usize,
+    constraint: Cow<'a, str>,
+    val: RValue<'tcx>
+}
+
+impl AsmOutOperand<'_, '_, '_> {
+    fn to_constraint(&self) -> String {
+        let mut res = String::with_capacity(self.constraint.len() + self.late as usize + 1);
+
+        res.push(if self.readwrite { '+' } else { '=' });
+        if self.late {
+            res.push('&');
+        }
+
+        res.push_str(&self.constraint);
+        res
+    }
+}
+
+
 impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
-    fn codegen_llvm_inline_asm(&mut self, _ia: &LlvmInlineAsmInner, _outputs: Vec<PlaceRef<'tcx, RValue<'gcc>>>, mut _inputs: Vec<RValue<'gcc>>, _span: Span) -> bool {
-        // TODO(antoyo)
+    fn codegen_llvm_inline_asm(&mut self, _ia: &LlvmInlineAsmInner, _outputs: Vec<PlaceRef<'tcx, RValue<'gcc>>>, mut _inputs: Vec<RValue<'gcc>>, span: Span) -> bool {
+        // TODO(@Commeownist): switch to `struct_span_err_with_code` 
+        // once we get this merged into rustc
+        self.sess().struct_span_err(span, "GCC backend does not support `llvm_asm!`")
+            .help("consider using the `asm!` macro instead")
+            .emit();
+
+        // We return `true` even though we've failed to generate the asm
+        // because we want to suppress the "malformed inline assembly" error
+        // generated by the frontend.
         return true;
     }
 
-    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, _span: &[Span]) {
+    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], rust_operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
         let asm_arch = self.tcx.sess.asm_arch.unwrap();
+        let att_dialect = matches!(asm_arch, InlineAsmArch::X86 | InlineAsmArch::X86_64) &&
+                            options.contains(InlineAsmOptions::ATT_SYNTAX);
+        let intel_dialect = matches!(asm_arch, InlineAsmArch::X86 | InlineAsmArch::X86_64) &&
+                            !options.contains(InlineAsmOptions::ATT_SYNTAX);
 
-        let intel_dialect =
-            match asm_arch {
-                InlineAsmArch::X86 | InlineAsmArch::X86_64 if !options.contains(InlineAsmOptions::ATT_SYNTAX) => true,
-                _ => false,
-            };
+        // GCC index of an output operand equals its position in the array 
+        let mut outputs = vec![];
 
-        // Collect the types of output operands
-        // FIXME(antoyo): we do this here instead of later because of a bug in libgccjit where creating the
-        // variable after the extended asm expression causes a segfault:
-        // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100380
-        let mut output_vars = FxHashMap::default();
-        let mut operand_numbers = FxHashMap::default();
-        let mut current_number = 0;
-        for (idx, op) in operands.iter().enumerate() {
+        // GCC index of an input operand equals its position in the array
+        // added to `outputs.len()`
+        let mut inputs = vec![];
+
+        // Clobbers collected from `out("explicit register") _` and `inout("expl_reg") var => _`
+        let mut clobbers = vec![];
+
+        // We're trying to preallocate space for the template
+        let mut constants_len = 0;
+
+        // There are rules we must adhere to if we want GCC to do the right thing:
+        // 
+        // * Every local variable the asm block uses as output must be declared *before*
+        //   the asm block. 
+        // * There must be no instructions whatsoever between the register variables and the asm.
+        //
+        // Therefore, the backend must generate the instructions strictly in this order:
+        //
+        // 1. Output variables.
+        // 2. Register variables.
+        // 3. The asm block.
+        //
+        // We also must make sure that no input operands are emitted before output operands.
+        //
+        // This is why we work in passes, first emitting local vars, then local register vars.
+        // Also, we don't emit any asm operands immediately; we save them to 
+        // the one of the buffers to be emitted later.
+
+        for (rust_idx, op) in rust_operands.iter().enumerate() {
             match *op {
-                InlineAsmOperandRef::Out { place, .. } => {
-                    let ty =
-                        match place {
-                            Some(place) => place.layout.gcc_type(self.cx, false),
-                            None => {
-                                // If the output is discarded, we don't really care what
-                                // type is used. We're just using this to tell GCC to
-                                // reserve the register.
-                                //dummy_output_type(self.cx, reg.reg_class())
+                InlineAsmOperandRef::Out { reg, late, place } => {
+                    let (constraint, ty) = match (reg_to_gcc(reg), place) {
+                        (Ok(constraint), Some(place)) => (constraint, place.layout.gcc_type(self.cx, false)),
+                        (Ok(constraint), None) => (constraint, dummy_output_type(self.cx, reg.reg_class())),
+                        (Err(_), Some(_)) => {
+                            // left for the next pass
+                            continue
+                        },
+                        (Err(reg_name), None) => {
+                            clobbers.push(reg_name);
+                            continue
+                        }
+                    };
 
-                                // NOTE: if no output value, we should not create one (it will be a
-                                // clobber).
-                                continue;
-                            },
-                        };
-                    let var = self.current_func().new_local(None, ty, "output_register");
-                    operand_numbers.insert(idx, current_number);
-                    current_number += 1;
-                    output_vars.insert(idx, var);
+                    let tmp_var = self.current_func().new_local(None, ty, "output_register");
+
+                    outputs.push(AsmOutOperand {
+                        constraint, 
+                        rust_idx,
+                        late,
+                        readwrite: false,
+                        tmp_var,
+                        out_place: place
+                    });
                 }
-                InlineAsmOperandRef::InOut { out_place, .. } => {
-                    let ty =
-                        match out_place {
-                            Some(place) => place.layout.gcc_type(self.cx, false),
-                            None => {
-                                // NOTE: if no output value, we should not create one.
-                                continue;
-                            },
-                        };
-                    operand_numbers.insert(idx, current_number);
-                    current_number += 1;
-                    let var = self.current_func().new_local(None, ty, "output_register");
-                    output_vars.insert(idx, var);
+
+                InlineAsmOperandRef::In { reg, value } => {
+                    if let Ok(constraint) = reg_to_gcc(reg).map(Cow::Borrowed) {
+                        inputs.push(AsmInOperand { 
+                            constraint, 
+                            rust_idx, 
+                            val: value.immediate()
+                        });
+                    } else {
+                        // left for the next pass
+                        continue
+                    }
                 }
-                _ => {}
+
+                InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
+                    let constraint = if let Ok(constarint) = reg_to_gcc(reg) {
+                        constarint
+                    } else {
+                        // left for the next pass
+                        continue
+                    };
+
+                    // Rustc frontend guarantees that input and output types are "compatible",
+                    // so we can just use input var's type for the output variable.
+                    //
+                    // This decision is also backed by the fact that LLVM needs in and out 
+                    // values to be of *exactly the same type*, not just "compatible". 
+                    // I'm not sure if GCC is so picky too, but better safe than sorry.
+                    let ty = in_value.layout.gcc_type(self.cx, false);
+                    let tmp_var = self.current_func().new_local(None, ty, "output_register");
+                    outputs.push(AsmOutOperand {
+                        constraint, 
+                        rust_idx,
+                        late,
+                        readwrite: true,
+                        tmp_var, 
+                        out_place,
+                    });
+
+                    // "in" operand to be emitted later
+                    let out_gcc_idx = outputs.len() - 1;
+                    let constraint = Cow::Owned(out_gcc_idx.to_string());
+
+                    inputs.push(AsmInOperand {
+                        constraint, 
+                        rust_idx, 
+                        val: in_value.immediate()
+                    });
+                }
+
+                InlineAsmOperandRef::Const { ref string } => {
+                    constants_len += string.len() + att_dialect as usize;
+                }
+
+                InlineAsmOperandRef::SymFn { instance } => {
+                    inputs.push(AsmInOperand { 
+                        constraint: Cow::Borrowed("s"), 
+                        rust_idx,
+                        val: self.cx.get_fn(instance)
+                    });
+                }
+                
+                InlineAsmOperandRef::SymStatic { def_id } => {
+                    inputs.push(AsmInOperand {
+                        constraint: Cow::Borrowed("s"), 
+                        rust_idx,
+                        val: self.cx.get_static(def_id)
+                    });
+                }
             }
         }
 
-        // All output operands must come before the input operands, hence the 2 loops.
-        for (idx, op) in operands.iter().enumerate() {
+        for (rust_idx, op) in rust_operands.iter().enumerate() {
+            let not_yet = |reg_name| {
+                // TODO(@Commeownist)
+                let err = format!("GCC backend does not support explicit registers such as `{}` just yet", reg_name);
+                self.sess().struct_span_err(span[rust_idx], &err)
+                    .note("need register variables support in libgccjit")
+                    .emit();
+            };
+
             match *op {
-                InlineAsmOperandRef::In { .. } | InlineAsmOperandRef::InOut { .. } => {
-                    operand_numbers.insert(idx, current_number);
-                    current_number += 1;
-                },
-                _ => (),
+                // `out("explicit register") _`
+                InlineAsmOperandRef::Out { reg, late:_, place:_ } => {
+                    if let Err(reg_name) = reg_to_gcc(reg) {
+                        not_yet(reg_name);
+                    }
+
+                    // processed in the previous pass
+                }
+
+                // `in("explicit register") var`
+                InlineAsmOperandRef::In { reg, value:_ } => {
+                    if let Err(reg_name) = reg_to_gcc(reg) {
+                        not_yet(reg_name);
+                    }
+
+                    // processed in the previous pass
+                }
+
+                // `inout("explicit register") in_var => out_var/_`
+                InlineAsmOperandRef::InOut { reg, late:_, in_value:_, out_place:_ } => {
+                    if let Err(reg_name) = reg_to_gcc(reg) {
+                        not_yet(reg_name);
+                    }
+
+                    // processed in the previous pass
+                }
+
+                InlineAsmOperandRef::Const { .. } 
+                | InlineAsmOperandRef::SymFn { .. } 
+                | InlineAsmOperandRef::SymStatic { .. } => {
+                    // processed on the previous pass
+                }
             }
         }
 
         // Build the template string
-        let mut template_str = String::new();
+        let mut template_str = String::with_capacity(estimate_template_length(template, constants_len));
         for piece in template {
             match *piece {
                 InlineAsmTemplatePiece::String(ref string) => {
-                    if string.contains('%') {
-                        for c in string.chars() {
-                            if c == '%' {
-                                template_str.push_str("%%");
-                            }
-                            else {
-                                template_str.push(c);
-                            }
-                        }
-                    }
-                    else {
-                        template_str.push_str(string)
+                    for s in string.split('%').intersperse("%%") {
+                        template_str.push_str(s);
                     }
                 }
                 InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span: _ } => {
-                    match operands[operand_idx] {
-                        InlineAsmOperandRef::Out { reg, place: Some(_), ..  } => {
-                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            if let Some(modifier) = modifier {
-                                template_str.push_str(&format!("%{}{}", modifier, operand_numbers[&operand_idx]));
-                            } else {
-                                template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
-                            }
-                        },
-                        InlineAsmOperandRef::Out { place: None, .. } => {
-                            unimplemented!("Out None");
-                        },
-                        InlineAsmOperandRef::In { reg, .. }
-                        | InlineAsmOperandRef::InOut { reg, .. } => {
-                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            if let Some(modifier) = modifier {
-                                template_str.push_str(&format!("%{}{}", modifier, operand_numbers[&operand_idx]));
-                            } else {
-                                template_str.push_str(&format!("%{}", operand_numbers[&operand_idx]));
-                            }
+                    let mut push_to_template = |modifier, gcc_idx| {
+                        use std::fmt::Write;
+
+                        template_str.push('%');
+                        if let Some(modifier) = modifier {
+                            template_str.push(modifier);
                         }
+                        write!(template_str, "{}", gcc_idx).unwrap();
+                    };
+
+                    match rust_operands[operand_idx] {
+                        InlineAsmOperandRef::Out { reg, ..  } => {
+                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
+                            let gcc_index = outputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            push_to_template(modifier, gcc_index);
+                        }
+
+                        InlineAsmOperandRef::In { reg, .. } => {
+                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
+                            let in_gcc_index = inputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let gcc_index = in_gcc_index + outputs.len();
+                            push_to_template(modifier, gcc_index);
+                        }
+
+                        InlineAsmOperandRef::SymFn { .. } 
+                        | InlineAsmOperandRef::SymStatic { .. } => {
+                            let in_gcc_index = inputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            let gcc_index = in_gcc_index + outputs.len();
+                            push_to_template(None, gcc_index);
+                        }
+
+                        InlineAsmOperandRef::InOut { reg, .. } => {
+                            let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
+
+                            // The input register is tied to the input, so we can just use the index of the output register
+                            let gcc_index = outputs.binary_search_by(|op| operand_idx.cmp(&op.rust_idx)).unwrap();
+                            push_to_template(modifier, gcc_index);
+                        }
+
                         InlineAsmOperandRef::Const { ref string } => {
                             // Const operands get injected directly into the template
+                            if att_dialect {
+                                template_str.push('$');
+                            }
                             template_str.push_str(string);
-                        }
-                        InlineAsmOperandRef::SymFn { .. }
-                        | InlineAsmOperandRef::SymStatic { .. } => {
-                            unimplemented!();
-                            // Only emit the raw symbol name
-                            //template_str.push_str(&format!("${{{}:c}}", op_idx[&operand_idx]));
                         }
                     }
                 }
             }
         }
 
-        let block = self.llbb();
         let template_str =
             if intel_dialect {
                 template_str
@@ -150,105 +358,90 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             else {
                 // FIXME(antoyo): this might break the "m" memory constraint:
                 // https://stackoverflow.com/a/9347957/389119
-                // TODO(antoyo): only set on x86 platforms.
                 format!(".att_syntax noprefix\n\t{}\n\t.intel_syntax noprefix", template_str)
             };
+
+        let block = self.llbb();
         let extended_asm = block.add_extended_asm(None, &template_str);
 
-        // Collect the types of output operands
-        let mut output_types = vec![];
-        for (idx, op) in operands.iter().enumerate() {
-            match *op {
-                InlineAsmOperandRef::Out { reg, late, place } => {
-                    let ty =
-                        match place {
-                            Some(place) => place.layout.gcc_type(self.cx, false),
-                            None => {
-                                // If the output is discarded, we don't really care what
-                                // type is used. We're just using this to tell GCC to
-                                // reserve the register.
-                                dummy_output_type(self.cx, reg.reg_class())
-                            },
-                        };
-                    output_types.push(ty);
-                    let prefix = if late { "=" } else { "=&" };
-                    let constraint = format!("{}{}", prefix, reg_to_gcc(reg));
+        for op in &outputs {
+            extended_asm.add_output_operand(None, &op.to_constraint(), op.tmp_var);
+        }
 
-                    if place.is_some() {
-                        let var = output_vars[&idx];
-                        extended_asm.add_output_operand(None, &constraint, var);
-                    }
-                    else {
-                        // NOTE: reg.to_string() returns the register name with quotes around it so
-                        // remove them.
-                        extended_asm.add_clobber(reg.to_string().trim_matches('"'));
-                    }
-                }
-                InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
-                    let ty =
-                        match out_place {
-                            Some(out_place) => out_place.layout.gcc_type(self.cx, false),
-                            None => dummy_output_type(self.cx, reg.reg_class())
-                        };
-                    output_types.push(ty);
-                    // TODO(antoyo): prefix of "+" for reading and writing?
-                    let prefix = if late { "=" } else { "=&" };
-                    let constraint = format!("{}{}", prefix, reg_to_gcc(reg));
+        for op in &inputs {
+            extended_asm.add_input_operand(None, &op.constraint, op.val);
+        }
 
-                    if out_place.is_some() {
-                        let var = output_vars[&idx];
-                        // TODO(antoyo): also specify an output operand when out_place is none: that would
-                        // be the clobber but clobbers do not support general constraint like reg;
-                        // they only support named registers.
-                        // Not sure how we can do this. And the LLVM backend does not seem to add a
-                        // clobber.
-                        extended_asm.add_output_operand(None, &constraint, var);
-                    }
+        for clobber in clobbers.iter() {
+            extended_asm.add_clobber(clobber);
+        }
 
-                    let constraint = reg_to_gcc(reg);
-                    extended_asm.add_input_operand(None, &constraint, in_value.immediate());
-                }
-                InlineAsmOperandRef::In { reg, value } => {
-                    let constraint = reg_to_gcc(reg);
-                    extended_asm.add_input_operand(None, &constraint, value.immediate());
-                }
-                _ => {}
-            }
+        if !options.contains(InlineAsmOptions::PRESERVES_FLAGS) {
+            // TODO(@Commeownist): I'm not 100% sure this one clobber is sufficient 
+            // on all architectures. For instance, what about FP stack?
+            extended_asm.add_clobber("cc");
+        }
+        if !options.contains(InlineAsmOptions::NOMEM) {
+            extended_asm.add_clobber("memory");
+        }
+        if !options.contains(InlineAsmOptions::PURE) {
+            extended_asm.set_volatile_flag(true);
+        }
+        if !options.contains(InlineAsmOptions::NOSTACK) {
+            // TODO(@Commeownist): figure out how to align stack
         }
 
         // Write results to outputs
-        for (idx, op) in operands.iter().enumerate() {
-            if let InlineAsmOperandRef::Out { place: Some(place), .. }
-            | InlineAsmOperandRef::InOut { out_place: Some(place), .. } = *op
-            {
-                OperandValue::Immediate(output_vars[&idx].to_rvalue()).store(self, place);
+        for op in &outputs {
+            if let Some(place) = op.out_place {
+                OperandValue::Immediate(op.tmp_var.to_rvalue()).store(self, place);                
             }
         }
+
+        // TODO(@Commeownist): maybe we need to follow up with a call to `__builtin_unreachable`
+        // if NORETURN option is set.
+        //
+        // In fact, GCC docs for __builtin_unreachable do describe it as a good fit after diverging asm blocks!
+        // https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html#index-_005f_005fbuiltin_005funreachable
     }
 }
 
+fn estimate_template_length(template: &[InlineAsmTemplatePiece], constants_len: usize) -> usize {
+    let len: usize = template.iter().map(|piece| {
+        match *piece {
+            InlineAsmTemplatePiece::String(ref string) => {
+                string.len()
+            }
+            InlineAsmTemplatePiece::Placeholder { .. } => {
+                // '%' + 1 char modifier + 2 chars index
+                4
+            }
+        }
+    })
+    .sum();
+
+    // increase it by 5% to account for possible '%' signs that'll be duplicated
+    // I pulled the number out of blue, but should be fair enough
+    // as the upper bound
+    (len as f32 * 1.05) as usize + constants_len
+}
+
 /// Converts a register class to a GCC constraint code.
-// TODO(antoyo): return &'static str instead?
-fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
-    match reg {
+fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> Result<&'static str, &'static str> {
+    let constraint = match reg {
         // For vector registers LLVM wants the register name to match the type size.
         InlineAsmRegOrRegClass::Reg(reg) => {
             // TODO(antoyo): add support for vector register.
-            let constraint =
-                match reg.name() {
-                    "ax" => "a",
-                    "bx" => "b",
-                    "cx" => "c",
-                    "dx" => "d",
-                    "si" => "S",
-                    "di" => "D",
-                    // TODO(antoyo): for registers like r11, we have to create a register variable: https://stackoverflow.com/a/31774784/389119
-                    // TODO(antoyo): in this case though, it's a clobber, so it should work as r11.
-                    // Recent nightly supports clobber() syntax, so update to it. It does not seem
-                    // like it's implemented yet.
-                    name => name, // FIXME(antoyo): probably wrong.
-                };
-            constraint.to_string()
+            match reg.name() {
+                "ax" => "a",
+                "bx" => "b",
+                "cx" => "c",
+                "dx" => "d",
+                "si" => "S",
+                "di" => "D",
+                // For registers like r11, we have to create a register variable: https://stackoverflow.com/a/31774784/389119
+                name => return Err(name), 
+            }
         },
         InlineAsmRegOrRegClass::RegClass(reg) => match reg {
             InlineAsmRegClass::AArch64(AArch64InlineAsmRegClass::preg) => unimplemented!(),
@@ -278,23 +471,25 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> String {
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::reg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::freg) => unimplemented!(),
             InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::vreg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::mmx_reg) => unimplemented!(),
             InlineAsmRegClass::X86(X86InlineAsmRegClass::reg) => "r",
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => "Q",
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => "q",
             InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
-            | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg) => unimplemented!(),
-            InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!(),
+            | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg) => "x",
+            InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => "v",
             InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
             InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
+            InlineAsmRegClass::X86(
+                X86InlineAsmRegClass::x87_reg | X86InlineAsmRegClass::mmx_reg,
+            ) => unreachable!("clobber-only"),
             InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
                 bug!("GCC backend does not support SPIR-V")
             }
             InlineAsmRegClass::Err => unreachable!(),
         }
-        .to_string(),
-    }
+    };
+
+    Ok(constraint)
 }
 
 /// Type to use for outputs that are discarded. It doesn't really matter what
@@ -379,7 +574,7 @@ impl<'gcc, 'tcx> AsmMethods for CodegenCx<'gcc, 'tcx> {
                     match operands[operand_idx] {
                         GlobalAsmOperandRef::Const { ref string } => {
                             // Const operands get injected directly into the
-                            // template. Note that we don't need to escape $
+                            // template. Note that we don't need to escape %
                             // here unlike normal inline assembly.
                             template_str.push_str(string);
                         }
@@ -431,8 +626,7 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
         InlineAsmRegClass::RiscV(RiscVInlineAsmRegClass::vreg) => unimplemented!(),
         InlineAsmRegClass::X86(X86InlineAsmRegClass::reg)
         | InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_abcd) => match modifier {
-            None if arch == InlineAsmArch::X86_64 => Some('q'),
-            None => Some('k'),
+            None => if arch == InlineAsmArch::X86_64 { Some('q') } else { Some('k') },
             Some('l') => Some('b'),
             Some('h') => Some('h'),
             Some('x') => Some('w'),
@@ -440,13 +634,22 @@ fn modifier_to_gcc(arch: InlineAsmArch, reg: InlineAsmRegClass, modifier: Option
             Some('r') => Some('q'),
             _ => unreachable!(),
         },
-        InlineAsmRegClass::X86(X86InlineAsmRegClass::mmx_reg) => unimplemented!(),
-        InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => unimplemented!(),
-        InlineAsmRegClass::X86(X86InlineAsmRegClass::xmm_reg)
-        | InlineAsmRegClass::X86(X86InlineAsmRegClass::ymm_reg)
-        | InlineAsmRegClass::X86(X86InlineAsmRegClass::zmm_reg) => unimplemented!(),
-        InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg) => unimplemented!(),
-        InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => unimplemented!(),
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::reg_byte) => None,
+        InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::xmm_reg)
+        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::ymm_reg)
+        | InlineAsmRegClass::X86(reg @ X86InlineAsmRegClass::zmm_reg) => match (reg, modifier) {
+            (X86InlineAsmRegClass::xmm_reg, None) => Some('x'),
+            (X86InlineAsmRegClass::ymm_reg, None) => Some('t'),
+            (X86InlineAsmRegClass::zmm_reg, None) => Some('g'),
+            (_, Some('x')) => Some('x'),
+            (_, Some('y')) => Some('t'),
+            (_, Some('z')) => Some('g'),
+            _ => unreachable!(),
+        },
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::kreg) => None,
+        InlineAsmRegClass::X86(X86InlineAsmRegClass::x87_reg | X86InlineAsmRegClass::mmx_reg) => {
+            unreachable!("clobber-only")
+        }
         InlineAsmRegClass::Wasm(WasmInlineAsmRegClass::local) => unimplemented!(),
         InlineAsmRegClass::SpirV(SpirVInlineAsmRegClass::reg) => {
             bug!("LLVM backend does not support SPIR-V")
