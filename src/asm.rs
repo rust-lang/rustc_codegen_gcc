@@ -83,7 +83,8 @@ impl AsmOutOperand<'_, '_, '_> {
     fn to_constraint(&self) -> String {
         let mut res = String::with_capacity(self.constraint.len() + self.late as usize + 1);
 
-        res.push(if self.readwrite { '+' } else { '=' });
+        let sign = if self.readwrite { '+' } else { '=' };
+        res.push(sign);
         if !self.late {
             res.push('&');
         }
@@ -151,6 +152,10 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 InlineAsmOperandRef::Out { reg, late, place } => {
                     let (constraint, ty) = match (reg_to_gcc(reg), place) {
                         (Ok(constraint), Some(place)) => (constraint, place.layout.gcc_type(self.cx, false)),
+                        // When `reg` is a class and not an explicit register but the out place is not specified,
+                        // we need to create an unused output variable to assign the output to. This var
+                        // needs to be of a type that's "compatible" with the register class, but specific type 
+                        // doesn't matter.
                         (Ok(constraint), None) => (constraint, dummy_output_type(self.cx, reg.reg_class())),
                         (Err(_), Some(_)) => {
                             // left for the next pass
@@ -188,8 +193,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
 
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
-                    let constraint = if let Ok(constarint) = reg_to_gcc(reg) {
-                        constarint
+                    let constraint = if let Ok(constraint) = reg_to_gcc(reg) {
+                        constraint
                     } else {
                         // left for the next pass
                         continue
@@ -295,7 +300,14 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         for piece in template {
             match *piece {
                 InlineAsmTemplatePiece::String(ref string) => {
-                    for s in string.split('%').intersperse("%%") {
+                    // TODO(@Commeownist): switch to `Iterator::intersperse` once it's stable
+                    let mut iter = string.split('%');
+                    if let Some(s) = iter.next() {
+                        template_str.push_str(s);
+                    }
+
+                    for s in iter {
+                        template_str.push_str("%%");
                         template_str.push_str(s);
                     }
                 }
@@ -307,26 +319,32 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         if let Some(modifier) = modifier {
                             template_str.push(modifier);
                         }
-                        write!(template_str, "{}", gcc_idx).unwrap();
+                        write!(template_str, "{}", gcc_idx).expect("pushing to string failed");
                     };
 
                     match rust_operands[operand_idx] {
                         InlineAsmOperandRef::Out { reg, ..  } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            let gcc_index = outputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
+                            let gcc_index = outputs.iter()
+                                .position(|op| operand_idx == op.rust_idx)
+                                .expect("wrong rust index");
                             push_to_template(modifier, gcc_index);
                         }
 
                         InlineAsmOperandRef::In { reg, .. } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
-                            let in_gcc_index = inputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
+                            let in_gcc_index = inputs.iter()
+                                .position(|op| operand_idx == op.rust_idx)
+                                .expect("wrong rust index");
                             let gcc_index = in_gcc_index + outputs.len();
                             push_to_template(modifier, gcc_index);
                         }
 
                         InlineAsmOperandRef::SymFn { .. } 
                         | InlineAsmOperandRef::SymStatic { .. } => {
-                            let in_gcc_index = inputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
+                            let in_gcc_index = inputs.iter()
+                                .position(|op| operand_idx == op.rust_idx)
+                                .expect("wrong rust index");
                             let gcc_index = in_gcc_index + outputs.len();
                             push_to_template(None, gcc_index);
                         }
@@ -334,8 +352,10 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         InlineAsmOperandRef::InOut { reg, .. } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
 
-                            // The input register is tied to the input, so we can just use the index of the output register
-                            let gcc_index = outputs.iter().position(|op| operand_idx == op.rust_idx).unwrap();
+                            // The input register is tied to the output, so we can just use the index of the output register
+                            let gcc_index = outputs.iter()
+                                .position(|op| operand_idx == op.rust_idx)
+                                .expect("wrong rust index");
                             push_to_template(modifier, gcc_index);
                         }
 
