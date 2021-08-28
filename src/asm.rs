@@ -44,6 +44,7 @@ use crate::type_of::LayoutGccExt;
 // (from now on, `CC` stands for "constraint code"):
 //
 // * `out(reg_class) var`   -> translated to output operand: `"=CC"(var)`
+// * `inout(reg_class) var` -> translated to output operand: `"+CC"(var)`
 // * `in(reg_class) var`    -> translated to input operand: `"CC"(var)`
 //
 // * `out(reg_class) _` -> translated to one `=r(tmp)`, where "tmp" is a temporary unused variable
@@ -51,7 +52,7 @@ use crate::type_of::LayoutGccExt;
 // * `out("explicit register") _` -> not translated to any operands, register is simply added to clobbers list
 //
 // * `inout(reg_class) in_var => out_var` -> translated to two operands: 
-//                              output: `"+CC"(in_var)`
+//                              output: `"=CC"(in_var)`
 //                              input:  `"num"(out_var)` where num is the GCC index 
 //                                       of the corresponding output operand
 //
@@ -168,7 +169,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     };
 
                     let tmp_var = self.current_func().new_local(None, ty, "output_register");
-
                     outputs.push(AsmOutOperand {
                         constraint, 
                         rust_idx,
@@ -208,24 +208,38 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     // I'm not sure if GCC is so picky too, but better safe than sorry.
                     let ty = in_value.layout.gcc_type(self.cx, false);
                     let tmp_var = self.current_func().new_local(None, ty, "output_register");
-                    outputs.push(AsmOutOperand {
-                        constraint, 
-                        rust_idx,
-                        late,
-                        readwrite: true,
-                        tmp_var, 
-                        out_place,
-                    });
 
-                    // "in" operand to be emitted later
-                    let out_gcc_idx = outputs.len() - 1;
-                    let constraint = Cow::Owned(out_gcc_idx.to_string());
+                    // If the out_place is None (i.e `inout(reg) var` syntax was used), we translate
+                    // it to one "readwrite (+) output variable", otherwise we translate it to two 
+                    // "out and tied in" vars as described above.
+                    if out_place.is_none() {
+                        outputs.push(AsmOutOperand {
+                            constraint, 
+                            rust_idx,
+                            late,
+                            readwrite: true,
+                            tmp_var, 
+                            out_place,
+                        });
+                    } else {
+                        outputs.push(AsmOutOperand {
+                            constraint, 
+                            rust_idx,
+                            late,
+                            readwrite: false,
+                            tmp_var, 
+                            out_place,
+                        });
 
-                    inputs.push(AsmInOperand {
-                        constraint, 
-                        rust_idx, 
-                        val: in_value.immediate()
-                    });
+                        let out_gcc_idx = outputs.len() - 1;
+                        let constraint = Cow::Owned(out_gcc_idx.to_string());
+
+                        inputs.push(AsmInOperand {
+                            constraint, 
+                            rust_idx, 
+                            val: in_value.immediate()
+                        });
+                    }
                 }
 
                 InlineAsmOperandRef::Const { ref string } => {
