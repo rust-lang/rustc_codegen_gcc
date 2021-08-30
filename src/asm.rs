@@ -123,7 +123,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         true
     }
 
-    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], rust_operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span]) {
+    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], rust_operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, _span: &[Span]) {
         let asm_arch = self.tcx.sess.asm_arch.unwrap();
         let att_dialect = matches!(asm_arch, InlineAsmArch::X86 | InlineAsmArch::X86_64) &&
                             options.contains(InlineAsmOptions::ATT_SYNTAX);
@@ -278,37 +278,83 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
 
         for (rust_idx, op) in rust_operands.iter().enumerate() {
-            let not_yet = |reg_name| {
-                // TODO(@Commeownist)
-                let err = format!("GCC backend does not support explicit registers such as `\"{}\"` just yet", reg_name);
-                self.sess().struct_span_err(span[rust_idx], &err)
-                    .note("need register variables support in libgccjit")
-                    .emit();
-            };
-
             match *op {
                 // `out("explicit register") _`
-                InlineAsmOperandRef::Out { reg, late:_, place:_ } => {
+                InlineAsmOperandRef::Out { reg, late, place } => {
                     if let Err(reg_name) = reg_to_gcc(reg) {
-                        not_yet(reg_name);
+                        let out_place = if let Some(place) = place {
+                            place
+                        } else {
+                            // processed in the previous pass
+                            continue
+                        };
+
+                        let ty = out_place.layout.gcc_type(self.cx, false);
+                        let tmp_var = self.current_func().new_local(None, ty, "output_register");
+                        tmp_var.set_register_name(reg_name);
+
+                        outputs.push(AsmOutOperand {
+                            constraint: "r".into(), 
+                            rust_idx,
+                            late,
+                            readwrite: false,
+                            tmp_var,
+                            out_place: Some(out_place)
+                        });
                     }
 
                     // processed in the previous pass
                 }
 
                 // `in("explicit register") var`
-                InlineAsmOperandRef::In { reg, value:_ } => {
+                InlineAsmOperandRef::In { reg, value } => {
                     if let Err(reg_name) = reg_to_gcc(reg) {
-                        not_yet(reg_name);
+                        let ty = value.layout.gcc_type(self.cx, false);
+                        let reg_var = self.current_func().new_local(None, ty, "input_register");
+                        reg_var.set_register_name(reg_name);
+                        // TODO(@Commeownist): Should use `OperandValue::store` instead? 
+                        self.llbb().add_assignment(None, reg_var, value.immediate());
+
+                        inputs.push(AsmInOperand { 
+                            constraint: "r".into(), 
+                            rust_idx, 
+                            val: reg_var.to_rvalue()
+                        });
                     }
 
                     // processed in the previous pass
                 }
 
                 // `inout("explicit register") in_var => out_var/_`
-                InlineAsmOperandRef::InOut { reg, late:_, in_value:_, out_place:_ } => {
+                InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
                     if let Err(reg_name) = reg_to_gcc(reg) {
-                        not_yet(reg_name);
+                        let out_place = if let Some(place) = out_place {
+                            place
+                        } else {
+                            // processed in the previous pass
+                            continue
+                        };
+
+                        // See explanation in the first pass.
+                        let ty = in_value.layout.gcc_type(self.cx, false);
+                        let tmp_var = self.current_func().new_local(None, ty, "output_register");
+                        tmp_var.set_register_name(reg_name);
+
+                        outputs.push(AsmOutOperand {
+                            constraint: "r".into(), 
+                            rust_idx,
+                            late,
+                            readwrite: false,
+                            tmp_var,
+                            out_place: Some(out_place)
+                        });
+
+                        let constraint = Cow::Owned((outputs.len() - 1).to_string());
+                        inputs.push(AsmInOperand { 
+                            constraint, 
+                            rust_idx,
+                            val: in_value.immediate()
+                        });
                     }
 
                     // processed in the previous pass
@@ -443,6 +489,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             if let Some(place) = op.out_place {
                 OperandValue::Immediate(op.tmp_var.to_rvalue()).store(self, place);                
             }
+            // TODO:(@Commeownist): if out_place is None, maybe we should use `Block::add_eval`
+            // to discard the unused `tmp_var`? The rest of backend seems to do that.
         }
 
         // TODO(@Commeownist): maybe we need to follow up with a call to `__builtin_unreachable`
