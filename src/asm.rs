@@ -2,10 +2,10 @@ use gccjit::{LValue, RValue, ToRValue, Type};
 use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::operand::OperandValue;
 use rustc_codegen_ssa::mir::place::PlaceRef;
-use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef, InlineAsmOperandRef, MiscMethods};
+use rustc_codegen_ssa::traits::{AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef, InlineAsmOperandRef};
 
 use rustc_hir::LlvmInlineAsmInner;
-use rustc_middle::bug;
+use rustc_middle::{bug, ty::Instance};
 use rustc_span::Span;
 use rustc_target::asm::*;
 
@@ -260,19 +260,10 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
 
                 InlineAsmOperandRef::SymFn { instance } => {
-                    inputs.push(AsmInOperand { 
-                        constraint: Cow::Borrowed("s"), 
-                        rust_idx,
-                        val: self.cx.get_fn(instance)
-                    });
+                    constants_len += self.tcx.symbol_name(instance).name.len();
                 }
-                
                 InlineAsmOperandRef::SymStatic { def_id } => {
-                    inputs.push(AsmInOperand {
-                        constraint: Cow::Borrowed("s"), 
-                        rust_idx,
-                        val: self.cx.get_static(def_id)
-                    });
+                    constants_len += self.tcx.symbol_name(Instance::mono(self.tcx, def_id)).name.len();
                 }
             }
         }
@@ -413,15 +404,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             push_to_template(modifier, gcc_index);
                         }
 
-                        InlineAsmOperandRef::SymFn { .. } 
-                        | InlineAsmOperandRef::SymStatic { .. } => {
-                            let in_gcc_index = inputs.iter()
-                                .position(|op| operand_idx == op.rust_idx)
-                                .expect("wrong rust index");
-                            let gcc_index = in_gcc_index + outputs.len();
-                            push_to_template(None, gcc_index);
-                        }
-
                         InlineAsmOperandRef::InOut { reg, .. } => {
                             let modifier = modifier_to_gcc(asm_arch, reg.reg_class(), modifier);
 
@@ -430,6 +412,19 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                 .position(|op| operand_idx == op.rust_idx)
                                 .expect("wrong rust index");
                             push_to_template(modifier, gcc_index);
+                        }
+
+                        InlineAsmOperandRef::SymFn { instance } => {
+                            let name = self.tcx.symbol_name(instance).name;
+                            template_str.push_str(name);
+                        }
+
+                        InlineAsmOperandRef::SymStatic { def_id } => {
+                            // TODO(@Commeownist): This may not be sufficient for all kinds of statics.
+                            // Some statics may need the `@plt` suffix, like thread-local vars.
+                            let instance = Instance::mono(self.tcx, def_id);
+                            let name = self.tcx.symbol_name(instance).name;
+                            template_str.push_str(name);
                         }
 
                         InlineAsmOperandRef::Const { ref string } => {
