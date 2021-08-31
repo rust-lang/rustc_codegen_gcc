@@ -64,6 +64,10 @@ use crate::type_of::LayoutGccExt;
 //                                              and one register variable assigned to the desired register.
 // 
 
+const ATT_SYNTAX_INS: &str = ".att_syntax noprefix\n\t";
+const INTEL_SYNTAX_INS: &str = "\n\t.intel_syntax noprefix";
+
+
 struct AsmOutOperand<'a, 'tcx, 'gcc> {
     rust_idx: usize,
     constraint: &'a str,
@@ -360,7 +364,11 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
 
         // Build the template string
-        let mut template_str = String::with_capacity(estimate_template_length(template, constants_len));
+        let mut template_str = String::with_capacity(estimate_template_length(template, constants_len, att_dialect));
+        if !intel_dialect {
+            template_str.push_str(ATT_SYNTAX_INS);
+        }
+
         for piece in template {
             match *piece {
                 InlineAsmTemplatePiece::String(ref string) => {
@@ -439,16 +447,10 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
         }
 
-        let template_str =
-            if intel_dialect {
-                template_str
-            }
-            else {
-                // FIXME(antoyo): this might break the "m" memory constraint:
-                // https://stackoverflow.com/a/9347957/389119
-                format!(".att_syntax noprefix\n\t{}\n\t.intel_syntax noprefix", template_str)
-            };
-
+        if !intel_dialect {
+            template_str.push_str(INTEL_SYNTAX_INS);
+        }
+            
         let block = self.llbb();
         let extended_asm = block.add_extended_asm(None, &template_str);
 
@@ -496,15 +498,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 }
 
-fn estimate_template_length(template: &[InlineAsmTemplatePiece], constants_len: usize) -> usize {
+fn estimate_template_length(template: &[InlineAsmTemplatePiece], constants_len: usize, att_dialect: bool) -> usize {
     let len: usize = template.iter().map(|piece| {
         match *piece {
             InlineAsmTemplatePiece::String(ref string) => {
                 string.len()
             }
             InlineAsmTemplatePiece::Placeholder { .. } => {
-                // '%' + 1 char modifier + 2 chars index
-                4
+                // '%' + 1 char modifier + 1 char index
+                3
             }
         }
     })
@@ -513,7 +515,12 @@ fn estimate_template_length(template: &[InlineAsmTemplatePiece], constants_len: 
     // increase it by 5% to account for possible '%' signs that'll be duplicated
     // I pulled the number out of blue, but should be fair enough
     // as the upper bound
-    (len as f32 * 1.05) as usize + constants_len
+    let mut res = (len as f32 * 1.05) as usize + constants_len;
+
+    if att_dialect {
+        res += INTEL_SYNTAX_INS.len() + ATT_SYNTAX_INS.len();
+    }
+    res
 }
 
 /// Converts a register class to a GCC constraint code.
