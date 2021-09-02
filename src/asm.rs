@@ -242,7 +242,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         constraint, 
                         rust_idx,
                         late,
-                        readwrite: false,
+                        readwrite,
                         tmp_var, 
                         out_place,
                     });
