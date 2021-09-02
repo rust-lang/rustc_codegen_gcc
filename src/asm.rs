@@ -485,13 +485,21 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             // TODO(@Commeownist): figure out how to align stack
         }
 
-        // Write results to outputs
+        // Write results to outputs. 
+        //
+        // We need to do this because:
+        //  1. Turning `PlaceRef` into `RValue` is error-prone and has nasty edge cases 
+        //     (especially with current `rustc_backend_ssa` API).
+        //  2. Not every output operand has an `out_place`, and it's required by `add_output_operand`.
+        //
+        // Instead, we generate a temporary output variable for each output operand, and then this loop,
+        // generates `out_place = tmp_var;` assignments if out_place exists, or `(void)tmp_var;` if it doesn't.
         for op in &outputs {
             if let Some(place) = op.out_place {
                 OperandValue::Immediate(op.tmp_var.to_rvalue()).store(self, place);                
+            } else {
+                block.add_eval(None, op.tmp_var.to_rvalue());
             }
-            // TODO:(@Commeownist): if out_place is None, maybe we should use `Block::add_eval`
-            // to discard the unused `tmp_var`? The rest of backend seems to do that.
         }
 
         // TODO(@Commeownist): maybe we need to follow up with a call to `__builtin_unreachable`
