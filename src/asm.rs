@@ -119,7 +119,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
             extended_asm.add_clobber("memory");
             extended_asm.set_volatile_flag(true);
-        } else {
+        } 
+        else {
             // TODO(@Commeownist): switch to `struct_span_err_with_code` 
             // once we get this merged into rustc
             self.sess().struct_span_err(span, "GCC backend does not support `llvm_asm!`")
@@ -211,7 +212,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             rust_idx, 
                             val: value.immediate()
                         });
-                    } else {
+                    } 
+                    else {
                         // left for the next pass
                         continue
                     }
@@ -220,7 +222,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
                     let constraint = if let ConstraintOrRegister::Constraint(constraint) = reg_to_gcc(reg) {
                         constraint
-                    } else {
+                    } 
+                    else {
                         // left for the next pass
                         continue
                     };
@@ -280,7 +283,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     if let ConstraintOrRegister::Register(reg_name) = reg_to_gcc(reg) {
                         let out_place = if let Some(place) = place {
                             place
-                        } else {
+                        } 
+                        else {
                             // processed in the previous pass
                             continue
                         };
@@ -326,7 +330,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     if let ConstraintOrRegister::Register(reg_name) = reg_to_gcc(reg) {
                         let out_place = if let Some(place) = out_place {
                             place
-                        } else {
+                        } 
+                        else {
                             // processed in the previous pass
                             continue
                         };
