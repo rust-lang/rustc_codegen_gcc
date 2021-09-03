@@ -493,20 +493,13 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         //  2. Not every output operand has an `out_place`, and it's required by `add_output_operand`.
         //
         // Instead, we generate a temporary output variable for each output operand, and then this loop,
-        // generates `out_place = tmp_var;` assignments if out_place exists, or `(void)tmp_var;` if it doesn't.
+        // generates `out_place = tmp_var;` assignments if out_place exists.
         for op in &outputs {
             if let Some(place) = op.out_place {
                 OperandValue::Immediate(op.tmp_var.to_rvalue()).store(self, place);                
-            } else {
-                block.add_eval(None, op.tmp_var.to_rvalue());
             }
         }
 
-        // TODO(@Commeownist): maybe we need to follow up with a call to `__builtin_unreachable`
-        // if NORETURN option is set.
-        //
-        // In fact, GCC docs for __builtin_unreachable do describe it as a good fit after diverging asm blocks!
-        // https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html#index-_005f_005fbuiltin_005funreachable
     }
 }
 
