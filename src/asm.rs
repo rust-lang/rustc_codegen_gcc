@@ -100,9 +100,9 @@ impl AsmOutOperand<'_, '_, '_> {
     }
 }
 
-enum ConstraintOrRegister<'a> {
-    Constraint(&'a str),
-    Register(&'a str)
+enum ConstraintOrRegister {
+    Constraint(&'static str),
+    Register(&'static str)
 }
 
 
@@ -312,7 +312,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         let ty = value.layout.gcc_type(self.cx, false);
                         let reg_var = self.current_func().new_local(None, ty, "input_register");
                         reg_var.set_register_name(reg_name);
-                        // TODO(@Commeownist): Should use `OperandValue::store` instead? 
                         self.llbb().add_assignment(None, reg_var, value.immediate());
 
                         inputs.push(AsmInOperand { 
@@ -539,7 +538,7 @@ fn estimate_template_length(template: &[InlineAsmTemplatePiece], constants_len: 
 }
 
 /// Converts a register class to a GCC constraint code.
-fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> ConstraintOrRegister<'static> {
+fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> ConstraintOrRegister {
     let constraint = match reg {
         // For vector registers LLVM wants the register name to match the type size.
         InlineAsmRegOrRegClass::Reg(reg) => {
