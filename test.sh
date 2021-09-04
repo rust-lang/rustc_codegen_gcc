@@ -156,7 +156,7 @@ EOF
 rustc -V | cut -d' ' -f3 | tr -d '('
 git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(') src/test
 
-for test in $(rg -i --files-with-matches "//(\[\w+\])?~|// error-pattern:|// build-fail|// run-fail|-Cllvm-args|llvm_asm!\\(\".+\"\\)" src/test/ui); do
+for test in $(rg -i --files-with-matches "//(\[\w+\])?~|// error-pattern:|// build-fail|// run-fail|-Cllvm-args" src/test/ui); do
   rm $test
 done
 
