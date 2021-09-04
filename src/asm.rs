@@ -155,7 +155,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         // There are rules we must adhere to if we want GCC to do the right thing:
         // 
-        // * Every local variable the asm block uses as output must be declared *before*
+        // * Every local variable that the asm block uses as an output must be declared *before*
         //   the asm block. 
         // * There must be no instructions whatsoever between the register variables and the asm.
         //
@@ -237,7 +237,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     let ty = in_value.layout.gcc_type(self.cx, false);
                     let tmp_var = self.current_func().new_local(None, ty, "output_register");
 
-                    // If the out_place is None (i.e `inout(reg) var` syntax was used), we translate
+                    // If the out_place is None (i.e `inout(reg) _` syntax was used), we translate
                     // it to one "readwrite (+) output variable", otherwise we translate it to two 
                     // "out and tied in" vars as described above.
                     let readwrite = out_place.is_none();
@@ -278,7 +278,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         // 2. Register variables.
         for (rust_idx, op) in rust_operands.iter().enumerate() {
             match *op {
-                // `out("explicit register") _`
+                // `out("explicit register") var`
                 InlineAsmOperandRef::Out { reg, late, place } => {
                     if let ConstraintOrRegister::Register(reg_name) = reg_to_gcc(reg) {
                         let out_place = if let Some(place) = place {
@@ -324,7 +324,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     // processed in the previous pass
                 }
 
-                // `inout("explicit register") in_var => out_var/_`
+                // `inout("explicit register") in_var => out_var`
                 InlineAsmOperandRef::InOut { reg, late, in_value, out_place } => {
                     if let ConstraintOrRegister::Register(reg_name) = reg_to_gcc(reg) {
                         let out_place = if let Some(place) = out_place {
@@ -363,7 +363,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 InlineAsmOperandRef::Const { .. } 
                 | InlineAsmOperandRef::SymFn { .. } 
                 | InlineAsmOperandRef::SymStatic { .. } => {
-                    // processed on the previous pass
+                    // processed in the previous pass
                 }
             }
         }
