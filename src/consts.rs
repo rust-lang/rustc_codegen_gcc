@@ -1,4 +1,4 @@
-use gccjit::{RValue, Type};
+use gccjit::{LValue, RValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, ConstMethods, DerivedTypeMethods, StaticMethods};
 use rustc_hir as hir;
 use rustc_hir::Node;
@@ -93,7 +93,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         // TODO(antoyo): set alignment and initializer.
         let value = self.rvalue_as_lvalue(value);
         let value = value.get_address(None);
-        let dest_typ = global.get_type();
+        let dest_typ = global.to_rvalue().get_type();
         let value = self.context.new_cast(None, value, dest_typ);
 
         // NOTE: do not init the variables related to argc/argv because it seems we cannot
@@ -107,7 +107,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
             // TODO(antoyo): switch to set_initializer when libgccjit supports that.
             let memcpy = self.context.get_builtin_function("memcpy");
-            let dst = self.context.new_cast(None, global, self.type_i8p());
+            let dst = self.context.new_cast(None, global.get_address(None), self.type_i8p());
             let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
             let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size().bytes() as i64);
             self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
@@ -175,7 +175,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         }
 
         if attrs.flags.contains(CodegenFnAttrFlags::USED) {
-            self.add_used_global(global);
+            self.add_used_global(global.to_rvalue());
         }
     }
 
@@ -191,22 +191,22 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn static_addr_of_mut(&self, cv: RValue<'gcc>, align: Align, kind: Option<&str>) -> RValue<'gcc> {
-        let (name, gv) =
+        let (name, global) =
             match kind {
                 Some(kind) if !self.tcx.sess.fewer_names() => {
                     let name = self.generate_local_symbol_name(kind);
                     // TODO(antoyo): check if it's okay that TLS is off here.
                     // TODO(antoyo): check if it's okay that link_section is None here.
                     // TODO(antoyo): set alignment here as well.
-                    let gv = self.define_global(&name[..], self.val_ty(cv), false, None);
+                    let global = self.define_global(&name[..], self.val_ty(cv), false, None);
                     // TODO(antoyo): set linkage.
-                    (name, gv)
+                    (name, global)
                 }
                 _ => {
                     let index = self.global_gen_sym_counter.get();
                     let name = format!("global_{}_{}", index, self.codegen_unit.name());
                     let typ = self.val_ty(cv).get_aligned(align.bytes());
-                    let global = self.define_private_global(typ);
+                    let global = self.declare_unnamed_global(typ);
                     (name, global)
                 },
             };
@@ -215,12 +215,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // NOTE: global seems to only be global in a module. So save the name instead of the value
         // to import it later.
         self.global_names.borrow_mut().insert(cv, name);
-        self.global_init_block.add_assignment(None, gv.dereference(None), cv);
+        self.global_init_block.add_assignment(None, global, cv);
         // TODO(antoyo): set unnamed address.
-        gv
+        global.get_address(None)
     }
 
-    pub fn get_static(&self, def_id: DefId) -> RValue<'gcc> {
+    pub fn get_static(&self, def_id: DefId) -> LValue<'gcc> {
         let instance = Instance::mono(self.tcx, def_id);
         let fn_attrs = self.tcx.codegen_fn_attrs(def_id);
         if let Some(&global) = self.instances.borrow().get(&instance) {
@@ -378,7 +378,7 @@ pub fn codegen_static_initializer<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, def_id
     Ok((const_alloc_to_gcc(cx, alloc), alloc))
 }
 
-fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &CodegenFnAttrs, ty: Ty<'tcx>, sym: &str, span: Span) -> RValue<'gcc> {
+fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &CodegenFnAttrs, ty: Ty<'tcx>, sym: &str, span: Span) -> LValue<'gcc> {
     let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
     let llty = cx.layout_of(ty).gcc_type(cx, true);
     if let Some(linkage) = attrs.linkage {
@@ -408,11 +408,9 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         // zero.
         let mut real_name = "_rust_extern_with_linkage_".to_string();
         real_name.push_str(&sym);
-        let global2 =
-            cx.define_global(&real_name, llty, is_tls, attrs.link_section);
+        let global2 = cx.define_global(&real_name, llty, is_tls, attrs.link_section);
         // TODO(antoyo): set linkage.
-        let lvalue = global2.dereference(None);
-        cx.global_init_block.add_assignment(None, lvalue, global1);
+        cx.global_init_block.add_assignment(None, global2, global1.get_address(None));
         // TODO(antoyo): use global_set_initializer() when it will work.
         global2
     }

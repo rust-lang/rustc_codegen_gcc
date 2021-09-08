@@ -1413,7 +1413,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 impl<'a, 'gcc, 'tcx> StaticBuilderMethods for Builder<'a, 'gcc, 'tcx> {
     fn get_static(&mut self, def_id: DefId) -> RValue<'gcc> {
         // Forward to the `get_static` method of `CodegenCx`
-        self.cx().get_static(def_id)
+        self.cx().get_static(def_id).get_address(None)
     }
 }
 

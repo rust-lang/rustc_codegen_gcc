@@ -89,7 +89,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub types_with_fields_to_set: RefCell<FxHashMap<Type<'gcc>, (Struct<'gcc>, TyAndLayout<'tcx>)>>,
 
     /// Cache instances of monomorphic and polymorphic items
-    pub instances: RefCell<FxHashMap<Instance<'tcx>, RValue<'gcc>>>,
+    pub instances: RefCell<FxHashMap<Instance<'tcx>, LValue<'gcc>>>,
+    /// Cache function instances of monomorphic and polymorphic items
+    pub function_instances: RefCell<FxHashMap<Instance<'tcx>, RValue<'gcc>>>,
     /// Cache generated vtables
     pub vtables: RefCell<FxHashMap<(Ty<'tcx>, Option<ty::PolyExistentialTraitRef<'tcx>>), RValue<'gcc>>>,
 
@@ -224,6 +226,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             #[cfg(debug_assertions)]
             lvalues: Default::default(),
             instances: Default::default(),
+            function_instances: Default::default(),
             vtables: Default::default(),
             const_globals: Default::default(),
             init_argv_var: RefCell::new(String::new()),

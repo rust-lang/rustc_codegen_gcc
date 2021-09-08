@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
+use gccjit::LValue;
 use gccjit::{Block, CType, RValue, Type, ToRValue};
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{
@@ -26,27 +27,27 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         bytes_in_context(self, bytes)
     }
 
-    fn const_cstr(&self, symbol: Symbol, _null_terminated: bool) -> RValue<'gcc> {
+    fn const_cstr(&self, symbol: Symbol, _null_terminated: bool) -> LValue<'gcc> {
         // TODO(antoyo): handle null_terminated.
         if let Some(&value) = self.const_cstr_cache.borrow().get(&symbol) {
-            return value.to_rvalue();
+            return value;
         }
 
         let global = self.global_string(&*symbol.as_str());
 
-        self.const_cstr_cache.borrow_mut().insert(symbol, global.dereference(None));
+        self.const_cstr_cache.borrow_mut().insert(symbol, global);
         global
     }
 
-    fn global_string(&self, string: &str) -> RValue<'gcc> {
+    fn global_string(&self, string: &str) -> LValue<'gcc> {
         // TODO(antoyo): handle non-null-terminated strings.
         let string = self.context.new_string_literal(&*string);
         let sym = self.generate_local_symbol_name("str");
         // NOTE: TLS is always off for a string litteral.
         // NOTE: string litterals do not have a link section.
         let global = self.define_global(&sym, self.val_ty(string), false, None);
-        self.global_init_block.add_assignment(None, global.dereference(None), string);
-        global.to_rvalue()
+        self.global_init_block.add_assignment(None, global, string);
+        global
         // TODO(antoyo): set linkage.
     }
 
@@ -178,7 +179,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
     fn const_str(&self, s: Symbol) -> (RValue<'gcc>, RValue<'gcc>) {
         let len = s.as_str().len();
-        let cs = self.const_ptrcast(self.const_cstr(s, false),
+        let cs = self.const_ptrcast(self.const_cstr(s, false).get_address(None),
             self.type_ptr_to(self.layout_of(self.tcx.types.str_).gcc_type(self, true)),
         );
         (cs, self.const_usize(len as u64))
@@ -258,7 +259,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                         },
                         GlobalAlloc::Static(def_id) => {
                             assert!(self.tcx.is_static(def_id));
-                            self.get_static(def_id)
+                            self.get_static(def_id).get_address(None)
                         },
                     };
                 let ptr_type = base_addr.get_type();

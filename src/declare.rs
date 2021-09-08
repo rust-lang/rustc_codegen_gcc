@@ -10,7 +10,7 @@ use crate::intrinsic::llvm;
 use crate::mangled_std_symbols::{ARGV_INIT_ARRAY, ARGV_INIT_WRAPPER};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
+    pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> LValue<'gcc> {
         if self.globals.borrow().contains_key(name) {
             let typ = self.globals.borrow().get(name).expect("global").get_type();
             let global = self.context.new_global(None, GlobalKind::Imported, typ, name);
@@ -20,7 +20,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             if let Some(link_section) = link_section {
                 global.set_link_section(&link_section.as_str());
             }
-            global.get_address(None)
+            global
         }
         else {
             self.declare_global(name, ty, is_tls, link_section)
@@ -34,13 +34,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.context.new_global(None, GlobalKind::Exported, ty, &name)
     }
 
-    pub fn declare_global_with_linkage(&self, name: &str, ty: Type<'gcc>, linkage: GlobalKind) -> RValue<'gcc> {
-        let global = self.context.new_global(None, linkage, ty, name)
-            .get_address(None);
-        self.globals.borrow_mut().insert(name.to_string(), global);
+    pub fn declare_global_with_linkage(&self, name: &str, ty: Type<'gcc>, linkage: GlobalKind) -> LValue<'gcc> {
+        let global = self.context.new_global(None, linkage, ty, name);
+        let global_address = global.get_address(None);
+        self.globals.borrow_mut().insert(name.to_string(), global_address);
         // NOTE: global seems to only be global in a module. So save the name instead of the value
         // to import it later.
-        self.global_names.borrow_mut().insert(global, name.to_string());
+        self.global_names.borrow_mut().insert(global_address, name.to_string());
         global
     }
 
@@ -51,7 +51,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
+    pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> LValue<'gcc> {
         // FIXME(antoyo): correctly support global variable initialization.
         if name.starts_with(ARGV_INIT_ARRAY) {
             // NOTE: hack to avoid having to update the names in mangled_std_symbols: we save the
@@ -62,7 +62,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             if let Some(link_section) = link_section {
                 global.set_link_section(&link_section.as_str());
             }
-            return global.get_address(None);
+            return global;
         }
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
         if is_tls {
@@ -71,11 +71,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         if let Some(link_section) = link_section {
             global.set_link_section(&link_section.as_str());
         }
-        let global = global.get_address(None);
-        self.globals.borrow_mut().insert(name.to_string(), global);
+        let global_address = global.get_address(None);
+        self.globals.borrow_mut().insert(name.to_string(), global_address);
         // NOTE: global seems to only be global in a module. So save the name instead of the value
         // to import it later.
-        self.global_names.borrow_mut().insert(global, name.to_string());
+        self.global_names.borrow_mut().insert(global_address, name.to_string());
         global
     }
 
@@ -132,13 +132,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
+    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> LValue<'gcc> {
         self.get_or_insert_global(name, ty, is_tls, link_section)
-    }
-
-    pub fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
-        let global = self.declare_unnamed_global(ty);
-        global.get_address(None)
     }
 
     pub fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {
