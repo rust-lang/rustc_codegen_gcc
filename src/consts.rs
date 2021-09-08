@@ -198,9 +198,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     // TODO(antoyo): check if it's okay that TLS is off here.
                     // TODO(antoyo): check if it's okay that link_section is None here.
                     // TODO(antoyo): set alignment here as well.
-                    let gv = self.define_global(&name[..], self.val_ty(cv), false, None).unwrap_or_else(|| {
-                        bug!("symbol `{}` is already defined", name);
-                    });
+                    let gv = self.define_global(&name[..], self.val_ty(cv), false, None);
                     // TODO(antoyo): set linkage.
                     (name, gv)
                 }
@@ -411,9 +409,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         let mut real_name = "_rust_extern_with_linkage_".to_string();
         real_name.push_str(&sym);
         let global2 =
-            cx.define_global(&real_name, llty, is_tls, attrs.link_section).unwrap_or_else(|| {
-                cx.sess().span_fatal(span, &format!("symbol `{}` is already defined", &sym))
-            });
+            cx.define_global(&real_name, llty, is_tls, attrs.link_section);
         // TODO(antoyo): set linkage.
         let lvalue = global2.dereference(None);
         cx.global_init_block.add_assignment(None, lvalue, global1);

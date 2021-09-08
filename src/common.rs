@@ -10,7 +10,6 @@ use rustc_codegen_ssa::traits::{
     MiscMethods,
     StaticMethods,
 };
-use rustc_middle::bug;
 use rustc_middle::mir::Mutability;
 use rustc_middle::ty::ScalarInt;
 use rustc_middle::ty::layout::{TyAndLayout, LayoutOf};
@@ -45,8 +44,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let sym = self.generate_local_symbol_name("str");
         // NOTE: TLS is always off for a string litteral.
         // NOTE: string litterals do not have a link section.
-        let global = self.define_global(&sym, self.val_ty(string), false, None)
-            .unwrap_or_else(|| bug!("symbol `{}` is already defined", sym));
+        let global = self.define_global(&sym, self.val_ty(string), false, None);
         self.global_init_block.add_assignment(None, global.dereference(None), string);
         global.to_rvalue()
         // TODO(antoyo): set linkage.

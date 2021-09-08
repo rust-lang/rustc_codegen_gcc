@@ -132,8 +132,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         unsafe { std::mem::transmute(func) }
     }
 
-    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> Option<RValue<'gcc>> {
-        Some(self.get_or_insert_global(name, ty, is_tls, link_section))
+    pub fn define_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> RValue<'gcc> {
+        self.get_or_insert_global(name, ty, is_tls, link_section)
     }
 
     pub fn define_private_global(&self, ty: Type<'gcc>) -> RValue<'gcc> {
