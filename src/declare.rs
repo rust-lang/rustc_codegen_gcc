@@ -79,6 +79,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         global
     }
 
+    pub fn declare_private_global(&self, name: &str, ty: Type<'gcc>) -> LValue<'gcc> {
+        let global = self.context.new_global(None, GlobalKind::Internal, ty, name);
+        let global_address = global.get_address(None);
+        self.globals.borrow_mut().insert(name.to_string(), global_address);
+        // NOTE: global seems to only be global in a module. So save the name instead of the value
+        // to import it later.
+        self.global_names.borrow_mut().insert(global_address, name.to_string());
+        global
+    }
+
     pub fn declare_cfn(&self, name: &str, _fn_type: Type<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): use the fn_type parameter.
         let const_string = self.context.new_type::<u8>().make_pointer().make_pointer();

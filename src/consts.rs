@@ -410,7 +410,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         real_name.push_str(&sym);
         let global2 = cx.define_global(&real_name, llty, is_tls, attrs.link_section);
         // TODO(antoyo): set linkage.
-        cx.global_init_block.add_assignment(None, global2, global1.get_address(None));
+        global2.global_set_initializer_value(global1.get_address(None));
         // TODO(antoyo): use global_set_initializer() when it will work.
         global2
     }

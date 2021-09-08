@@ -45,8 +45,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let sym = self.generate_local_symbol_name("str");
         // NOTE: TLS is always off for a string litteral.
         // NOTE: string litterals do not have a link section.
-        let global = self.define_global(&sym, self.val_ty(string), false, None);
-        self.global_init_block.add_assignment(None, global, string);
+        let global = self.declare_private_global(&sym, self.val_ty(string));
+        global.global_set_initializer_value(string); // TODO: only set if not imported?
         global
         // TODO(antoyo): set linkage.
     }
