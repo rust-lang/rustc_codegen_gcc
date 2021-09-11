@@ -31,14 +31,13 @@ use rustc_codegen_ssa::traits::{
     StaticBuilderMethods,
 };
 use rustc_middle::ty::{ParamEnv, Ty, TyCtxt};
-use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, TyAndLayout};
+use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, LayoutError, LayoutOfHelpers, TyAndLayout};
 use rustc_span::Span;
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{
     self,
     Align,
     HasDataLayout,
-    LayoutOf,
     Size,
     TargetDataLayout,
 };
@@ -338,12 +337,12 @@ impl HasDataLayout for Builder<'_, '_, '_> {
     }
 }
 
-impl<'tcx> LayoutOf for Builder<'_, '_, 'tcx> {
-    type Ty = Ty<'tcx>;
-    type TyAndLayout = TyAndLayout<'tcx>;
+impl<'tcx> LayoutOfHelpers<'tcx> for Builder<'_, '_, 'tcx> {
+    type LayoutOfResult = TyAndLayout<'tcx>;
 
-    fn layout_of(&self, ty: Ty<'tcx>) -> Self::TyAndLayout {
-        self.cx.layout_of(ty)
+    #[inline]
+    fn handle_layout_err(&self, err: LayoutError<'tcx>, span: Span, ty: Ty<'tcx>) -> ! {
+        self.cx.handle_layout_err(err, span, ty)
     }
 }
 
@@ -823,7 +822,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                         bx.range_metadata(load, range);
                     }
                 }
-                abi::Pointer if vr.start() < vr.end() && !vr.contains(&0) => {
+                abi::Pointer if vr.start < vr.end && !vr.contains(0) => {
                     bx.nonnull_metadata(load);
                 }
                 _ => {}

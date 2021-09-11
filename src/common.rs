@@ -12,10 +12,11 @@ use rustc_codegen_ssa::traits::{
 };
 use rustc_middle::bug;
 use rustc_middle::mir::Mutability;
-use rustc_middle::ty::{layout::TyAndLayout, ScalarInt};
-use rustc_mir::interpret::{Allocation, GlobalAlloc, Scalar};
+use rustc_middle::ty::ScalarInt;
+use rustc_middle::ty::layout::{TyAndLayout, LayoutOf};
+use rustc_middle::mir::interpret::{Allocation, GlobalAlloc, Scalar};
 use rustc_span::Symbol;
-use rustc_target::abi::{self, HasDataLayout, LayoutOf, Pointer, Size};
+use rustc_target::abi::{self, HasDataLayout, Pointer, Size};
 
 use crate::consts::const_alloc_to_gcc;
 use crate::context::CodegenCx;
