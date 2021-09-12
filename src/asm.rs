@@ -108,8 +108,6 @@ enum ConstraintOrRegister {
 
 impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn codegen_llvm_inline_asm(&mut self, _ia: &LlvmInlineAsmInner, _outputs: Vec<PlaceRef<'tcx, RValue<'gcc>>>, _inputs: Vec<RValue<'gcc>>, span: Span) -> bool {
-        // TODO(@Commeownist): switch to `struct_span_err_with_code` 
-        // once we get this merged into rustc
         self.sess().struct_span_err(span, "GCC backend does not support `llvm_asm!`")
             .help("consider using the `asm!` macro instead")
             .emit();

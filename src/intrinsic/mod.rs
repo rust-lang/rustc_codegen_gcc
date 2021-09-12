@@ -309,8 +309,6 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                 }
 
                 sym::black_box => {
-                    // TODO(@Commeownist): I suspect this can be implemented more efficiently via volatile reads and writes.
-
                     args[0].val.store(self, result);
 
                     let block = self.llbb();
