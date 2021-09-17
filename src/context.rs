@@ -399,6 +399,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn compiler_used_statics(&self) -> &RefCell<Vec<RValue<'gcc>>> {
         unimplemented!()
     }
+
     fn create_compiler_used_variable(&self) {
         unimplemented!()
     }
