@@ -77,6 +77,9 @@ jobs:
         git config --global user.name "User"
         ./prepare.sh
 
+    - name: modified rust-toolchain to satisfy rustup version 1.20.1 in actions-rs
+      run: awk -F'[ ="]+' '$1 == "channel" { print $2 }' rust-toolchain > tmp && mv tmp rust-toolchain
+
     # Compile is a separate step, as the actions-rs/cargo action supports error annotations
     - name: Compile
       uses: actions-rs/cargo@v1.0.3
