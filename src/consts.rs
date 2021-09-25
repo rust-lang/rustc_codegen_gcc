@@ -210,7 +210,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             };
         // FIXME(antoyo): I think the name coming from generate_local_symbol_name() above cannot be used
         // globally.
-        self.global_init_block.add_assignment(None, global, cv);
+        global.global_set_initializer_value(cv);
         // TODO(antoyo): set unnamed address.
         global.get_address(None)
     }
