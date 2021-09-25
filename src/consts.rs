@@ -191,7 +191,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn static_addr_of_mut(&self, cv: RValue<'gcc>, align: Align, kind: Option<&str>) -> RValue<'gcc> {
-        let (name, global) =
+        let global =
             match kind {
                 Some(kind) if !self.tcx.sess.fewer_names() => {
                     let name = self.generate_local_symbol_name(kind);
@@ -200,21 +200,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     // TODO(antoyo): set alignment here as well.
                     let global = self.define_global(&name[..], self.val_ty(cv), false, None);
                     // TODO(antoyo): set linkage.
-                    (name, global)
+                    global
                 }
                 _ => {
-                    let index = self.global_gen_sym_counter.get();
-                    let name = format!("global_{}_{}", index, self.codegen_unit.name());
                     let typ = self.val_ty(cv).get_aligned(align.bytes());
                     let global = self.declare_unnamed_global(typ);
-                    (name, global)
+                    global
                 },
             };
         // FIXME(antoyo): I think the name coming from generate_local_symbol_name() above cannot be used
         // globally.
-        // NOTE: global seems to only be global in a module. So save the name instead of the value
-        // to import it later.
-        self.global_names.borrow_mut().insert(cv, name);
         self.global_init_block.add_assignment(None, global, cv);
         // TODO(antoyo): set unnamed address.
         global.get_address(None)

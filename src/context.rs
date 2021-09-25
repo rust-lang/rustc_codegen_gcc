@@ -106,8 +106,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     /// Cache of globals.
     pub globals: RefCell<FxHashMap<String, RValue<'gcc>>>,
-    // TODO(antoyo): remove global_names.
-    pub global_names: RefCell<FxHashMap<RValue<'gcc>, String>>,
 
     /// A counter that is used for generating local symbol names
     local_gen_sym_counter: Cell<usize>,
@@ -120,7 +118,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// NOTE: a hack is used because the rustc API is not suitable to libgccjit and as such,
     /// `const_undef()` returns struct as pointer so that they can later be assigned a value.
     /// As such, this set remembers which of these pointers were returned by this function so that
-    /// they can be derefered later.
+    /// they can be deferenced later.
     /// FIXME(antoyo): fix the rustc API to avoid having this hack.
     pub structs_as_pointer: RefCell<FxHashSet<RValue<'gcc>>>,
 
@@ -232,7 +230,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             init_argv_var: RefCell::new(String::new()),
             argv_initialized: Cell::new(false),
             const_cstr_cache: Default::default(),
-            global_names: Default::default(),
             globals: Default::default(),
             scalar_types: Default::default(),
             types: Default::default(),

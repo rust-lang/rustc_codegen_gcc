@@ -38,9 +38,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let global = self.context.new_global(None, linkage, ty, name);
         let global_address = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global_address);
-        // NOTE: global seems to only be global in a module. So save the name instead of the value
-        // to import it later.
-        self.global_names.borrow_mut().insert(global_address, name.to_string());
         global
     }
 
@@ -73,9 +70,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
         let global_address = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global_address);
-        // NOTE: global seems to only be global in a module. So save the name instead of the value
-        // to import it later.
-        self.global_names.borrow_mut().insert(global_address, name.to_string());
         global
     }
 
@@ -83,9 +77,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let global = self.context.new_global(None, GlobalKind::Internal, ty, name);
         let global_address = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global_address);
-        // NOTE: global seems to only be global in a module. So save the name instead of the value
-        // to import it later.
-        self.global_names.borrow_mut().insert(global_address, name.to_string());
         global
     }
 
@@ -131,9 +122,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             global.global_set_initializer_value(initializer);
             let global = global.get_address(None);
             self.globals.borrow_mut().insert(global_name.to_string(), global);
-            // NOTE: global seems to only be global in a module. So save the name instead of the value
-            // to import it later.
-            self.global_names.borrow_mut().insert(global, global_name.to_string());
             self.argv_initialized.set(true);
         }
         let (return_type, params, variadic) = fn_abi.gcc_type(self);
