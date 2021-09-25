@@ -7,7 +7,6 @@ use rustc_target::abi::call::FnAbi;
 use crate::abi::FnAbiGccExt;
 use crate::context::{CodegenCx, unit_name};
 use crate::intrinsic::llvm;
-use crate::mangled_std_symbols::{ARGV_INIT_ARRAY, ARGV_INIT_WRAPPER};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn get_or_insert_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> LValue<'gcc> {
@@ -49,18 +48,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn declare_global(&self, name: &str, ty: Type<'gcc>, is_tls: bool, link_section: Option<Symbol>) -> LValue<'gcc> {
-        // FIXME(antoyo): correctly support global variable initialization.
-        if name.starts_with(ARGV_INIT_ARRAY) {
-            // NOTE: hack to avoid having to update the names in mangled_std_symbols: we save the
-            // name of the variable now to actually declare it later.
-            *self.init_argv_var.borrow_mut() = name.to_string();
-
-            let global = self.context.new_global(None, GlobalKind::Imported, ty, name);
-            if let Some(link_section) = link_section {
-                global.set_link_section(&link_section.as_str());
-            }
-            return global;
-        }
         let global = self.context.new_global(None, GlobalKind::Exported, ty, name);
         if is_tls {
             global.set_tls_model(self.tls_model);
@@ -95,35 +82,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn declare_fn(&self, name: &str, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> RValue<'gcc> {
-        // NOTE: hack to avoid having to update the names in mangled_std_symbols: we found the name
-        // of the variable earlier, so we declare it now.
-        // Since we don't correctly support initializers yet, we initialize this variable manually
-        // for now.
-        if name.starts_with(ARGV_INIT_WRAPPER) && !self.argv_initialized.get() {
-            let global_name = &*self.init_argv_var.borrow();
-            let return_type = self.type_void();
-            let params = [
-                self.context.new_parameter(None, self.int_type, "argc"),
-                self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "argv"),
-                self.context.new_parameter(None, self.u8_type.make_pointer().make_pointer(), "envp"),
-            ];
-            let function = self.context.new_function(None, FunctionType::Extern, return_type, &params, name, false);
-            let initializer = function.get_address(None);
-
-            let param_types = [
-                self.int_type,
-                self.u8_type.make_pointer().make_pointer(),
-                self.u8_type.make_pointer().make_pointer(),
-            ];
-            let ty = self.context.new_function_pointer_type(None, return_type, &param_types, false);
-
-            let global = self.context.new_global(None, GlobalKind::Exported, ty, global_name);
-            global.set_link_section(".init_array.00099");
-            global.global_set_initializer_value(initializer);
-            let global = global.get_address(None);
-            self.globals.borrow_mut().insert(global_name.to_string(), global);
-            self.argv_initialized.set(true);
-        }
         let (return_type, params, variadic) = fn_abi.gcc_type(self);
         let func = declare_raw_fn(self, name, () /*fn_abi.llvm_cconv()*/, return_type, &params, variadic);
         // FIXME(antoyo): this is a wrong cast. That requires changing the compiler API.

@@ -43,7 +43,6 @@ mod coverageinfo;
 mod debuginfo;
 mod declare;
 mod intrinsic;
-mod mangled_std_symbols;
 mod mono_item;
 mod type_;
 mod type_of;
@@ -203,6 +202,7 @@ impl WriteBackendMethods for GccCodegenBackend {
     fn run_fat_lto(_cgcx: &CodegenContext<Self>, mut modules: Vec<FatLTOInput<Self>>, _cached_modules: Vec<(SerializedModule<Self::ModuleBuffer>, WorkProduct)>) -> Result<LtoModuleCodegen<Self>, FatalError> {
         // TODO(antoyo): implement LTO by sending -flto to libgccjit and adding the appropriate gcc linker plugins.
         // NOTE: implemented elsewhere.
+        // TODO: what is implemented elsewhere ^ ?
         let module =
             match modules.remove(0) {
                 FatLTOInput::InMemory(module) => module,

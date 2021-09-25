@@ -14,7 +14,6 @@ use rustc_target::abi::{self, Align, HasDataLayout, Primitive, Size, WrappingRan
 
 use crate::base;
 use crate::context::CodegenCx;
-use crate::mangled_std_symbols::{ARGC, ARGV, ARGV_INIT_ARRAY};
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -73,26 +72,16 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
         let gcc_type = self.layout_of(ty).gcc_type(self, true);
 
-        // TODO(antoyo): set alignment and initializer.
+        // TODO(antoyo): set alignment.
 
-        // NOTE: do not init the variables related to argc/argv because it seems we cannot
-        // overwrite those variables.
-        // FIXME(antoyo): correctly support global variable initialization.
-        let skip_init = [
-            ARGV_INIT_ARRAY,
-            ARGC,
-            ARGV,
-        ];
-        if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
-            let value =
-                if value.get_type() != gcc_type {
-                    self.context.new_bitcast(None, value, gcc_type)
-                }
-                else {
-                    value
-                };
-            global.global_set_initializer_value(value);
-        }
+        let value =
+            if value.get_type() != gcc_type {
+                self.context.new_bitcast(None, value, gcc_type)
+            }
+            else {
+                value
+            };
+        global.global_set_initializer_value(value);
 
         // As an optimization, all shared statics which do not have interior
         // mutability are placed into read-only memory.
