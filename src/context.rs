@@ -121,13 +121,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// they can be deferenced later.
     /// FIXME(antoyo): fix the rustc API to avoid having this hack.
     pub structs_as_pointer: RefCell<FxHashSet<RValue<'gcc>>>,
-
-    /// Store the pointer of different types for safety.
-    /// When casting the values back to their original types, check that they are indeed that type
-    /// with these sets.
-    /// FIXME(antoyo): remove when the API supports more types.
-    #[cfg(debug_assertions)]
-    lvalues: RefCell<FxHashSet<LValue<'gcc>>>,
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -221,8 +214,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             double_type,
 
             linkage: Cell::new(FunctionType::Internal),
-            #[cfg(debug_assertions)]
-            lvalues: Default::default(),
             instances: Default::default(),
             function_instances: Default::default(),
             vtables: Default::default(),
@@ -242,12 +233,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             pointee_infos: Default::default(),
             structs_as_pointer: Default::default(),
         }
-    }
-
-    pub fn lvalue_to_rvalue(&self, value: LValue<'gcc>) -> RValue<'gcc> {
-        #[cfg(debug_assertions)]
-        self.lvalues.borrow_mut().insert(value);
-        unsafe { std::mem::transmute(value) }
     }
 
     pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {

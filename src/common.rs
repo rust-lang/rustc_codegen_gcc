@@ -193,16 +193,9 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             .map(|value| value.get_type())
             .collect();
         // TODO(antoyo): cache the type? It's anonymous, so probably not.
-        let name = fields.iter().map(|typ| format!("{:?}", typ)).collect::<Vec<_>>().join("_");
         let typ = self.type_struct(&fields, packed);
-        let structure = self.global_init_func.new_local(None, typ, &name);
         let struct_type = typ.is_struct().expect("struct type");
-        for (index, value) in values.iter().enumerate() {
-            let field = struct_type.get_field(index as i32);
-            let field_lvalue = structure.access_field(None, field);
-            self.global_init_block.add_assignment(None, field_lvalue, *value);
-        }
-        self.lvalue_to_rvalue(structure)
+        self.context.new_rvalue_from_struct(None, struct_type, values)
     }
 
     fn const_to_opt_uint(&self, _v: RValue<'gcc>) -> Option<u64> {
@@ -269,12 +262,11 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 let base_addr = self.const_bitcast(base_addr, self.usize_type);
                 let offset = self.context.new_rvalue_from_long(self.usize_type, offset.bytes() as i64);
                 let ptr = self.const_bitcast(base_addr + offset, ptr_type);
-                let value = ptr.dereference(None);
                 if layout.value != Pointer {
-                    self.const_bitcast(value.to_rvalue(), ty)
+                    self.const_bitcast(ptr.dereference(None).to_rvalue(), ty)
                 }
                 else {
-                    self.const_bitcast(value.get_address(None), ty)
+                    self.const_bitcast(ptr, ty)
                 }
             }
         }
