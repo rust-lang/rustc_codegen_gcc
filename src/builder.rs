@@ -505,7 +505,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // FIXME(antoyo): rustc_codegen_ssa::mir::intrinsic uses different types for a and b but they
         // should be the same.
         let typ = a.get_type().to_signed(self);
-        let a = self.context.new_cast(None, a, typ);
         let b = self.context.new_cast(None, b, typ);
         a / b
     }
