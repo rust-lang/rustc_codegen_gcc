@@ -48,9 +48,9 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         let instance = Instance::mono(self.tcx, def_id);
         let name = &*self.tcx.symbol_name(instance).name;
 
-        let (value, alloc) =
+        let value =
             match codegen_static_initializer(&self, def_id) {
-                Ok(value) => value,
+                Ok((value, _)) => value,
                 // Error has already been reported
                 Err(_) => return,
             };
@@ -73,28 +73,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
         let gcc_type = self.layout_of(ty).gcc_type(self, true);
 
-        let global =
-            if val_llty == gcc_type {
-                global
-            }
-            else {
-                // If we created the global with the wrong type,
-                // correct the type.
-                // TODO(antoyo): set value name, linkage and visibility.
-
-                let new_global = self.get_or_insert_global(&name, val_llty, is_tls, attrs.link_section);
-
-                // To avoid breaking any invariants, we leave around the old
-                // global for the moment; we'll replace all references to it
-                // with the new global later. (See base::codegen_backend.)
-                //self.statics_to_rauw.borrow_mut().push((global, new_global));
-                new_global
-            };
         // TODO(antoyo): set alignment and initializer.
-        let value = self.rvalue_as_lvalue(value);
-        let value = value.get_address(None);
-        let dest_typ = global.to_rvalue().get_type();
-        let value = self.context.new_cast(None, value, dest_typ);
 
         // NOTE: do not init the variables related to argc/argv because it seems we cannot
         // overwrite those variables.
@@ -105,12 +84,14 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             ARGV,
         ];
         if !skip_init.iter().any(|symbol_name| name.starts_with(symbol_name)) {
-            // TODO(antoyo): switch to set_initializer when libgccjit supports that.
-            let memcpy = self.context.get_builtin_function("memcpy");
-            let dst = self.context.new_cast(None, global.get_address(None), self.type_i8p());
-            let src = self.context.new_cast(None, value, self.type_ptr_to(self.type_void()));
-            let size = self.context.new_rvalue_from_long(self.sizet_type, alloc.size().bytes() as i64);
-            self.global_init_block.add_eval(None, self.context.new_call(None, memcpy, &[dst, src, size]));
+            let value =
+                if value.get_type() != gcc_type {
+                    self.context.new_bitcast(None, value, gcc_type)
+                }
+                else {
+                    value
+                };
+            global.global_set_initializer_value(value);
         }
 
         // As an optimization, all shared statics which do not have interior

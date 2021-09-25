@@ -46,10 +46,6 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub current_func: RefCell<Option<Function<'gcc>>>,
     pub normal_function_addresses: RefCell<FxHashSet<RValue<'gcc>>>,
 
-    /// The function where globals are initialized.
-    pub global_init_func: Function<'gcc>,
-    pub global_init_block: Block<'gcc>,
-
     pub functions: RefCell<FxHashMap<String, Function<'gcc>>>,
 
     pub tls_model: gccjit::TlsModel,
@@ -173,10 +169,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
         }
 
-        let global_init_func = context.new_function(None, FunctionType::Exported, context.new_type::<()>(), &[],
-            &format!("__gccGlobalInit{}", unit_name(&codegen_unit)), false);
-        let global_init_block = global_init_func.new_block("initial");
-
         Self {
             check_overflow,
             codegen_unit,
@@ -185,8 +177,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             current_func: RefCell::new(None),
             normal_function_addresses: Default::default(),
             functions: RefCell::new(functions),
-            global_init_func,
-            global_init_block,
 
             tls_model,
 

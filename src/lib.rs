@@ -273,15 +273,6 @@ fn to_gcc_opt_level(optlevel: Option<OptLevel>) -> OptimizationLevel {
     }
 }
 
-fn create_function_calling_initializers<'gcc, 'tcx>(tcx: TyCtxt<'tcx>, context: &Context<'gcc>, block: Block<'gcc>) {
-    let codegen_units = tcx.collect_and_partition_mono_items(()).1;
-    for codegen_unit in codegen_units {
-        let codegen_init_func = context.new_function(None, FunctionType::Extern, context.new_type::<()>(), &[],
-            &format!("__gccGlobalInit{}", unit_name(&codegen_unit)), false);
-        block.add_eval(None, context.new_call(None, codegen_init_func, &[]));
-    }
-}
-
 fn handle_native(name: &str) -> &str {
     if name != "native" {
         return name;
