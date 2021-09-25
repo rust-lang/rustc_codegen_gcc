@@ -44,9 +44,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
     fn codegen_static(&self, def_id: DefId, is_mutable: bool) {
         let attrs = self.tcx.codegen_fn_attrs(def_id);
 
-        let instance = Instance::mono(self.tcx, def_id);
-        let name = &*self.tcx.symbol_name(instance).name;
-
         let value =
             match codegen_static_initializer(&self, def_id) {
                 Ok((value, _)) => value,
@@ -54,7 +51,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                 Err(_) => return,
             };
 
-        let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
         let global = self.get_static(def_id);
 
         // boolean SSA values are i1, but they have to be stored in i8 slots,

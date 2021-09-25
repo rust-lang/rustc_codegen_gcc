@@ -1,5 +1,4 @@
 use std::env;
-use std::sync::Once;
 use std::time::Instant;
 
 use gccjit::{
@@ -7,7 +6,6 @@ use gccjit::{
     FunctionType,
     GlobalKind,
 };
-use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::dep_graph;
 use rustc_middle::middle::cstore::EncodedMetadata;
 use rustc_middle::middle::exported_symbols;

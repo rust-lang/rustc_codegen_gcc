@@ -1,11 +1,9 @@
-use gccjit::{FunctionType, RValue};
+use gccjit::RValue;
 use rustc_codegen_ssa::mir::debuginfo::{FunctionDebugContext, VariableKind};
-use rustc_codegen_ssa::traits::{BuilderMethods, DebugInfoBuilderMethods, DebugInfoMethods};
-use rustc_middle::middle::cstore::CrateDepKind;
+use rustc_codegen_ssa::traits::{DebugInfoBuilderMethods, DebugInfoMethods};
 use rustc_middle::mir;
 use rustc_middle::ty::{Instance, Ty};
 use rustc_span::{SourceFile, Span, Symbol};
-use rustc_span::def_id::LOCAL_CRATE;
 use rustc_target::abi::Size;
 use rustc_target::abi::call::FnAbi;
 

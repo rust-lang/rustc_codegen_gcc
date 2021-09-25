@@ -50,7 +50,7 @@ mod type_of;
 use std::any::Any;
 use std::sync::Arc;
 
-use gccjit::{Block, Context, FunctionType, OptimizationLevel};
+use gccjit::{Context, OptimizationLevel};
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
@@ -67,8 +67,6 @@ use rustc_session::config::{CrateType, Lto, OptLevel, OutputFilenames};
 use rustc_session::Session;
 use rustc_span::Symbol;
 use rustc_span::fatal_error::FatalError;
-
-use crate::context::unit_name;
 
 pub struct PrintOnPanic<F: Fn() -> String>(pub F);
 

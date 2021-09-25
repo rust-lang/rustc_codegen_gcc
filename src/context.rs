@@ -227,11 +227,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         function
     }
 
-    pub fn rvalue_as_lvalue(&self, value: RValue<'gcc>) -> LValue<'gcc> {
-        let lvalue: LValue<'gcc> = unsafe { std::mem::transmute(value) };
-        lvalue
-    }
-
     pub fn sess(&self) -> &Session {
         &self.tcx.sess
     }
