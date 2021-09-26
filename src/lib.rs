@@ -108,14 +108,6 @@ impl CodegenBackend for GccCodegenBackend {
 
     fn link(&self, sess: &Session, mut codegen_results: CodegenResults, outputs: &OutputFilenames) -> Result<(), ErrorReported> {
         use rustc_codegen_ssa::back::link::link_binary;
-        if let Some(symbols) = codegen_results.crate_info.exported_symbols.get_mut(&CrateType::Dylib) {
-            // TODO:(antoyo): remove when global initializer work without calling a function at runtime.
-            // HACK: since this codegen add some symbols (e.g. __gccGlobalCrateInit) and the UI
-            // tests load libstd.so as a dynamic library, and rustc use a version-script to specify
-            // the symbols visibility, we add * to export all symbols.
-            // It seems other symbols from libstd/libcore are causing some issues here as well.
-            symbols.push("*".to_string());
-        }
 
         link_binary::<crate::archive::ArArchiveBuilder<'_>>(
             sess,
