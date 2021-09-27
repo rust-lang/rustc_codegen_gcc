@@ -18,7 +18,7 @@ use rustc_target::spec::PanicStrategy;
 
 use crate::abi::GccType;
 use crate::builder::Builder;
-use crate::common::TypeReflection;
+use crate::common::{SignType, TypeReflection};
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 use crate::intrinsic::simd::generic_simd_intrinsic;
@@ -746,6 +746,15 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn count_trailing_zeroes(&self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        let result_type = arg.get_type();
+        let arg =
+            if result_type.is_signed(self.cx) {
+                let new_type = result_type.to_unsigned(self.cx);
+                self.context.new_bitcast(None, arg, new_type)
+            }
+            else {
+                arg
+            };
         let arg_type = arg.get_type();
         let (count_trailing_zeroes, expected_type) =
             if arg_type.is_uchar(&self.cx) || arg_type.is_ushort(&self.cx) || arg_type.is_uint(&self.cx) {
@@ -796,7 +805,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 let res = self.context.new_array_access(None, result, index);
 
-                return self.context.new_cast(None, res, arg_type);
+                return self.context.new_cast(None, res, result_type);
             }
             else {
                 unimplemented!("count_trailing_zeroes for {:?}", arg_type);
@@ -810,7 +819,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 arg
             };
         let res = self.context.new_call(None, count_trailing_zeroes, &[arg]);
-        self.context.new_cast(None, res, arg_type)
+        self.context.new_cast(None, res, result_type)
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
