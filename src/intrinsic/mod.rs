@@ -828,7 +828,16 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     fn pop_count(&self, value: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): use the optimized version with fewer operations.
-        let value_type = value.get_type();
+        let result_type = value.get_type();
+        let value_type = result_type.to_unsigned(self.cx);
+
+        let value =
+            if result_type.is_signed(self.cx) {
+                self.context.new_bitcast(None, value, value_type)
+            }
+            else {
+                value
+            };
 
         if value_type.is_u128(&self.cx) {
             // TODO(antoyo): implement in the normal algorithm below to have a more efficient
@@ -839,7 +848,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let high = self.context.new_call(None, popcount, &[high]);
             let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
             let low = self.context.new_call(None, popcount, &[low]);
-            return high + low;
+            let res = high + low;
+            return self.context.new_cast(None, res, result_type);
         }
 
         // First step.
@@ -864,7 +874,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u8(&self.cx) {
-            return value;
+            return self.context.new_cast(None, value, result_type);
         }
 
         // Fourth step.
@@ -875,7 +885,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u16(&self.cx) {
-            return value;
+            return self.context.new_cast(None, value, result_type);
         }
 
         // Fifth step.
@@ -886,7 +896,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u32(&self.cx) {
-            return value;
+            return self.context.new_cast(None, value, result_type);
         }
 
         // Sixth step.
@@ -896,7 +906,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let right = shifted & mask;
         let value = left + right;
 
-        value
+        self.context.new_cast(None, value, result_type)
     }
 
     // Algorithm from: https://blog.regehr.org/archives/1063
