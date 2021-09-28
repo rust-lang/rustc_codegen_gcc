@@ -1,5 +1,0 @@
-disallowed-methods = [
-    "std::iter::Iterator::sum",
-    "regex::Regex::is_match",
-    "regex::Regex::new"
-]
