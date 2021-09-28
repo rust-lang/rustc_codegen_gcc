@@ -689,7 +689,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 },
             };
 
-        self.context.new_cast(None, result, result_type)
+        self.context.new_bitcast(None, result, result_type)
     }
 
     fn count_leading_zeroes(&self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
@@ -818,7 +818,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 let res = self.context.new_array_access(None, result, index);
 
-                return self.context.new_cast(None, res, result_type);
+                return self.context.new_bitcast(None, res, result_type);
             }
             else {
                 unimplemented!("count_trailing_zeroes for {:?}", arg_type);
@@ -832,7 +832,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 arg
             };
         let res = self.context.new_call(None, count_trailing_zeroes, &[arg]);
-        self.context.new_cast(None, res, result_type)
+        self.context.new_bitcast(None, res, result_type)
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> i64 {
@@ -862,7 +862,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
             let low = self.context.new_call(None, popcount, &[low]);
             let res = high + low;
-            return self.context.new_cast(None, res, result_type);
+            return self.context.new_bitcast(None, res, result_type);
         }
 
         // First step.
@@ -887,7 +887,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u8(&self.cx) {
-            return self.context.new_cast(None, value, result_type);
+            return self.context.new_bitcast(None, value, result_type);
         }
 
         // Fourth step.
@@ -898,7 +898,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u16(&self.cx) {
-            return self.context.new_cast(None, value, result_type);
+            return self.context.new_bitcast(None, value, result_type);
         }
 
         // Fifth step.
@@ -909,7 +909,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let value = left + right;
 
         if value_type.is_u32(&self.cx) {
-            return self.context.new_cast(None, value, result_type);
+            return self.context.new_bitcast(None, value, result_type);
         }
 
         // Sixth step.
@@ -919,7 +919,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let right = shifted & mask;
         let value = left + right;
 
-        self.context.new_cast(None, value, result_type)
+        self.context.new_bitcast(None, value, result_type)
     }
 
     // Algorithm from: https://blog.regehr.org/archives/1063
