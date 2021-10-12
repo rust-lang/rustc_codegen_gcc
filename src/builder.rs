@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::BitAnd};
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::convert::TryFrom;
 use std::ops::Deref;
