@@ -697,6 +697,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         // TODO(antoyo): use width?
         let arg_type = arg.get_type();
         let count_leading_zeroes =
+            // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
+            // instead of using is_uint().
             if arg_type.is_uint(&self.cx) {
                 "__builtin_clz"
             }
@@ -752,10 +754,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 return self.context.new_cast(None, res, arg_type);
             }
             else {
-                let count_leading_zeroes = self.context.get_builtin_function("__builtin_clz");
-                let arg = self.context.new_cast(None, arg, self.uint_type);
-                let diff = self.int_width(self.uint_type) - self.int_width(arg_type);
-                let diff = self.context.new_rvalue_from_long(self.int_type, diff);
+                let count_leading_zeroes = self.context.get_builtin_function("__builtin_clzll");
+                let arg = self.context.new_cast(None, arg, self.ulonglong_type);
+                let diff = self.ulonglong_type.get_size() as i64 - arg_type.get_size() as i64;
+                let diff = self.context.new_rvalue_from_long(self.int_type, diff * 8);
                 let res = self.context.new_call(None, count_leading_zeroes, &[arg]) - diff;
                 return self.context.new_cast(None, res, arg_type);
             };
@@ -776,6 +778,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             };
         let arg_type = arg.get_type();
         let (count_trailing_zeroes, expected_type) =
+            // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
+            // instead of using is_uint().
             if arg_type.is_uchar(&self.cx) || arg_type.is_ushort(&self.cx) || arg_type.is_uint(&self.cx) {
                 // NOTE: we don't need to & 0xFF for uchar because the result is undefined on zero.
                 ("__builtin_ctz", self.cx.uint_type)
@@ -832,7 +836,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 return self.context.new_cast(None, res, result_type);
             }
             else {
-                unimplemented!("count_trailing_zeroes for {:?}", arg_type);
+                let count_trailing_zeroes = self.context.get_builtin_function("__builtin_ctzll");
+                let arg_size = arg_type.get_size();
+                let casted_arg = self.context.new_cast(None, arg, self.ulonglong_type);
+                let byte_diff = self.ulonglong_type.get_size() as i64 - arg_size as i64;
+                let diff = self.context.new_rvalue_from_long(self.int_type, byte_diff * 8);
+                let mask = self.context.new_rvalue_from_long(arg_type, -1); // To get the value with all bits set.
+                let masked = mask & self.context.new_unary_op(None, UnaryOp::BitwiseNegate, arg_type, arg);
+                let cond = self.context.new_comparison(None, ComparisonOp::Equals, masked, mask);
+                let diff = diff * self.context.new_cast(None, cond, self.int_type);
+                let res = self.context.new_call(None, count_trailing_zeroes, &[casted_arg]) - diff;
+                return self.context.new_cast(None, res, arg_type);
             };
         let count_trailing_zeroes = self.context.get_builtin_function(count_trailing_zeroes);
         let arg =
@@ -844,10 +858,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             };
         let res = self.context.new_call(None, count_trailing_zeroes, &[arg]);
         self.context.new_cast(None, res, result_type)
-    }
-
-    fn int_width(&self, typ: Type<'gcc>) -> i64 {
-        self.cx.int_width(typ) as i64
     }
 
     fn pop_count(&self, value: RValue<'gcc>) -> RValue<'gcc> {
