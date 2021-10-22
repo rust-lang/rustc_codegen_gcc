@@ -26,6 +26,12 @@ pub struct FuncSig<'gcc> {
     pub return_type: Type<'gcc>,
 }
 
+pub struct IntType<'gcc> {
+    bits: u8,
+    typ: Type<'gcc>,
+    signed: bool,
+}
+
 pub struct CodegenCx<'gcc, 'tcx> {
     pub check_overflow: bool,
     pub codegen_unit: &'tcx CodegenUnit<'tcx>,
@@ -61,6 +67,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub ulong_type: Type<'gcc>,
     pub ulonglong_type: Type<'gcc>,
     pub sizet_type: Type<'gcc>,
+
+    pub native_int_types: Vec<IntType<'gcc>>,
 
     pub float_type: Type<'gcc>,
     pub double_type: Type<'gcc>,
@@ -125,7 +133,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u16_type = context.new_c_type(CType::UInt16t);
         let u32_type = context.new_c_type(CType::UInt32t);
         let u64_type = context.new_c_type(CType::UInt64t);
-        let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
+
+        let field1 = context.new_field(None, u64_type, "high");
+        let field2 = context.new_field(None, u64_type, "low");
+        let u128_type = context.new_struct_type(None, "u128", &[field1, field2]).as_type();
+        //let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
 
         let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());
 
@@ -138,6 +150,52 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let ulong_type = context.new_c_type(CType::ULong);
         let ulonglong_type = context.new_c_type(CType::ULongLong);
         let sizet_type = context.new_c_type(CType::SizeT);
+
+        let mut native_int_types = vec![];
+
+        native_int_types.push(IntType {
+            bits: 64,
+            signed: false,
+            typ: u64_type,
+        });
+        native_int_types.push(IntType {
+            bits: 64,
+            signed: true,
+            typ: i64_type,
+        });
+
+        native_int_types.push(IntType {
+            bits: 32,
+            signed: false,
+            typ: u32_type,
+        });
+        native_int_types.push(IntType {
+            bits: 32,
+            signed: true,
+            typ: i32_type,
+        });
+
+        native_int_types.push(IntType {
+            bits: 16,
+            signed: false,
+            typ: u16_type,
+        });
+        native_int_types.push(IntType {
+            bits: 16,
+            signed: true,
+            typ: i16_type,
+        });
+
+        native_int_types.push(IntType {
+            bits: 8,
+            signed: false,
+            typ: u8_type,
+        });
+        native_int_types.push(IntType {
+            bits: 8,
+            signed: true,
+            typ: i8_type,
+        });
 
         // TODO(antoyo): only have those assertions on x86_64.
         assert_eq!(isize_type.get_size(), i64_type.get_size());
@@ -191,6 +249,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             ulonglong_type,
             sizet_type,
 
+            native_int_types,
+
             float_type,
             double_type,
 
@@ -220,6 +280,15 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         debug_assert!(self.functions.borrow().values().find(|value| **value == function).is_some(),
             "{:?} ({:?}) is not a function", value, value.get_type());
         function
+    }
+
+    pub fn supports_native_int_type(&self, typ: Type<'gcc>) -> bool {
+        for native_type in &self.native_int_types {
+            if native_type.typ == typ {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn sess(&self) -> &Session {

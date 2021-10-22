@@ -1054,7 +1054,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn intcast(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>, _is_signed: bool) -> RValue<'gcc> {
         // NOTE: is_signed is for value, not dest_typ.
-        self.cx.context.new_cast(None, value, dest_typ)
+        if self.supports_native_int_type(dest_typ) && self.supports_native_int_type(value.get_type()) {
+            self.cx.context.new_cast(None, value, dest_typ)
+        }
+        else {
+            // FIXME: that's not working since we can cast from u8 to struct u128.
+            self.cx.context.new_bitcast(None, value, dest_typ)
+        }
     }
 
     fn pointercast(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
