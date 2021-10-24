@@ -1058,8 +1058,35 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             self.cx.context.new_cast(None, value, dest_typ)
         }
         else {
-            // FIXME: that's not working since we can cast from u8 to struct u128.
-            self.cx.context.new_bitcast(None, value, dest_typ)
+            let value_type = value.get_type();
+            let src_size = self.cx.int_type_size(value_type);
+            let src_element_size = self.cx.int_type_element_size(value_type);
+            let dest_size = self.cx.int_type_size(dest_typ);
+            let factor = (dest_size / src_size) as usize;
+            let array_type = self.context.new_array_type(None, value_type, factor as i32);
+
+            if src_size < dest_size {
+                // TODO: initialize to -1 if negative.
+                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
+                // TODO: take endianness into account.
+                values[factor - 1] = value;
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                self.cx.context.new_bitcast(None, array_value, dest_typ)
+            }
+            else {
+                let mut current_size = 0;
+                // TODO: take endianness into account.
+                let mut current_index = src_size / src_element_size - 1;
+                let mut values = vec![];
+                while current_size < dest_size {
+                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
+                    current_size += src_element_size;
+                    current_index -= 1;
+                }
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                // FIXME: that's not working since we can cast from u8 to struct u128.
+                self.cx.context.new_bitcast(None, array_value, dest_typ)
+            }
         }
     }
 

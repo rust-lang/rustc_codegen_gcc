@@ -28,6 +28,7 @@ pub struct FuncSig<'gcc> {
 
 pub struct IntType<'gcc> {
     bits: u8,
+    element_size: u8,
     typ: Type<'gcc>,
     signed: bool,
 }
@@ -69,6 +70,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub sizet_type: Type<'gcc>,
 
     pub native_int_types: Vec<IntType<'gcc>>,
+    pub non_native_int_types: Vec<IntType<'gcc>>,
 
     pub float_type: Type<'gcc>,
     pub double_type: Type<'gcc>,
@@ -134,9 +136,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u32_type = context.new_c_type(CType::UInt32t);
         let u64_type = context.new_c_type(CType::UInt64t);
 
-        let field1 = context.new_field(None, u64_type, "high");
-        let field2 = context.new_field(None, u64_type, "low");
-        let u128_type = context.new_struct_type(None, "u128", &[field1, field2]).as_type();
+        let u128_type = context.new_array_type(None, u64_type, 2);
         //let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
 
         let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());
@@ -151,51 +151,86 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let ulonglong_type = context.new_c_type(CType::ULongLong);
         let sizet_type = context.new_c_type(CType::SizeT);
 
+        let mut non_native_int_types = vec![];
+
+        non_native_int_types.push(IntType {
+            bits: 128,
+            element_size: 64,
+            signed: false,
+            typ: u128_type,
+        });
+
         let mut native_int_types = vec![];
 
         native_int_types.push(IntType {
             bits: 64,
+            element_size: 64,
             signed: false,
             typ: u64_type,
         });
         native_int_types.push(IntType {
             bits: 64,
+            element_size: 64,
             signed: true,
             typ: i64_type,
         });
 
         native_int_types.push(IntType {
             bits: 32,
+            element_size: 32,
             signed: false,
             typ: u32_type,
         });
         native_int_types.push(IntType {
             bits: 32,
+            element_size: 32,
             signed: true,
             typ: i32_type,
         });
 
         native_int_types.push(IntType {
             bits: 16,
+            element_size: 16,
             signed: false,
             typ: u16_type,
         });
         native_int_types.push(IntType {
             bits: 16,
+            element_size: 16,
             signed: true,
             typ: i16_type,
         });
 
         native_int_types.push(IntType {
             bits: 8,
+            element_size: 8,
             signed: false,
             typ: u8_type,
         });
         native_int_types.push(IntType {
             bits: 8,
+            element_size: 8,
             signed: true,
             typ: i8_type,
         });
+
+        let mut new_native_int_types = vec![];
+        let int_types = [isize_type, usize_type, int_type, uint_type, long_type, ulong_type, ulonglong_type, sizet_type];
+        for int_type in int_types {
+            for native_int_type in &native_int_types {
+                if int_type.is_compatible_with(native_int_type.typ) {
+                    new_native_int_types.push(IntType {
+                        bits: native_int_type.bits,
+                        element_size: native_int_type.element_size,
+                        signed: native_int_type.signed,
+                        typ: int_type,
+                    });
+                    break;
+                }
+            }
+        }
+
+        native_int_types.extend(new_native_int_types);
 
         // TODO(antoyo): only have those assertions on x86_64.
         assert_eq!(isize_type.get_size(), i64_type.get_size());
@@ -250,6 +285,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             sizet_type,
 
             native_int_types,
+            non_native_int_types,
 
             float_type,
             double_type,
@@ -284,11 +320,41 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     pub fn supports_native_int_type(&self, typ: Type<'gcc>) -> bool {
         for native_type in &self.native_int_types {
-            if native_type.typ == typ {
+            if native_type.typ.is_compatible_with(typ) {
                 return true;
             }
         }
         false
+    }
+
+    pub fn int_type_size(&self, typ: Type<'gcc>) -> u8 {
+        for native_type in &self.native_int_types {
+            if native_type.typ.is_compatible_with(typ) {
+                return native_type.bits;
+            }
+        }
+        for non_native_type in &self.non_native_int_types {
+            if non_native_type.typ.is_compatible_with(typ) {
+                return non_native_type.bits;
+            }
+        }
+
+        panic!("{:?} not an integer type", typ);
+    }
+
+    pub fn int_type_element_size(&self, typ: Type<'gcc>) -> u8 {
+        for native_type in &self.native_int_types {
+            if native_type.typ.is_compatible_with(typ) {
+                return native_type.bits;
+            }
+        }
+        for non_native_type in &self.non_native_int_types {
+            if non_native_type.typ.is_compatible_with(typ) {
+                return non_native_type.bits;
+            }
+        }
+
+        panic!("{:?} not an integer type", typ);
     }
 
     pub fn sess(&self) -> &Session {
