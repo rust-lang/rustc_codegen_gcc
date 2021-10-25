@@ -1,0 +1,717 @@
+//! Module to handle integer operations.
+//! This module exists because some integer types are not supported on some gcc platforms, e.g.
+//! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
+
+use std::convert::{TryFrom, TryInto};
+
+use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
+use rustc_codegen_ssa::common::IntPredicate;
+use rustc_codegen_ssa::traits::{BackendTypes, OverflowOp};
+use rustc_middle::ty::Ty;
+
+use crate::builder::ToGccComp;
+use crate::{builder::Builder, common::{SignType, TypeReflection}, context::CodegenCx};
+
+impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
+    // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
+    pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(dest_typ) && self.supports_native_int_type_or_bool(value_type) {
+            self.cx.context.new_cast(None, value, dest_typ)
+        }
+        else if self.supports_native_int_type_or_bool(dest_typ) {
+            // FIXME: this is assuming a cast to a smaller type.
+            let dest_size = self.cx.get_int_type(dest_typ).bits as u32;
+            let int_type = self.cx.get_int_type(value_type);
+            let src_element_size = int_type.element_size as u32;
+            let mut casted_value = self.context.new_rvalue_zero(dest_typ);
+            let shift_value = self.context.new_rvalue_from_int(dest_typ, src_element_size as i32);
+            let mut current_index = 0;
+
+            let mut current_bit_count = 0;
+
+            while current_bit_count < dest_size {
+                let element = self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.cx.int_type, current_index));
+                casted_value = casted_value << shift_value;
+                casted_value = casted_value + self.context.new_cast(None, element.to_rvalue(), dest_typ);
+                current_bit_count += src_element_size;
+                current_index += 1;
+            }
+
+            casted_value
+        }
+        else if self.supports_native_int_type_or_bool(value_type) {
+            // FIXME: this is assuming the value fits in a single element of the destination type.
+            let dest_int_type = self.cx.get_int_type(dest_typ);
+            let dest_element_type = dest_int_type.typ.is_array().expect("get element type");
+            let dest_size = dest_int_type.bits;
+            let factor = (dest_size / dest_int_type.element_size) as usize;
+
+            let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
+            values[0] = self.context.new_cast(None, value, dest_element_type);
+            self.context.new_rvalue_from_array(None, dest_int_type.typ, &values)
+        }
+        else {
+            let int_type = self.cx.get_int_type(value_type);
+            let src_size = int_type.bits;
+            let src_element_size = int_type.element_size;
+            let dest_size = self.cx.get_int_type(dest_typ).bits;
+            // FIXME: the following is probably wrong. It should be dest_size /
+            // dest_int_type.element_size.
+            let factor = (dest_size / src_size) as usize;
+            let array_type = self.context.new_array_type(None, value_type, factor as i32);
+
+            if src_size < dest_size {
+                // TODO: initialize to -1 if negative.
+                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
+                // TODO: take endianness into account.
+                // FIXME: this is assuming that value is not an array and that it fits in one array
+                // element.
+                values[0] = value;
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                self.cx.context.new_bitcast(None, array_value, dest_typ)
+            }
+            else if src_size == dest_size {
+                self.cx.context.new_bitcast(None, value, dest_typ)
+            }
+            else {
+                // TODO: also implement casting from a native integer type.
+                let mut current_size = 0;
+                // TODO: take endianness into account.
+                let mut current_index = src_size / src_element_size - 1;
+                let mut values = vec![];
+                while current_size < dest_size {
+                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
+                    current_size += src_element_size;
+                    current_index -= 1;
+                }
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                // FIXME: that's not working since we can cast from u8 to struct u128.
+                self.cx.context.new_bitcast(None, array_value, dest_typ)
+            }
+        }
+    }
+
+    pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
+            a % b
+        }
+        else {
+            let a_int_type = self.get_int_type(a_type);
+            /*
+             * 32-bit unsigned %:  __umodsi3
+             * 32-bit signed %:    __modsi3
+             * 64-bit unsigned %:  __umoddi3
+             * 64-bit signed %:    __moddi3
+             * 128-bit unsigned %: __umodti3
+             * 128-bit signed %:   __modti3
+             */
+            let sign =
+                if a_int_type.signed {
+                    ""
+                }
+                else {
+                    "u"
+                };
+            let size =
+                match a_int_type.bits {
+                    32 => 's',
+                    64 => 'd',
+                    128 => 't',
+                    n => unimplemented!("modulo operation for integer of size {}", n),
+                };
+            let func_name = format!("__{}mod{}i3", sign, size);
+            let param_a = self.context.new_parameter(None, a_type, "n");
+            let param_b = self.context.new_parameter(None, b_type, "d");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
+    pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
+        let typ = a.get_type();
+        let operation =
+            if typ.is_bool() {
+                UnaryOp::LogicalNegate
+            }
+            else {
+                UnaryOp::BitwiseNegate
+            };
+        if self.supports_native_int_type_or_bool(typ) {
+            self.cx.context.new_unary_op(None, operation, typ, a)
+        }
+        else {
+            // TODO: use __negdi2 and __negti2 instead?
+            let int_type = self.cx.get_int_type(typ);
+            let src_size = int_type.bits;
+            let src_element_size = int_type.element_size;
+            let array_type = int_type.typ;
+            let element_type = array_type.is_array().expect("element type");
+            let element_count = src_size / src_element_size;
+            let mut values = vec![];
+            for i in 0..element_count {
+                let element_value = self.cx.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i as i32));
+                values.push(self.cx.context.new_unary_op(None, operation, element_type, element_value));
+            }
+            let array_type = self.context.new_array_type(None, element_type, element_count as i32);
+            self.cx.context.new_rvalue_from_array(None, array_type, &values)
+        }
+    }
+
+    pub fn gcc_neg(&self, a: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        if self.supports_native_int_type(a_type) {
+            self.cx.context.new_unary_op(None, UnaryOp::Minus, a.get_type(), a)
+        }
+        else {
+            /*
+             * 64-bit -:  __negdi2
+             * 128-bit -: __negti2
+             */
+            //a
+            let a_int_type = self.get_int_type(a_type);
+            let size =
+                match a_int_type.bits {
+                    64 => 'd',
+                    128 => 't',
+                    n => unimplemented!("unary negation for integer of size {}", n),
+                };
+            let func_name = format!("__neg{}i2", size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a], func_name, false);
+            self.context.new_call(None, func, &[a])
+        }
+    }
+
+    pub fn gcc_and(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            if a_type != b_type {
+                b = self.context.new_cast(None, b, a_type);
+            }
+            a & b
+        }
+        else {
+            let int_type = self.get_int_type(a_type);
+            let dest_size = int_type.bits as u32;
+            let dest_element_size = int_type.element_size as u32;
+            let factor = (dest_size / dest_element_size) as i32;
+            let mut values = vec![];
+            for i in 0..factor {
+                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.cx.int_type, i));
+                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.cx.int_type, i));
+                values.push(element_a.to_rvalue() & element_b.to_rvalue());
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+        }
+    }
+
+    pub fn gcc_lshr(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
+            // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
+            // TODO(antoyo): cast to unsigned to do a logical shift if that does not work.
+            if a_type.is_unsigned(self) && b_type.is_signed(self) {
+                let a = self.context.new_cast(None, a, b_type);
+                let result = a >> b;
+                self.context.new_cast(None, result, a_type)
+            }
+            else if a_type.is_signed(self) && b_type.is_unsigned(self) {
+                let b = self.context.new_cast(None, b, a_type);
+                a >> b
+            }
+            else {
+                a >> b
+            }
+        }
+        else {
+            /*
+             * 32-bit unsigned logical >>:   __lshrsi3
+             * 64-bit unsigned logical >>:   __lshrdi3
+             * 128-bit unsigned logical >>:  __lshrti3
+             */
+            let a_int_type = self.get_int_type(a_type);
+            let size =
+                match a_int_type.bits {
+                    32 => 's',
+                    64 => 'd',
+                    128 => 't',
+                    n => unimplemented!("right logical shift for integer of size {}", n),
+                };
+            // FIXME: shift requires hi() and hi() requires shift.
+            // TODO: implement shift by power of 2 manually?
+            let func_name = format!("__lshr{}i3", size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            // TODO: cast native int types to unsigned?
+            self.context.new_call(None, func, &[a, b])
+            /*
+             * 32-bit signed arithmetic >>:  __ashrsi3
+             * 64-bit signed arithmetic >>:  __ashrdi3
+             * 128-bit signed arithmetic >>: __ashrti3
+             */
+        }
+    }
+
+    pub fn gcc_add(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            // FIXME(antoyo): this should not be required.
+            // TODO(antoyo): explain why it is required for now.
+            if format!("{:?}", a_type) != format!("{:?}", b_type) {
+                b = self.context.new_cast(None, b, a_type);
+            }
+            a + b
+        }
+        else {
+            let int_type = self.get_int_type(a_type);
+            let func_name =
+                match (int_type.signed, int_type.bits) {
+                    (true, 32) => "__addvsi3", // FIXME: that's trapping on overflow.
+                    (true, 64) => "__addvdi3", // FIXME: that's trapping on overflow.
+                    (true, 128) => "__rust_i128_add",
+                    (false, 128) => "__rust_u128_add",
+                    (_, size) => unimplemented!("addition for integer of size {}", size),
+                };
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
+    pub fn gcc_mul(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            a * b
+        }
+        else {
+            /*
+             * 64-bit, signed: __muldi3
+             * 128-bit, signed: __multi3
+             */
+            let int_type = self.get_int_type(a_type);
+            let func_name =
+                match (int_type.signed, int_type.bits) {
+                    (true, 64) => "__muldi3",
+                    (true, 128) => "__multi3",
+                    (false, 128) => {
+                        // TODO: implement without overflow.
+                        let func_name = "__rust_u128_mulo";
+                        let param_a = self.context.new_parameter(None, a_type, "a");
+                        let param_b = self.context.new_parameter(None, b_type, "b");
+                        let product_field = self.context.new_field(None, a_type, "product");
+                        let overflow_field = self.context.new_field(None, self.bool_type, "overflow");
+                        let return_type = self.context.new_struct_type(None, "product_overflow", &[product_field, overflow_field]);
+                        let func = self.context.new_function(None, FunctionType::Extern, return_type.as_type(), &[param_a, param_b], func_name, false);
+                        return self.context.new_call(None, func, &[a, b])
+                            .access_field(None, product_field);
+                    },
+                    (_, size) => unimplemented!("multiplication for integer of size {}", size),
+                };
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
+    pub fn gcc_sub(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            if a.get_type() != b.get_type() {
+                b = self.context.new_cast(None, b, a.get_type());
+            }
+            a - b
+        }
+        else {
+            let int_type = self.get_int_type(a_type);
+            let func_name =
+                match (int_type.signed, int_type.bits) {
+                    (true, 32) => "__subvsi3", // FIXME: that's trapping on overflow.
+                    (true, 64) => "__subvdi3", // FIXME: that's trapping on overflow.
+                    (true, 128) => "__rust_i128_sub",
+                    (false, 128) => "__rust_u128_sub",
+                    (_, size) => unimplemented!("subtraction for integer of size {}", size),
+                };
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
+    pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            // TODO(antoyo): convert the arguments to unsigned?
+            a / b
+        }
+        else {
+            /*
+             * 32-bit, signed: __divsi3
+             * 32-bit, unsigned: __udivsi3
+             * 64-bit, signed: __divdi3
+             * 64-bit, unsigned: __udivdi3
+             * 128-bit, signed: __divti3
+             * 128-bit, unsigned: __udivti3
+             */
+            let int_type = self.get_int_type(a_type);
+            // TODO: check if the type is unsigned?
+            let size =
+                match int_type.bits {
+                    32 => 's',
+                    64 => 'd',
+                    128 => 't',
+                    size => unimplemented!("unsigned division not implemented for integers of size {}", size),
+                };
+            let func_name = format!("__udiv{}i3", size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
+    pub fn gcc_checked_binop(&self, oop: OverflowOp, typ: Ty<'_>, lhs: <Self as BackendTypes>::Value, rhs: <Self as BackendTypes>::Value) -> (<Self as BackendTypes>::Value, <Self as BackendTypes>::Value) {
+        use rustc_middle::ty::{Int, IntTy::*, Uint, UintTy::*};
+
+        let new_kind =
+            match typ.kind() {
+                Int(t @ Isize) => Int(t.normalize(self.tcx.sess.target.pointer_width)),
+                Uint(t @ Usize) => Uint(t.normalize(self.tcx.sess.target.pointer_width)),
+                t @ (Uint(_) | Int(_)) => t.clone(),
+                _ => panic!("tried to get overflow intrinsic for op applied to non-int type"),
+            };
+
+        // TODO(antoyo): remove duplication with intrinsic?
+        let name =
+            if self.supports_native_int_type(lhs.get_type()) {
+                match oop {
+                    OverflowOp::Add =>
+                        match new_kind {
+                            Int(I8) => "__builtin_add_overflow",
+                            Int(I16) => "__builtin_add_overflow",
+                            Int(I32) => "__builtin_sadd_overflow",
+                            Int(I64) => "__builtin_saddll_overflow",
+                            Int(I128) => "__builtin_add_overflow",
+
+                            Uint(U8) => "__builtin_add_overflow",
+                            Uint(U16) => "__builtin_add_overflow",
+                            Uint(U32) => "__builtin_uadd_overflow",
+                            Uint(U64) => "__builtin_uaddll_overflow",
+                            Uint(U128) => "__builtin_add_overflow",
+
+                            _ => unreachable!(),
+                        },
+                    OverflowOp::Sub =>
+                        match new_kind {
+                            Int(I8) => "__builtin_sub_overflow",
+                            Int(I16) => "__builtin_sub_overflow",
+                            Int(I32) => "__builtin_ssub_overflow",
+                            Int(I64) => "__builtin_ssubll_overflow",
+                            Int(I128) => "__builtin_sub_overflow",
+
+                            Uint(U8) => "__builtin_sub_overflow",
+                            Uint(U16) => "__builtin_sub_overflow",
+                            Uint(U32) => "__builtin_usub_overflow",
+                            Uint(U64) => "__builtin_usubll_overflow",
+                            Uint(U128) => "__builtin_sub_overflow",
+
+                            _ => unreachable!(),
+                        },
+                    OverflowOp::Mul =>
+                        match new_kind {
+                            Int(I8) => "__builtin_mul_overflow",
+                            Int(I16) => "__builtin_mul_overflow",
+                            Int(I32) => "__builtin_smul_overflow",
+                            Int(I64) => "__builtin_smulll_overflow",
+                            Int(I128) => "__builtin_mul_overflow",
+
+                            Uint(U8) => "__builtin_mul_overflow",
+                            Uint(U16) => "__builtin_mul_overflow",
+                            Uint(U32) => "__builtin_umul_overflow",
+                            Uint(U64) => "__builtin_umulll_overflow",
+                            Uint(U128) => "__builtin_mul_overflow",
+
+                            _ => unreachable!(),
+                        },
+                }
+            }
+            else {
+                match new_kind {
+                    Int(I128) | Uint(U128) => {
+                        let func_name =
+                            match oop {
+                                OverflowOp::Add =>
+                                    match new_kind {
+                                        Int(I128) => "__rust_i128_addo",
+                                        Uint(U128) => "__rust_u128_addo",
+                                        _ => unreachable!(),
+                                    },
+                                OverflowOp::Sub =>
+                                    match new_kind {
+                                        Int(I128) => "__rust_i128_subo",
+                                        Uint(U128) => "__rust_u128_subo",
+                                        _ => unreachable!(),
+                                    },
+                                OverflowOp::Mul =>
+                                    match new_kind {
+                                        Int(I128) => "__rust_i128_mulo", // TODO(antoyo): use __muloti4d instead?
+                                        Uint(U128) => "__rust_u128_mulo",
+                                        _ => unreachable!(),
+                                    },
+                            };
+                        let a_type = lhs.get_type();
+                        let b_type = rhs.get_type();
+                        let param_a = self.context.new_parameter(None, a_type, "a");
+                        let param_b = self.context.new_parameter(None, b_type, "b");
+                        let result_field = self.context.new_field(None, a_type, "result");
+                        let overflow_field = self.context.new_field(None, self.bool_type, "overflow");
+                        let return_type = self.context.new_struct_type(None, "result_overflow", &[result_field, overflow_field]);
+                        let func = self.context.new_function(None, FunctionType::Extern, return_type.as_type(), &[param_a, param_b], func_name, false);
+                        let result = self.context.new_call(None, func, &[lhs, rhs]);
+                        let overflow = result.access_field(None, overflow_field);
+                        let int_result = result.access_field(None, result_field);
+                        return (int_result, overflow);
+                    },
+                    _ => {
+                        match oop {
+                            OverflowOp::Mul =>
+                                match new_kind {
+                                    Int(I32) => "__mulosi4",
+                                    Int(I64) => "__mulodi4",
+                                    _ => unreachable!(),
+                                },
+                            _ => unimplemented!("overflow operation for {:?}", new_kind),
+                        }
+                    }
+                }
+            };
+
+        let intrinsic = self.context.get_builtin_function(&name);
+        let res = self.current_func()
+            // TODO(antoyo): is it correct to use rhs type instead of the parameter typ?
+            .new_local(None, rhs.get_type(), "binopResult")
+            .get_address(None);
+        let overflow = self.overflow_call(intrinsic, &[lhs, rhs, res], None);
+        (res.dereference(None).to_rvalue(), overflow)
+    }
+
+    pub fn gcc_icmp(&self, op: IntPredicate, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = lhs.get_type();
+        let b_type = rhs.get_type();
+        if self.is_non_native_int_type(a_type) || self.is_non_native_int_type(b_type) {
+            let a_int_type = self.get_int_type(a_type);
+            let sign =
+                if a_int_type.signed {
+                    ""
+                }
+                else {
+                    "u"
+                };
+            let size =
+                match a_int_type.bits {
+                    64 => 'd',
+                    128 => 't',
+                    size => unimplemented!("icmp not implemented for integers of size {}", size),
+                };
+            let func_name = format!("__{}cmp{}i2", sign, size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, self.int_type, &[param_a, param_b], func_name, false);
+            let cmp = self.context.new_call(None, func, &[lhs, rhs]);
+            let (op, limit) =
+                match op {
+                    IntPredicate::IntEQ => {
+                        return self.context.new_comparison(None, ComparisonOp::Equals, cmp, self.context.new_rvalue_one(self.int_type));
+                    },
+                    IntPredicate::IntNE => {
+                        return self.context.new_comparison(None, ComparisonOp::NotEquals, cmp, self.context.new_rvalue_one(self.int_type));
+                    },
+                    IntPredicate::IntUGT => (ComparisonOp::Equals, 2),
+                    IntPredicate::IntUGE => (ComparisonOp::GreaterThanEquals, 1),
+                    IntPredicate::IntULT => (ComparisonOp::Equals, 0),
+                    IntPredicate::IntULE => (ComparisonOp::LessThanEquals, 1),
+                    IntPredicate::IntSGT => (ComparisonOp::Equals, 2),
+                    IntPredicate::IntSGE => (ComparisonOp::GreaterThanEquals, 1),
+                    IntPredicate::IntSLT => (ComparisonOp::Equals, 0),
+                    IntPredicate::IntSLE => (ComparisonOp::LessThanEquals, 1),
+                };
+            self.context.new_comparison(None, op, cmp, self.context.new_rvalue_from_int(self.int_type, limit))
+        }
+        else {
+            self.context.new_comparison(None, op.to_gcc_comparison(), lhs, rhs)
+        }
+    }
+}
+
+impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
+    pub fn gcc_int(&self, typ: Type<'gcc>, mut int: i64) -> RValue<'gcc> {
+        if self.supports_native_int_type_or_bool(typ) {
+            self.context.new_rvalue_from_long(typ, i64::try_from(int).expect("i64::try_from"))
+        }
+        else {
+            // TODO: set the sign.
+            let int_type = self.get_int_type(typ);
+            let dest_size = int_type.bits as u32;
+            let dest_element_size = int_type.element_size as u32;
+            let mask = 2_i64.wrapping_pow(dest_element_size).wrapping_sub(1);
+            let native_int_type = self.get_unsigned_int_type_by_size(dest_element_size as u8).typ;
+            let mut bit_set = 0;
+            let mut values = vec![];
+            // FIXME: if dest_element_size < dest_size, this loop is infinite.
+            while bit_set /*% dest_element_size*/ < dest_size {
+                let value = int & mask;
+                int = int.overflowing_shr(dest_size).0; // TODO: check if that overflows and if it does, check that we're done?
+                //int >>= dest_size;
+                values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
+                bit_set += dest_element_size;
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+        }
+    }
+
+    pub fn gcc_uint(&self, typ: Type<'gcc>, mut int: u64) -> RValue<'gcc> {
+        if self.supports_native_int_type(typ) {
+            self.context.new_rvalue_from_long(typ, u64::try_from(int).expect("u64::try_from") as i64)
+        }
+        else {
+            let int_type = self.get_int_type(typ);
+            let dest_size = int_type.bits as u32;
+            let dest_element_size = int_type.element_size as u32;
+            let mask = 2_u64.wrapping_pow(dest_element_size).wrapping_sub(1);
+            let native_int_type = self.get_unsigned_int_type_by_size(dest_element_size as u8).typ;
+            let mut bit_set = 0;
+            let mut values = vec![];
+            // FIXME: if dest_element_size < dest_size, this loop is infinite.
+            while bit_set /*% dest_element_size*/ < dest_size {
+                let value = int & mask;
+                int = int.overflowing_shr(dest_size).0; // TODO: check if that overflows and if it does, check that we're done?
+                //int >>= dest_size;
+                values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
+                bit_set += dest_element_size;
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+        }
+    }
+
+    pub fn gcc_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
+        if num >> 64 != 0 {
+            // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
+            let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
+            let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
+
+            let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+            let shift = self.gcc_shl(high, sixty_four);
+            self.gcc_or(shift, self.context.new_cast(None, low, typ))
+        }
+        else if typ.is_i128(self) {
+            let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
+            // FIXME: that cast is probably going to fail for non-native types.
+            self.context.new_cast(None, num, typ)
+        }
+        else {
+            self.gcc_uint(typ, num as u64)
+        }
+    }
+
+    pub fn gcc_zero(&self, typ: Type<'gcc>) -> RValue<'gcc> {
+        if self.supports_native_int_type_or_bool(typ) {
+            self.context.new_rvalue_zero(typ)
+        }
+        else {
+            let int_type = self.get_int_type(typ);
+            let size = int_type.bits;
+            let factor = (size / int_type.element_size) as usize;
+            let element_type = int_type.typ.is_array().expect("get element type");
+            let zero = self.context.new_rvalue_zero(element_type);
+            let zeroes = vec![zero; factor];
+            self.context.new_rvalue_from_array(None, int_type.typ, &zeroes)
+        }
+    }
+
+    pub fn gcc_int_width(&self, typ: Type<'gcc>) -> u64 {
+        if self.supports_native_int_type_or_bool(typ) {
+            typ.get_size() as u64 * 8
+        }
+        else {
+            let int_type = self.get_int_type(typ);
+            int_type.bits as u64
+        }
+    }
+
+    pub fn gcc_or(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            if a.get_type() != b.get_type() {
+                b = self.context.new_cast(None, b, a.get_type());
+            }
+            a | b
+        }
+        else {
+            let int_type = self.get_int_type(a_type);
+            let dest_size = int_type.bits as u32;
+            let dest_element_size = int_type.element_size as u32;
+            let factor = (dest_size / dest_element_size) as i32;
+            let mut values = vec![];
+            for i in 0..factor {
+                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i));
+                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.int_type, i));
+                values.push(element_a.to_rvalue() | element_b.to_rvalue());
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+        }
+    }
+
+    pub fn gcc_shl(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
+            // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
+            if a_type.is_unsigned(self) && b_type.is_signed(self) {
+                let a = self.context.new_cast(None, a, b_type);
+                let result = a << b;
+                self.context.new_cast(None, result, a_type)
+            }
+            else if a_type.is_signed(self) && b_type.is_unsigned(self) {
+                let b = self.context.new_cast(None, b, a_type);
+                a << b
+            }
+            else {
+                a << b
+            }
+        }
+        else {
+            /*
+             * 32-bit unsigned <<:  __ashlsi3
+             * 64-bit unsigned <<:  __ashldi3
+             * 128-bit unsigned <<: __ashlti3
+             */
+            let a_int_type = self.get_int_type(a_type);
+            let size =
+                match a_int_type.bits {
+                    32 => 's',
+                    64 => 'd',
+                    128 => 't',
+                    n => unimplemented!("left shift for integer of size {}", n),
+                };
+            let func_name = format!("__ashl{}i3", size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            // TODO: cast native int types to unsigned?
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+}

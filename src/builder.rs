@@ -309,7 +309,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn overflow_call(&mut self, func: Function<'gcc>, args: &[RValue<'gcc>], _funclet: Option<&Funclet>) -> RValue<'gcc> {
+    pub fn overflow_call(&self, func: Function<'gcc>, args: &[RValue<'gcc>], _funclet: Option<&Funclet>) -> RValue<'gcc> {
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local.
         let return_type = self.context.new_type::<bool>();
@@ -468,23 +468,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn add(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME(antoyo): this should not be required.
-        if format!("{:?}", a.get_type()) != format!("{:?}", b.get_type()) {
-            b = self.context.new_cast(None, b, a.get_type());
-        }
-        a + b
+    fn add(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.gcc_add(a, b)
     }
 
     fn fadd(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         a + b
     }
 
-    fn sub(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        if a.get_type() != b.get_type() {
-            b = self.context.new_cast(None, b, a.get_type());
-        }
-        a - b
+    fn sub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.gcc_sub(a, b)
     }
 
     fn fsub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -492,7 +485,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn mul(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        a * b
+        self.gcc_mul(a, b)
     }
 
     fn fmul(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -500,8 +493,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn udiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO(antoyo): convert the arguments to unsigned?
-        a / b
+        self.gcc_udiv(a, b)
     }
 
     fn exactudiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -529,7 +521,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn urem(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        a % b
+        self.gcc_urem(a, b)
     }
 
     fn srem(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -549,43 +541,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn shl(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if a_type.is_unsigned(self) && b_type.is_signed(self) {
-            let a = self.context.new_cast(None, a, b_type);
-            let result = a << b;
-            self.context.new_cast(None, result, a_type)
-        }
-        else if a_type.is_signed(self) && b_type.is_unsigned(self) {
-            let b = self.context.new_cast(None, b, a_type);
-            a << b
-        }
-        else {
-            a << b
-        }
+        self.cx.gcc_shl(a, b)
     }
 
     fn lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
-        // TODO(antoyo): cast to unsigned to do a logical shift if that does not work.
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if a_type.is_unsigned(self) && b_type.is_signed(self) {
-            let a = self.context.new_cast(None, a, b_type);
-            let result = a >> b;
-            self.context.new_cast(None, result, a_type)
-        }
-        else if a_type.is_signed(self) && b_type.is_unsigned(self) {
-            let b = self.context.new_cast(None, b, a_type);
-            a >> b
-        }
-        else {
-            a >> b
-        }
+        self.gcc_lshr(a, b)
     }
 
     fn ashr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: implement for unsupported integer types.
         // TODO(antoyo): check whether behavior is an arithmetic shift for >> .
         // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
         let a_type = a.get_type();
@@ -604,18 +568,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn and(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        if a.get_type() != b.get_type() {
-            b = self.context.new_cast(None, b, a.get_type());
-        }
-        a & b
+    fn and(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.gcc_and(a, b)
     }
 
-    fn or(&mut self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        if a.get_type() != b.get_type() {
-            b = self.context.new_cast(None, b, a.get_type());
-        }
-        a | b
+    fn or(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.cx.gcc_or(a, b)
     }
 
     fn xor(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -623,7 +581,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn neg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
-        self.cx.context.new_unary_op(None, UnaryOp::Minus, a.get_type(), a)
+        self.gcc_neg(a)
     }
 
     fn fneg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
@@ -631,14 +589,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn not(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
-        let operation =
-            if a.get_type().is_bool() {
-                UnaryOp::LogicalNegate
-            }
-            else {
-                UnaryOp::BitwiseNegate
-            };
-        self.cx.context.new_unary_op(None, operation, a.get_type(), a)
+        self.gcc_not(a)
     }
 
     fn unchecked_sadd(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -687,76 +638,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn checked_binop(&mut self, oop: OverflowOp, typ: Ty<'_>, lhs: Self::Value, rhs: Self::Value) -> (Self::Value, Self::Value) {
-        use rustc_middle::ty::{Int, IntTy::*, Uint, UintTy::*};
-
-        let new_kind =
-            match typ.kind() {
-                Int(t @ Isize) => Int(t.normalize(self.tcx.sess.target.pointer_width)),
-                Uint(t @ Usize) => Uint(t.normalize(self.tcx.sess.target.pointer_width)),
-                t @ (Uint(_) | Int(_)) => t.clone(),
-                _ => panic!("tried to get overflow intrinsic for op applied to non-int type"),
-            };
-
-        // TODO(antoyo): remove duplication with intrinsic?
-        let name =
-            match oop {
-                OverflowOp::Add =>
-                    match new_kind {
-                        Int(I8) => "__builtin_add_overflow",
-                        Int(I16) => "__builtin_add_overflow",
-                        Int(I32) => "__builtin_sadd_overflow",
-                        Int(I64) => "__builtin_saddll_overflow",
-                        Int(I128) => "__builtin_add_overflow",
-
-                        Uint(U8) => "__builtin_add_overflow",
-                        Uint(U16) => "__builtin_add_overflow",
-                        Uint(U32) => "__builtin_uadd_overflow",
-                        Uint(U64) => "__builtin_uaddll_overflow",
-                        Uint(U128) => "__builtin_add_overflow",
-
-                        _ => unreachable!(),
-                    },
-                OverflowOp::Sub =>
-                    match new_kind {
-                        Int(I8) => "__builtin_sub_overflow",
-                        Int(I16) => "__builtin_sub_overflow",
-                        Int(I32) => "__builtin_ssub_overflow",
-                        Int(I64) => "__builtin_ssubll_overflow",
-                        Int(I128) => "__builtin_sub_overflow",
-
-                        Uint(U8) => "__builtin_sub_overflow",
-                        Uint(U16) => "__builtin_sub_overflow",
-                        Uint(U32) => "__builtin_usub_overflow",
-                        Uint(U64) => "__builtin_usubll_overflow",
-                        Uint(U128) => "__builtin_sub_overflow",
-
-                        _ => unreachable!(),
-                    },
-                OverflowOp::Mul =>
-                    match new_kind {
-                        Int(I8) => "__builtin_mul_overflow",
-                        Int(I16) => "__builtin_mul_overflow",
-                        Int(I32) => "__builtin_smul_overflow",
-                        Int(I64) => "__builtin_smulll_overflow",
-                        Int(I128) => "__builtin_mul_overflow",
-
-                        Uint(U8) => "__builtin_mul_overflow",
-                        Uint(U16) => "__builtin_mul_overflow",
-                        Uint(U32) => "__builtin_umul_overflow",
-                        Uint(U64) => "__builtin_umulll_overflow",
-                        Uint(U128) => "__builtin_mul_overflow",
-
-                        _ => unreachable!(),
-                    },
-            };
-
-        let intrinsic = self.context.get_builtin_function(&name);
-        let res = self.current_func()
-            // TODO(antoyo): is it correct to use rhs type instead of the parameter typ?
-            .new_local(None, rhs.get_type(), "binopResult")
-            .get_address(None);
-        let overflow = self.overflow_call(intrinsic, &[lhs, rhs, res], None);
-        (res.dereference(None).to_rvalue(), overflow)
+        self.gcc_checked_binop(oop, typ, lhs, rhs)
     }
 
     fn alloca(&mut self, ty: Type<'gcc>, align: Align) -> RValue<'gcc> {
@@ -1054,40 +936,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn intcast(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>, _is_signed: bool) -> RValue<'gcc> {
         // NOTE: is_signed is for value, not dest_typ.
-        if self.supports_native_int_type(dest_typ) && self.supports_native_int_type(value.get_type()) {
-            self.cx.context.new_cast(None, value, dest_typ)
-        }
-        else {
-            let value_type = value.get_type();
-            let src_size = self.cx.int_type_size(value_type);
-            let src_element_size = self.cx.int_type_element_size(value_type);
-            let dest_size = self.cx.int_type_size(dest_typ);
-            let factor = (dest_size / src_size) as usize;
-            let array_type = self.context.new_array_type(None, value_type, factor as i32);
-
-            if src_size < dest_size {
-                // TODO: initialize to -1 if negative.
-                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
-                // TODO: take endianness into account.
-                values[factor - 1] = value;
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
-                self.cx.context.new_bitcast(None, array_value, dest_typ)
-            }
-            else {
-                let mut current_size = 0;
-                // TODO: take endianness into account.
-                let mut current_index = src_size / src_element_size - 1;
-                let mut values = vec![];
-                while current_size < dest_size {
-                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
-                    current_size += src_element_size;
-                    current_index -= 1;
-                }
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
-                // FIXME: that's not working since we can cast from u8 to struct u128.
-                self.cx.context.new_bitcast(None, array_value, dest_typ)
-            }
-        }
+        self.gcc_int_cast(value, dest_typ)
     }
 
     fn pointercast(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
@@ -1109,6 +958,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     /* Comparisons */
     fn icmp(&mut self, op: IntPredicate, mut lhs: RValue<'gcc>, mut rhs: RValue<'gcc>) -> RValue<'gcc> {
+        // FIXME: most likely wrong for integers of unsupported types.
         let left_type = lhs.get_type();
         let right_type = rhs.get_type();
         if left_type != right_type {
@@ -1122,7 +972,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
                 rhs = self.context.new_cast(None, rhs, left_type);
             }
         }
-        self.context.new_comparison(None, op.to_gcc_comparison(), lhs, rhs)
+        self.gcc_icmp(op, lhs, rhs)
     }
 
     fn fcmp(&mut self, op: RealPredicate, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
@@ -1429,7 +1279,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             // Fix the code in codegen_ssa::base::from_immediate.
             return value;
         }
-        self.context.new_cast(None, value, dest_typ)
+        self.gcc_int_cast(value, dest_typ)
     }
 
     fn cx(&self) -> &CodegenCx<'gcc, 'tcx> {
@@ -1503,7 +1353,7 @@ impl<'tcx> HasTargetSpec for Builder<'_, '_, 'tcx> {
     }
 }
 
-trait ToGccComp {
+pub trait ToGccComp {
     fn to_gcc_comparison(&self) -> ComparisonOp;
 }
 

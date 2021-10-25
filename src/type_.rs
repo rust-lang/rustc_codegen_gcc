@@ -118,7 +118,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn type_kind(&self, typ: Type<'gcc>) -> TypeKind {
-        if typ.is_integral() {
+        if self.is_int_type_or_bool(typ) {
             TypeKind::Integer
         }
         else if typ.dyncast_vector().is_some() {
@@ -174,7 +174,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn int_width(&self, typ: Type<'gcc>) -> u64 {
-        typ.get_size() as u64 * 8
+        self.gcc_int_width(typ)
     }
 
     fn val_ty(&self, value: RValue<'gcc>) -> Type<'gcc> {

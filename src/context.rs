@@ -26,11 +26,12 @@ pub struct FuncSig<'gcc> {
     pub return_type: Type<'gcc>,
 }
 
+#[derive(Clone)]
 pub struct IntType<'gcc> {
-    bits: u8,
-    element_size: u8,
-    typ: Type<'gcc>,
-    signed: bool,
+    pub bits: u8,
+    pub element_size: u8,
+    pub typ: Type<'gcc>,
+    pub signed: bool,
 }
 
 pub struct CodegenCx<'gcc, 'tcx> {
@@ -162,6 +163,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         let mut native_int_types = vec![];
 
+        native_int_types.push(IntType {
+            bits: 128,
+            element_size: 128,
+            signed: true,
+            typ: i128_type,
+        });
         native_int_types.push(IntType {
             bits: 64,
             element_size: 64,
@@ -327,34 +334,54 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         false
     }
 
-    pub fn int_type_size(&self, typ: Type<'gcc>) -> u8 {
+    pub fn is_non_native_int_type(&self, typ: Type<'gcc>) -> bool {
+        for non_native_type in &self.non_native_int_types {
+            if non_native_type.typ.is_compatible_with(typ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn supports_native_int_type_or_bool(&self, typ: Type<'gcc>) -> bool {
+        self.supports_native_int_type(typ) || typ == self.bool_type
+    }
+
+    pub fn is_int_type_or_bool(&self, typ: Type<'gcc>) -> bool {
+        if self.supports_native_int_type(typ) || typ == self.bool_type {
+            return true;
+        }
+        for non_native_type in &self.non_native_int_types {
+            if non_native_type.typ.is_compatible_with(typ) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_int_type(&self, typ: Type<'gcc>) -> IntType<'gcc> {
         for native_type in &self.native_int_types {
             if native_type.typ.is_compatible_with(typ) {
-                return native_type.bits;
+                return native_type.clone();
             }
         }
         for non_native_type in &self.non_native_int_types {
             if non_native_type.typ.is_compatible_with(typ) {
-                return non_native_type.bits;
+                return non_native_type.clone();
             }
         }
 
         panic!("{:?} not an integer type", typ);
     }
 
-    pub fn int_type_element_size(&self, typ: Type<'gcc>) -> u8 {
+    pub fn get_unsigned_int_type_by_size(&self, size: u8) -> IntType<'gcc> {
         for native_type in &self.native_int_types {
-            if native_type.typ.is_compatible_with(typ) {
-                return native_type.bits;
-            }
-        }
-        for non_native_type in &self.non_native_int_types {
-            if non_native_type.typ.is_compatible_with(typ) {
-                return non_native_type.bits;
+            if native_type.bits == size && !native_type.signed {
+                return native_type.clone();
             }
         }
 
-        panic!("{:?} not an integer type", typ);
+        panic!("no native type of size {} found", size);
     }
 
     pub fn sess(&self) -> &Session {
