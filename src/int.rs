@@ -13,85 +13,6 @@ use crate::builder::ToGccComp;
 use crate::{builder::Builder, common::{SignType, TypeReflection}, context::CodegenCx};
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
-    // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
-    pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
-        let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(dest_typ) && self.supports_native_int_type_or_bool(value_type) {
-            self.cx.context.new_cast(None, value, dest_typ)
-        }
-        else if self.supports_native_int_type_or_bool(dest_typ) {
-            // FIXME: this is assuming a cast to a smaller type.
-            let dest_size = self.cx.get_int_type(dest_typ).bits as u32;
-            let int_type = self.cx.get_int_type(value_type);
-            let src_element_size = int_type.element_size as u32;
-            let mut casted_value = self.context.new_rvalue_zero(dest_typ);
-            let shift_value = self.context.new_rvalue_from_int(dest_typ, src_element_size as i32);
-            let mut current_index = 0;
-
-            let mut current_bit_count = 0;
-
-            while current_bit_count < dest_size {
-                let element = self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.cx.int_type, current_index));
-                casted_value = casted_value << shift_value;
-                casted_value = casted_value + self.context.new_cast(None, element.to_rvalue(), dest_typ);
-                current_bit_count += src_element_size;
-                current_index += 1;
-            }
-
-            casted_value
-        }
-        else if self.supports_native_int_type_or_bool(value_type) {
-            // FIXME: this is assuming the value fits in a single element of the destination type.
-            let dest_int_type = self.cx.get_int_type(dest_typ);
-            let dest_element_type = dest_int_type.typ.is_array().expect("get element type");
-            let dest_size = dest_int_type.bits;
-            let factor = (dest_size / dest_int_type.element_size) as usize;
-
-            let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
-            values[0] = self.context.new_cast(None, value, dest_element_type);
-            self.context.new_rvalue_from_array(None, dest_int_type.typ, &values)
-        }
-        else {
-            let int_type = self.cx.get_int_type(value_type);
-            let src_size = int_type.bits;
-            let src_element_size = int_type.element_size;
-            let dest_size = self.cx.get_int_type(dest_typ).bits;
-            // FIXME: the following is probably wrong. It should be dest_size /
-            // dest_int_type.element_size.
-            let factor = (dest_size / src_size) as usize;
-            let array_type = self.context.new_array_type(None, value_type, factor as i32);
-
-            if src_size < dest_size {
-                // TODO: initialize to -1 if negative.
-                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
-                // TODO: take endianness into account.
-                // FIXME: this is assuming that value is not an array and that it fits in one array
-                // element.
-                values[0] = value;
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
-                self.cx.context.new_bitcast(None, array_value, dest_typ)
-            }
-            else if src_size == dest_size {
-                self.cx.context.new_bitcast(None, value, dest_typ)
-            }
-            else {
-                // TODO: also implement casting from a native integer type.
-                let mut current_size = 0;
-                // TODO: take endianness into account.
-                let mut current_index = src_size / src_element_size - 1;
-                let mut values = vec![];
-                while current_size < dest_size {
-                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
-                    current_size += src_element_size;
-                    current_index -= 1;
-                }
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
-                // FIXME: that's not working since we can cast from u8 to struct u128.
-                self.cx.context.new_bitcast(None, array_value, dest_typ)
-            }
-        }
-    }
-
     pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
@@ -229,32 +150,29 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
         }
         else {
-            /*
-             * 32-bit unsigned logical >>:   __lshrsi3
-             * 64-bit unsigned logical >>:   __lshrdi3
-             * 128-bit unsigned logical >>:  __lshrti3
-             */
-            let a_int_type = self.get_int_type(a_type);
-            let size =
-                match a_int_type.bits {
-                    32 => 's',
-                    64 => 'd',
-                    128 => 't',
-                    n => unimplemented!("right logical shift for integer of size {}", n),
-                };
-            // FIXME: shift requires hi() and hi() requires shift.
-            // TODO: implement shift by power of 2 manually?
-            let func_name = format!("__lshr{}i3", size);
-            let param_a = self.context.new_parameter(None, a_type, "a");
-            let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
-            // TODO: cast native int types to unsigned?
-            self.context.new_call(None, func, &[a, b])
-            /*
-             * 32-bit signed arithmetic >>:  __ashrsi3
-             * 64-bit signed arithmetic >>:  __ashrdi3
-             * 128-bit signed arithmetic >>: __ashrti3
-             */
+            // NOTE: we cannot use the lshr builtin because it's calling hi() (to get the most
+            // significant half of the number) which uses lshr.
+
+            let int_type = self.cx.get_int_type(a_type);
+            let size = int_type.bits;
+            let element_size = int_type.element_size;
+            let element_type = int_type.typ.is_array().expect("element type");
+
+            let casted_b = self.gcc_int_cast(b, element_type);
+            let reverse_shift = self.context.new_rvalue_from_int(element_type, size as i32) - casted_b;
+
+            // TODO: take endianness into account.
+            let mut current_index = (size / element_size - 1) as i32;
+            let mut overflow = self.context.new_rvalue_zero(element_type);
+            let mut values = vec![];
+            while current_index >= 0 {
+                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
+                let new_element = current_element >> casted_b | overflow;
+                values.push(new_element);
+                current_index -= 1;
+                overflow = current_element << reverse_shift;
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
         }
     }
 
@@ -693,25 +611,106 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             }
         }
         else {
-            /*
-             * 32-bit unsigned <<:  __ashlsi3
-             * 64-bit unsigned <<:  __ashldi3
-             * 128-bit unsigned <<: __ashlti3
-             */
-            let a_int_type = self.get_int_type(a_type);
-            let size =
-                match a_int_type.bits {
-                    32 => 's',
-                    64 => 'd',
-                    128 => 't',
-                    n => unimplemented!("left shift for integer of size {}", n),
-                };
-            let func_name = format!("__ashl{}i3", size);
-            let param_a = self.context.new_parameter(None, a_type, "a");
-            let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
-            // TODO: cast native int types to unsigned?
-            self.context.new_call(None, func, &[a, b])
+            // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.
+
+            let int_type = self.get_int_type(a_type);
+            let size = int_type.bits;
+            let element_size = int_type.element_size;
+            let element_type = int_type.typ.is_array().expect("element type");
+
+            let casted_b = self.gcc_int_cast(b, element_type);
+            let reverse_shift = self.context.new_rvalue_from_int(element_type, size as i32) - casted_b;
+
+            // TODO: take endianness into account.
+            let end = (size / element_size) as i32;
+            let mut overflow = self.context.new_rvalue_zero(element_type);
+            let mut values = vec![];
+            for current_index in 0..end {
+                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
+                let new_element = current_element << casted_b | overflow;
+                values.push(new_element);
+                overflow = current_element >> reverse_shift;
+            }
+            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+        }
+    }
+
+    // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
+    pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(dest_typ) && self.supports_native_int_type_or_bool(value_type) {
+            self.context.new_cast(None, value, dest_typ)
+        }
+        else if self.supports_native_int_type_or_bool(dest_typ) {
+            // FIXME: this is assuming a cast to a smaller type.
+            let dest_size = self.get_int_type(dest_typ).bits as u32;
+            let int_type = self.get_int_type(value_type);
+            let src_element_size = int_type.element_size as u32;
+            let mut casted_value = self.context.new_rvalue_zero(dest_typ);
+            let shift_value = self.context.new_rvalue_from_int(dest_typ, src_element_size as i32);
+            let mut current_index = 0;
+
+            let mut current_bit_count = 0;
+
+            while current_bit_count < dest_size {
+                let element = self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index));
+                casted_value = casted_value << shift_value;
+                casted_value = casted_value + self.context.new_cast(None, element.to_rvalue(), dest_typ);
+                current_bit_count += src_element_size;
+                current_index += 1;
+            }
+
+            casted_value
+        }
+        else if self.supports_native_int_type_or_bool(value_type) {
+            // FIXME: this is assuming the value fits in a single element of the destination type.
+            let dest_int_type = self.get_int_type(dest_typ);
+            let dest_element_type = dest_int_type.typ.is_array().expect("get element type");
+            let dest_size = dest_int_type.bits;
+            let factor = (dest_size / dest_int_type.element_size) as usize;
+
+            let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
+            values[0] = self.context.new_cast(None, value, dest_element_type);
+            self.context.new_rvalue_from_array(None, dest_int_type.typ, &values)
+        }
+        else {
+            let int_type = self.get_int_type(value_type);
+            let src_size = int_type.bits;
+            let src_element_size = int_type.element_size;
+            let dest_size = self.get_int_type(dest_typ).bits;
+            // FIXME: the following is probably wrong. It should be dest_size /
+            // dest_int_type.element_size.
+            let factor = (dest_size / src_size) as usize;
+            let array_type = self.context.new_array_type(None, value_type, factor as i32);
+
+            if src_size < dest_size {
+                // TODO: initialize to -1 if negative.
+                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
+                // TODO: take endianness into account.
+                // FIXME: this is assuming that value is not an array and that it fits in one array
+                // element.
+                values[0] = value;
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                self.context.new_bitcast(None, array_value, dest_typ)
+            }
+            else if src_size == dest_size {
+                self.context.new_bitcast(None, value, dest_typ)
+            }
+            else {
+                // TODO: also implement casting from a native integer type.
+                let mut current_size = 0;
+                // TODO: take endianness into account.
+                let mut current_index = src_size / src_element_size - 1;
+                let mut values = vec![];
+                while current_size < dest_size {
+                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
+                    current_size += src_element_size;
+                    current_index -= 1;
+                }
+                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                // FIXME: that's not working since we can cast from u8 to struct u128.
+                self.context.new_bitcast(None, array_value, dest_typ)
+            }
         }
     }
 }
