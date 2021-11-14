@@ -137,7 +137,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u32_type = context.new_c_type(CType::UInt32t);
         let u64_type = context.new_c_type(CType::UInt64t);
 
-        let u128_type = context.new_array_type(None, u64_type, 2);
+        let u128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
         //let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
 
         let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());

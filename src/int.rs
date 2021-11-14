@@ -159,7 +159,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let element_type = int_type.typ.is_array().expect("element type");
 
             let casted_b = self.gcc_int_cast(b, element_type);
-            let reverse_shift = self.context.new_rvalue_from_int(element_type, size as i32) - casted_b;
+            // FIXME: the reverse shift won't work if shifting for more than element_size.
+            let reverse_shift = self.context.new_rvalue_from_int(element_type, element_size as i32) - casted_b;
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
@@ -172,6 +173,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 current_index -= 1;
                 overflow = current_element << reverse_shift;
             }
+            // TODO: do I need to use overflow here?
+            // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
+            // element at the start.
+            values.reverse();
             self.context.new_rvalue_from_array(None, int_type.typ, &values)
         }
     }
@@ -619,7 +624,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let element_type = int_type.typ.is_array().expect("element type");
 
             let casted_b = self.gcc_int_cast(b, element_type);
-            let reverse_shift = self.context.new_rvalue_from_int(element_type, size as i32) - casted_b;
+            // FIXME: the reverse shift won't work if shifting for more than element_size.
+            let reverse_shift = self.context.new_rvalue_from_int(element_type, element_size as i32) - casted_b;
 
             // TODO: take endianness into account.
             let end = (size / element_size) as i32;
@@ -707,6 +713,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     current_size += src_element_size;
                     current_index -= 1;
                 }
+                values.reverse(); // TODO: check that doing this is correct.
                 let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
                 // FIXME: that's not working since we can cast from u8 to struct u128.
                 self.context.new_bitcast(None, array_value, dest_typ)
