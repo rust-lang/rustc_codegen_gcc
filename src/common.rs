@@ -120,15 +120,6 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn const_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
-        // TODO: seems like this hack is not needed anymore. Test to make sure.
-        // TODO: also test with Tomner's patch if needed.
-        let num64: Result<i64, _> = num.try_into();
-        if let Ok(num) = num64 {
-            // FIXME(antoyo): workaround for a bug where libgccjit is expecting a constant.
-            // The operations >> 64 and | low are making the normal case a non-constant.
-            return self.context.new_rvalue_from_long(typ, num as i64);
-        }
-
         if num >> 64 != 0 {
             // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
             let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
@@ -195,7 +186,10 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         // TODO(antoyo): cache the type? It's anonymous, so probably not.
         let typ = self.type_struct(&fields, packed);
         let struct_type = typ.is_struct().expect("struct type");
-        self.context.new_rvalue_from_struct(None, struct_type, values)
+        let struct_fields = self.struct_fields.borrow();
+        let fields = struct_fields.get(&typ)
+            .expect("struct fields");
+        self.context.new_struct_constructor(None, struct_type.as_type(), &fields, values)
     }
 
     fn const_to_opt_uint(&self, _v: RValue<'gcc>) -> Option<u64> {

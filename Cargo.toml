@@ -14,10 +14,10 @@ path = "tests/lib.rs"
 harness = false
 
 [dependencies]
-gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
+#gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
 
 # Local copy.
-#gccjit = { path = "../gccjit.rs" }
+gccjit = { path = "../gccjit.rs" }
 
 target-lexicon = "0.10.0"
 

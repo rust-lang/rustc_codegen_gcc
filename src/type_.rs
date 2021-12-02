@@ -115,6 +115,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         // TODO(antoyo): use packed.
         let typ = self.context.new_struct_type(None, "struct", &fields).as_type();
         self.struct_types.borrow_mut().insert(types, typ);
+        self.struct_fields.borrow_mut().insert(typ, fields);
         typ
     }
 
@@ -215,6 +216,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             .map(|(index, field)| self.context.new_field(None, *field, &format!("field_{}", index)))
             .collect();
         typ.set_fields(None, &fields);
+        self.struct_fields.borrow_mut().insert(typ.as_type(), fields);
     }
 
     pub fn type_named_struct(&self, name: &str) -> Struct<'gcc> {
