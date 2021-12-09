@@ -120,6 +120,8 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn const_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
+        // TODO: seems like this hack is not needed anymore. Test to make sure.
+        // TODO: also test with Tomner's patch if needed.
         let num64: Result<i64, _> = num.try_into();
         if let Ok(num) = num64 {
             // FIXME(antoyo): workaround for a bug where libgccjit is expecting a constant.
