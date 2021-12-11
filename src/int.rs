@@ -2,6 +2,8 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
 
+// TODO: add test in tests/.
+
 use std::convert::{TryFrom, TryInto};
 
 use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
@@ -131,6 +133,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     pub fn gcc_lshr(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        use crate::rustc_codegen_ssa::traits::BuilderMethods;
+
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
@@ -159,19 +163,39 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let element_type = int_type.typ.is_array().expect("element type");
 
             let casted_b = self.gcc_int_cast(b, element_type);
+
+            let casted_b_var = self.current_func().new_local(None, casted_b.get_type(), "casted_b"); // TODO: remove.
+            self.llbb().add_assignment(None, casted_b_var, casted_b); // TODO: remove.
+
             // FIXME: the reverse shift won't work if shifting for more than element_size.
             let reverse_shift = self.context.new_rvalue_from_int(element_type, element_size as i32) - casted_b;
+
+            let reverse_shift_var = self.current_func().new_local(None, casted_b.get_type(), "reverse_shift"); // TODO: remove.
+            self.llbb().add_assignment(None, reverse_shift_var, reverse_shift); // TODO: remove.
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
             let mut overflow = self.context.new_rvalue_zero(element_type);
             let mut values = vec![];
+            // TODO: remove all the temporary variables created here for debugging purposes.
             while current_index >= 0 {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-                let new_element = current_element >> casted_b | overflow;
+
+                let current_element_var = self.current_func().new_local(None, current_element.get_type(), &format!("current_element_{}", current_index)); // TODO: remove.
+                self.llbb().add_assignment(None, current_element_var, current_element); // TODO: remove.
+
+                let shifted_var = self.current_func().new_local(None, current_element.get_type(), &format!("shifted_var_{}", current_index)); // TODO: remove.
+                // FIXME FIXME FIXME: shifting a 64-bit integer by 64 bits is UB.
+                self.llbb().add_assignment(None, shifted_var, current_element_var.to_rvalue() >> casted_b_var.to_rvalue()); // TODO: remove.
+
+                let new_element = shifted_var.to_rvalue() | overflow;
                 values.push(new_element);
                 current_index -= 1;
-                overflow = current_element << reverse_shift;
+
+                let overflow_var = self.current_func().new_local(None, current_element.get_type(), &format!("overflow_var_{}", current_index)); // TODO: remove.
+                self.llbb().add_assignment(None, overflow_var, current_element_var.to_rvalue() << reverse_shift_var.to_rvalue()); // TODO: remove.
+
+                overflow = overflow_var.to_rvalue();
             }
             // TODO: do I need to use overflow here?
             // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
