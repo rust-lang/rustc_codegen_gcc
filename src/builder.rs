@@ -810,7 +810,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let atomic_load = self.context.get_builtin_function(&format!("__atomic_load_{}", size.bytes()));
         let ordering = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
 
-        let volatile_const_void_ptr_type = self.context.new_type::<*mut ()>().make_const().make_volatile();
+        let volatile_const_void_ptr_type = self.context.new_type::<()>()
+            .make_const()
+            .make_volatile()
+            .make_pointer();
         let ptr = self.context.new_cast(None, ptr, volatile_const_void_ptr_type);
         self.context.new_call(None, atomic_load, &[ptr, ordering])
     }
@@ -935,7 +938,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // TODO(antoyo): handle alignment.
         let atomic_store = self.context.get_builtin_function(&format!("__atomic_store_{}", size.bytes()));
         let ordering = self.context.new_rvalue_from_int(self.i32_type, order.to_gcc());
-        let volatile_const_void_ptr_type = self.context.new_type::<*mut ()>().make_const().make_volatile();
+        let volatile_const_void_ptr_type = self.context.new_type::<()>()
+            .make_volatile()
+            .make_pointer();
         let ptr = self.context.new_cast(None, ptr, volatile_const_void_ptr_type);
 
         // FIXME(antoyo): fix libgccjit to allow comparing an integer type with an aligned integer type because
