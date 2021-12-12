@@ -20,7 +20,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn const_bitcast(&self, value: RValue<'gcc>, typ: Type<'gcc>) -> RValue<'gcc> {
         if value.get_type() == self.bool_type.make_pointer() {
             if let Some(pointee) = typ.get_pointee() {
-                if pointee.is_vector().is_some() {
+                if pointee.dyncast_vector().is_some() {
                     panic!()
                 }
             }
