@@ -186,10 +186,7 @@ impl<'gcc, 'tcx> ConstMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         // TODO(antoyo): cache the type? It's anonymous, so probably not.
         let typ = self.type_struct(&fields, packed);
         let struct_type = typ.is_struct().expect("struct type");
-        let struct_fields = self.struct_fields.borrow();
-        let fields = struct_fields.get(&typ)
-            .expect("struct fields");
-        self.context.new_struct_constructor(None, struct_type.as_type(), &fields, values)
+        self.context.new_struct_constructor(None, struct_type.as_type(), None, values)
     }
 
     fn const_to_opt_uint(&self, _v: RValue<'gcc>) -> Option<u64> {
