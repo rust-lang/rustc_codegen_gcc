@@ -1,5 +1,4 @@
 use std::convert::TryFrom;
-use std::convert::TryInto;
 
 use gccjit::LValue;
 use gccjit::{Block, CType, RValue, Type, ToRValue};
@@ -44,7 +43,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let string = self.context.new_string_literal(&*string);
         let sym = self.generate_local_symbol_name("str");
         let global = self.declare_private_global(&sym, self.val_ty(string));
-        global.global_set_initializer_value(string);
+        global.global_set_initializer_rvalue(string);
         global
         // TODO(antoyo): set linkage.
     }
@@ -79,7 +78,7 @@ pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) ->
         bytes.iter()
         .map(|&byte| context.new_rvalue_from_int(byte_type, byte as i32))
         .collect();
-    context.new_rvalue_from_array(None, typ, &elements)
+    context.new_array_constructor(None, typ, &elements)
 }
 
 pub fn type_is_pointer<'gcc>(typ: Type<'gcc>) -> bool {
