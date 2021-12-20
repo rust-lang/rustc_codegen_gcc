@@ -4,7 +4,7 @@
 
 // TODO: add test in tests/.
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::common::IntPredicate;
@@ -71,7 +71,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let src_size = int_type.bits;
             let src_element_size = int_type.element_size;
             let array_type = int_type.typ;
-            let element_type = array_type.is_array().expect("element type");
+            let element_type = array_type.dyncast_array().expect("element type");
             let element_count = src_size / src_element_size;
             let mut values = vec![];
             for i in 0..element_count {
@@ -79,7 +79,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 values.push(self.cx.context.new_unary_op(None, operation, element_type, element_value));
             }
             let array_type = self.context.new_array_type(None, element_type, element_count as i32);
-            self.cx.context.new_rvalue_from_array(None, array_type, &values)
+            self.cx.context.new_array_constructor(None, array_type, &values)
         }
     }
 
@@ -128,7 +128,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.cx.int_type, i));
                 values.push(element_a.to_rvalue() & element_b.to_rvalue());
             }
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
@@ -160,7 +160,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let int_type = self.cx.get_int_type(a_type);
             let size = int_type.bits;
             let element_size = int_type.element_size;
-            let element_type = int_type.typ.is_array().expect("element type");
+            let element_type = int_type.typ.dyncast_array().expect("element type");
 
             let casted_b = self.gcc_int_cast(b, element_type);
 
@@ -168,7 +168,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.llbb().add_assignment(None, casted_b_var, casted_b); // TODO: remove.
 
             // FIXME: the reverse shift won't work if shifting for more than element_size.
-            let reverse_shift = self.context.new_rvalue_from_int(element_type, element_size as i32) - casted_b;
+            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
+            let reverse_shift = element_size_value - casted_b;
 
             let reverse_shift_var = self.current_func().new_local(None, casted_b.get_type(), "reverse_shift"); // TODO: remove.
             self.llbb().add_assignment(None, reverse_shift_var, reverse_shift); // TODO: remove.
@@ -185,14 +186,21 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 self.llbb().add_assignment(None, current_element_var, current_element); // TODO: remove.
 
                 let shifted_var = self.current_func().new_local(None, current_element.get_type(), &format!("shifted_var_{}", current_index)); // TODO: remove.
-                // FIXME FIXME FIXME: shifting a 64-bit integer by 64 bits is UB.
-                self.llbb().add_assignment(None, shifted_var, current_element_var.to_rvalue() >> casted_b_var.to_rvalue()); // TODO: remove.
+
+                // NOTE: shifting an integer by more than its width is undefined behavior.
+                // So we apply a mask to get a value of 0 in this case.
+                let shifted_value = current_element_var.to_rvalue() >> casted_b_var.to_rvalue();
+                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b_var.to_rvalue(), element_size_value);
+                let mask = self.context.new_cast(None, mask, element_type);
+                let mask = self.context.new_unary_op(None, UnaryOp::Minus, element_type, mask);
+                self.llbb().add_assignment(None, shifted_var, shifted_value & mask); // TODO: remove.
 
                 let new_element = shifted_var.to_rvalue() | overflow;
                 values.push(new_element);
                 current_index -= 1;
 
                 let overflow_var = self.current_func().new_local(None, current_element.get_type(), &format!("overflow_var_{}", current_index)); // TODO: remove.
+                // TODO: check if we need to apply a mask for the reverse shift as well.
                 self.llbb().add_assignment(None, overflow_var, current_element_var.to_rvalue() << reverse_shift_var.to_rvalue()); // TODO: remove.
 
                 overflow = overflow_var.to_rvalue();
@@ -201,7 +209,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
             // element at the start.
             values.reverse();
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
@@ -524,12 +532,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
                 bit_set += dest_element_size;
             }
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
     pub fn gcc_uint(&self, typ: Type<'gcc>, mut int: u64) -> RValue<'gcc> {
-        if self.supports_native_int_type(typ) {
+        if self.supports_native_int_type_or_bool(typ) {
             self.context.new_rvalue_from_long(typ, u64::try_from(int).expect("u64::try_from") as i64)
         }
         else {
@@ -548,7 +556,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
                 bit_set += dest_element_size;
             }
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
@@ -580,10 +588,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let int_type = self.get_int_type(typ);
             let size = int_type.bits;
             let factor = (size / int_type.element_size) as usize;
-            let element_type = int_type.typ.is_array().expect("get element type");
+            let element_type = int_type.typ.dyncast_array().expect("get element type");
             let zero = self.context.new_rvalue_zero(element_type);
             let zeroes = vec![zero; factor];
-            self.context.new_rvalue_from_array(None, int_type.typ, &zeroes)
+            self.context.new_array_constructor(None, int_type.typ, &zeroes)
         }
     }
 
@@ -617,7 +625,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.int_type, i));
                 values.push(element_a.to_rvalue() | element_b.to_rvalue());
             }
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
@@ -645,7 +653,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let int_type = self.get_int_type(a_type);
             let size = int_type.bits;
             let element_size = int_type.element_size;
-            let element_type = int_type.typ.is_array().expect("element type");
+            let element_type = int_type.typ.dyncast_array().expect("element type");
 
             let casted_b = self.gcc_int_cast(b, element_type);
             // FIXME: the reverse shift won't work if shifting for more than element_size.
@@ -661,7 +669,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 values.push(new_element);
                 overflow = current_element >> reverse_shift;
             }
-            self.context.new_rvalue_from_array(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
@@ -695,13 +703,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else if self.supports_native_int_type_or_bool(value_type) {
             // FIXME: this is assuming the value fits in a single element of the destination type.
             let dest_int_type = self.get_int_type(dest_typ);
-            let dest_element_type = dest_int_type.typ.is_array().expect("get element type");
+            let dest_element_type = dest_int_type.typ.dyncast_array().expect("get element type");
             let dest_size = dest_int_type.bits;
             let factor = (dest_size / dest_int_type.element_size) as usize;
 
             let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
             values[0] = self.context.new_cast(None, value, dest_element_type);
-            self.context.new_rvalue_from_array(None, dest_int_type.typ, &values)
+            self.context.new_array_constructor(None, dest_int_type.typ, &values)
         }
         else {
             let int_type = self.get_int_type(value_type);
@@ -720,7 +728,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 // FIXME: this is assuming that value is not an array and that it fits in one array
                 // element.
                 values[0] = value;
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                let array_value = self.context.new_array_constructor(None, array_type, &values);
                 self.context.new_bitcast(None, array_value, dest_typ)
             }
             else if src_size == dest_size {
@@ -738,7 +746,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     current_index -= 1;
                 }
                 values.reverse(); // TODO: check that doing this is correct.
-                let array_value = self.context.new_rvalue_from_array(None, array_type, &values);
+                let array_value = self.context.new_array_constructor(None, array_type, &values);
                 // FIXME: that's not working since we can cast from u8 to struct u128.
                 self.context.new_bitcast(None, array_value, dest_typ)
             }
