@@ -74,10 +74,21 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
 
     // Addition.
     assert_eq!(var + argc as u128, 134217857);
+    // TODO: add more tests with bigger value, that would have a carry.
     //assert_eq!(var + (argc + 32) as u128, );
 
     assert_eq!(var2 + argc as u128, 10475372733397991553);
+    assert_eq!(var2 + (var2 + argc as u128) as u128, 20950745466795983105);
 
     assert_eq!(var3 + argc as u128, 193236519889708027473620326106273939585);
+
+    // Subtraction
+    assert_eq!(var - argc as u128, 134217855);
+
+    assert_eq!(var2 - argc as u128, 10475372733397991551);
+
+    // FIXME
+    //assert_eq!(var3 - argc as u128, 193236519889708027473620326106273939583);
+
     0
 }
