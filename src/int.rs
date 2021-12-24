@@ -254,22 +254,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
              */
             let int_type = self.get_int_type(a_type);
             let func_name =
-                match (int_type.signed, int_type.bits) {
-                    (true, 64) => "__muldi3",
-                    (true, 128) => "__multi3",
-                    (false, 128) => {
-                        // TODO: implement without overflow.
-                        let func_name = "__rust_u128_mulo";
-                        let param_a = self.context.new_parameter(None, a_type, "a");
-                        let param_b = self.context.new_parameter(None, b_type, "b");
-                        let product_field = self.context.new_field(None, a_type, "product");
-                        let overflow_field = self.context.new_field(None, self.bool_type, "overflow");
-                        let return_type = self.context.new_struct_type(None, "product_overflow", &[product_field, overflow_field]);
-                        let func = self.context.new_function(None, FunctionType::Extern, return_type.as_type(), &[param_a, param_b], func_name, false);
-                        return self.context.new_call(None, func, &[a, b])
-                            .access_field(None, product_field);
-                    },
-                    (_, size) => unimplemented!("multiplication for integer of size {}", size),
+                match int_type.bits {
+                    64 => "__muldi3",
+                    128 => "__multi3",
+                    size => unimplemented!("multiplication for integer of size {}", size),
                 };
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");

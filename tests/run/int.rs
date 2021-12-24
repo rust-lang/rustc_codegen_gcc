@@ -37,16 +37,12 @@ fn panic_handler(_: &core::panic::PanicInfo) -> ! {
 
 #[start]
 fn main(argc: isize, _argv: *const *const u8) -> isize {
-
     let var = 134217856_u128;
     let var2 = 10475372733397991552_u128;
     let var3 = 193236519889708027473620326106273939584_u128;
-    /*if argc == 1 {
-        unsafe {
-            core::intrinsics::abort();
-            libc::puts("Hello\0" as *const str as *const u8);
-        }
-    }*/
+    let var4 = 123236519889708027473620326106273939584_u128;
+    let var5 = 153236519889708027473620326106273939584_u128;
+
     // Shifts.
     assert_eq!(var << argc as u128, 268435712);
     assert_eq!(var << (argc + 32) as u128, 1152922604118474752);
@@ -112,6 +108,19 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     assert_eq!(var2 - argc as u128, 10475372733397991551);
 
     assert_eq!(var3 - argc as u128, 193236519889708027473620326106273939583);
+
+    // Multiplication
+    assert_eq!(var * (argc + 1) as u128, 268435712);
+    assert_eq!(var * (argc as u128 + var2), 1405982069077538020949770368);
+
+    assert_eq!(var2 * (argc + 1) as u128, 20950745466795983104);
+    assert_eq!(var2 * (argc as u128 + var2), 109733433903618109003204073240861360256);
+
+    assert_eq!(var3 * argc as u128, 193236519889708027473620326106273939584);
+
+    assert_eq!(var4 * (argc + 1) as u128, 246473039779416054947240652212547879168);
+
+    assert_eq!(var5 * (argc + 1) as u128, 306473039779416054947240652212547879168);
 
     0
 }
