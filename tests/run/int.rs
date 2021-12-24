@@ -122,5 +122,20 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
 
     assert_eq!(var5 * (argc + 1) as u128, 306473039779416054947240652212547879168);
 
+    // Division.
+    assert_eq!(var / (argc + 1) as u128, 67108928);
+    assert_eq!(var / (argc + 2) as u128, 44739285);
+
+    assert_eq!(var2 / (argc + 1) as u128, 5237686366698995776);
+    assert_eq!(var2 / (argc + 2) as u128, 3491790911132663850);
+
+    assert_eq!(var3 / (argc + 1) as u128, 96618259944854013736810163053136969792);
+    assert_eq!(var3 / (argc + 2) as u128, 64412173296569342491206775368757979861);
+    assert_eq!(var3 / (argc as u128 + var4), 1);
+    assert_eq!(var3 / (argc as u128 + var2), 18446744073709551615);
+
+    assert_eq!(var4 / (argc + 1) as u128, 61618259944854013736810163053136969792);
+    assert_eq!(var4 / (argc + 2) as u128, 41078839963236009157873442035424646528);
+
     0
 }
