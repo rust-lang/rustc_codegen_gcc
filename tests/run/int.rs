@@ -38,9 +38,9 @@ fn panic_handler(_: &core::panic::PanicInfo) -> ! {
 #[start]
 fn main(argc: isize, _argv: *const *const u8) -> isize {
 
-    let var = 134217856;
-    let var2 = 10475372733397991552;
-    let var3 = 193236519889708027473620326106273939584;
+    let var = 134217856_u128;
+    let var2 = 10475372733397991552_u128;
+    let var3 = 193236519889708027473620326106273939584_u128;
     /*if argc == 1 {
         unsafe {
             core::intrinsics::abort();
@@ -49,24 +49,48 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     }*/
     // Shifts.
     assert_eq!(var << argc as u128, 268435712);
+    assert_eq!(var << (argc + 32) as u128, 1152922604118474752);
+    assert_eq!(var << (argc + 48) as u128, 75557935783508361347072);
+    assert_eq!(var << (argc + 60) as u128, 309485304969250248077606912);
+    assert_eq!(var << (argc + 62) as u128, 1237941219877000992310427648);
+    assert_eq!(var << (argc + 63) as u128, 2475882439754001984620855296);
+
+    assert_eq!(var2 << argc as u128, 20950745466795983104);
+    assert_eq!(var2 << (argc + 32) as u128, 89982766606709001335848566784);
+    assert_eq!(var2 << (argc + 48) as u128, 5897110592337281111546171672756224);
+    assert_eq!(var2 << (argc + 60) as u128, 24154564986213503432893119171609493504);
+    assert_eq!(var2 << (argc + 62) as u128, 96618259944854013731572476686437974016);
+    assert_eq!(var2 << (argc + 63) as u128, 193236519889708027463144953372875948032);
+
+    assert_eq!(var3 << argc as u128, 46190672858477591483866044780779667712);
+    assert_eq!(var3 << (argc + 32) as u128, 21267668304951024224840338247585366016);
+    assert_eq!(var3 << (argc + 48) as u128, 1335125106377253154015353231953100800);
+    assert_eq!(var3 << (argc + 60) as u128, 24154564986213503432893119171609493504);
+    assert_eq!(var3 << (argc + 62) as u128, 96618259944854013731572476686437974016);
+    assert_eq!(var3 << (argc + 63) as u128, 193236519889708027463144953372875948032);
+    //assert_eq!(var3 << (argc + 80) as u128, );
 
     assert_eq!(var >> argc as u128, 67108928);
     assert_eq!(var >> (argc + 32) as u128, 0);
     assert_eq!(var >> (argc + 48) as u128, 0);
     assert_eq!(var >> (argc + 60) as u128, 0);
     assert_eq!(var >> (argc + 62) as u128, 0);
+    assert_eq!(var >> (argc + 63) as u128, 0);
 
     assert_eq!(var2 >> argc as u128, 5237686366698995776);
     assert_eq!(var2 >> (argc + 32) as u128, 1219493888);
     assert_eq!(var2 >> (argc + 48) as u128, 18608);
     assert_eq!(var2 >> (argc + 60) as u128, 4);
     assert_eq!(var2 >> (argc + 62) as u128, 1);
+    assert_eq!(var2 >> (argc + 63) as u128, 0);
 
     assert_eq!(var3 >> argc as u128, 96618259944854013736810163053136969792);
     assert_eq!(var3 >> (argc + 32) as u128, 22495691651677250335181635584);
     assert_eq!(var3 >> (argc + 48) as u128, 343257013727985387194544);
     assert_eq!(var3 >> (argc + 60) as u128, 83802981867183932420);
     assert_eq!(var3 >> (argc + 62) as u128, 20950745466795983105);
+    assert_eq!(var3 >> (argc + 63) as u128, 10475372733397991552);
+    //assert_eq!(var3 >> (argc + 80) as u128, 159841502889984); // FIXME
 
     // Casts
     assert_eq!((var >> (argc + 32) as u128) as u64, 0);
@@ -87,8 +111,7 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
 
     assert_eq!(var2 - argc as u128, 10475372733397991551);
 
-    // FIXME
-    //assert_eq!(var3 - argc as u128, 193236519889708027473620326106273939583);
+    assert_eq!(var3 - argc as u128, 193236519889708027473620326106273939583);
 
     0
 }

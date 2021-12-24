@@ -654,10 +654,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let size = int_type.bits;
             let element_size = int_type.element_size;
             let element_type = int_type.typ.dyncast_array().expect("element type");
+            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
 
             let casted_b = self.gcc_int_cast(b, element_type);
             // FIXME: the reverse shift won't work if shifting for more than element_size.
-            let reverse_shift = self.context.new_rvalue_from_int(element_type, element_size as i32) - casted_b;
+            let reverse_shift = element_size_value - casted_b;
 
             // TODO: take endianness into account.
             let end = (size / element_size) as i32;
@@ -665,7 +666,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let mut values = vec![];
             for current_index in 0..end {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-                let new_element = current_element << casted_b | overflow;
+
+                // NOTE: shifting an integer by more than its width is undefined behavior.
+                // So we apply a mask to get a value of 0 in this case.
+                let shifted_value = current_element << casted_b;
+                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b, element_size_value);
+                let mask = self.context.new_cast(None, mask, element_type);
+                let mask = self.context.new_unary_op(None, UnaryOp::Minus, element_type, mask);
+                let shifted = shifted_value & mask;
+
+                let new_element = shifted | overflow;
                 values.push(new_element);
                 overflow = current_element >> reverse_shift;
             }
