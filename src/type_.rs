@@ -121,6 +121,12 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         if self.is_int_type_or_bool(typ) {
             TypeKind::Integer
         }
+        else if typ == self.float_type {
+            TypeKind::Float
+        }
+        else if typ == self.double_type {
+            TypeKind::Double
+        }
         else if typ.dyncast_vector().is_some() {
             TypeKind::Vector
         }

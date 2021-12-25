@@ -206,6 +206,10 @@ case $1 in
         clean_ui_tests
         ;;
 
+    "--std-tests")
+        std_tests
+        ;;
+
     *)
         clean
         mini_tests

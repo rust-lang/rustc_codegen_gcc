@@ -409,6 +409,8 @@ impl<'gcc, 'tcx> TypeReflection<'gcc, 'tcx> for Type<'gcc> {
     }
 
     fn is_i128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool {
+        // FIXME: this is not consistent with the smaller types which could be compared to
+        // non-native types.
         self.unqualified() == cx.context.new_c_type(CType::Int128t)
     }
 

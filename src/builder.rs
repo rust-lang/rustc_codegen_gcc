@@ -898,15 +898,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fptoui(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
-        self.context.new_cast(None, value, dest_ty)
+        self.gcc_float_to_uint_cast(value, dest_ty)
     }
 
     fn fptosi(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        //self.gcc_float_to_int_cast(value, dest_ty)
         self.context.new_cast(None, value, dest_ty)
     }
 
     fn uitofp(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
-        self.context.new_cast(None, value, dest_ty)
+        self.gcc_uint_to_float_cast(value, dest_ty)
     }
 
     fn sitofp(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {

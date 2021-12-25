@@ -7,8 +7,8 @@
 use std::convert::TryFrom;
 
 use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
-use rustc_codegen_ssa::common::IntPredicate;
-use rustc_codegen_ssa::traits::{BackendTypes, OverflowOp};
+use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
+use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeMethods, OverflowOp};
 use rustc_middle::ty::Ty;
 
 use crate::builder::ToGccComp;
@@ -496,6 +496,24 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.context.new_comparison(None, op.to_gcc_comparison(), lhs, rhs)
         }
     }
+
+    pub fn gcc_count_trailing_zeroes(&self, int: RValue<'gcc>) -> RValue<'gcc> {
+        let arg_type = int.get_type();
+        let param = self.context.new_parameter(None, arg_type, "n");
+
+        let int_type = self.get_int_type(arg_type);
+        let func_name =
+            match int_type.bits {
+                32 => "__ctzsi2",
+                64 => "__ctzdi2",
+                128 => "__ctzti2",
+                size => unimplemented!("count trailing zeroes not implemented for integers of size {}", size),
+            };
+
+        let func = self.context.new_function(None, FunctionType::Extern, self.int_type, &[param], func_name, false);
+        let result = self.context.new_call(None, func, &[int]);
+        self.gcc_int_cast(result, arg_type)
+    }
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -551,12 +569,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn gcc_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
         if num >> 64 != 0 {
             // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
+            // FIXME: calling new_rvalue_from_long directly could not work if the type is
+            // non-native.
+            // TODO: make this code generic by using the parts of the non-native type if it is
+            // non-native.
             let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-            let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
+            let high = self.context.new_rvalue_from_long(self.u64_type, (num >> 64) as u64 as i64);
 
-            let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+            let sixty_four = self.context.new_rvalue_from_long(self.u64_type, 64);
             let shift = self.gcc_shl(high, sixty_four);
-            self.gcc_or(shift, self.context.new_cast(None, low, typ))
+            self.gcc_or(self.gcc_int_cast(shift, typ), self.gcc_int_cast(low, typ))
         }
         else if typ.is_i128(self) {
             let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
@@ -596,13 +618,16 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn gcc_or(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+        let a_native = self.supports_native_int_type_or_bool(a_type);
+        let b_native = self.supports_native_int_type_or_bool(b_type);
+        if a_native && b_native {
             if a.get_type() != b.get_type() {
                 b = self.context.new_cast(None, b, a.get_type());
             }
             a | b
         }
         else {
+            assert!(!a_native && !b_native, "both types should either be native or non-native for or operation");
             let int_type = self.get_int_type(a_type);
             let dest_size = int_type.bits as u32;
             let dest_element_size = int_type.element_size as u32;
@@ -749,5 +774,47 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 self.context.new_bitcast(None, array_value, dest_typ)
             }
         }
+    }
+
+    pub fn gcc_uint_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(value_type) {
+            return self.context.new_cast(None, value, dest_typ);
+        }
+
+        let int_type = self.get_int_type(value_type);
+
+        let func_name =
+            match (int_type.bits, self.type_kind(dest_typ)) {
+                (64, TypeKind::Float) => "__floatundisf",
+                (64, TypeKind::Double) => "__floatundidf",
+                (128, TypeKind::Float) => "__floatuntisf",
+                (128, TypeKind::Double) => "__floatuntidf",
+                (size, kind) => panic!("cannot cast a non-native unsigned integer of size {} to type {:?}", size, kind),
+            };
+        let param = self.context.new_parameter(None, value_type, "n");
+        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
+        self.context.new_call(None, func, &[value])
+    }
+
+    pub fn gcc_float_to_uint_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(dest_typ) {
+            return self.context.new_cast(None, value, dest_typ);
+        }
+
+        let int_type = self.get_int_type(dest_typ);
+
+        let func_name =
+            match (int_type.bits, self.type_kind(value_type)) {
+                (64, TypeKind::Float) => "__fixunssfdi",
+                (64, TypeKind::Double) => "__fixunsdfdi",
+                (128, TypeKind::Float) => "__fixunssfti",
+                (128, TypeKind::Double) => "__fixunsdfti",
+                (size, kind) => panic!("cannot cast a {:?} to non-native unsigned integer of size {}", kind, size),
+            };
+        let param = self.context.new_parameter(None, value_type, "n");
+        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
+        self.context.new_call(None, func, &[value])
     }
 }

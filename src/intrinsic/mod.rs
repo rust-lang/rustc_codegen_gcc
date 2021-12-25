@@ -839,6 +839,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 return self.context.new_cast(None, res, result_type);
             }
+            else if self.is_non_native_int_type(arg_type) {
+                // TODO(antoyo): uniformize this intrinsic for native and non-native types?
+                // The reason why I prefer not to call into compiler-builtins for native types is
+                // because that would mean #[nocore] would not work as it is not linked for this
+                // mode.
+                return self.gcc_count_trailing_zeroes(arg);
+            }
             else {
                 let count_trailing_zeroes = self.context.get_builtin_function("__builtin_ctzll");
                 let arg_size = arg_type.get_size();
