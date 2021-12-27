@@ -574,9 +574,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             // TODO: make this code generic by using the parts of the non-native type if it is
             // non-native.
             let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-            let high = self.context.new_rvalue_from_long(self.u64_type, (num >> 64) as u64 as i64);
+            let high = self.gcc_int(typ, (num >> 64) as u64 as i64);
 
-            let sixty_four = self.context.new_rvalue_from_long(self.u64_type, 64);
+            let sixty_four = self.gcc_int(typ, 64);
             let shift = self.gcc_shl(high, sixty_four);
             self.gcc_or(self.gcc_int_cast(shift, typ), self.gcc_int_cast(low, typ))
         }
