@@ -137,7 +137,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
+        let a_native = self.supports_native_int_type(a_type);
+        let b_native = self.supports_native_int_type(b_type);
+        if a_native && b_native {
             // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
             // TODO(antoyo): cast to unsigned to do a logical shift if that does not work.
             if a_type.is_unsigned(self) && b_type.is_signed(self) {
@@ -152,6 +154,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             else {
                 a >> b
             }
+        }
+        else if a_native && !b_native {
+            self.gcc_lshr(a, self.gcc_int_cast(b, a_type))
         }
         else {
             // NOTE: we cannot use the lshr builtin because it's calling hi() (to get the most
@@ -514,6 +519,27 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let result = self.context.new_call(None, func, &[int]);
         self.gcc_int_cast(result, arg_type)
     }
+
+    pub fn gcc_xor(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            a ^ b
+        }
+        else {
+            let int_type = self.get_int_type(a_type);
+            let dest_size = int_type.bits as u32;
+            let dest_element_size = int_type.element_size as u32;
+            let factor = (dest_size / dest_element_size) as i32;
+            let mut values = vec![];
+            for i in 0..factor {
+                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.cx.int_type, i));
+                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.cx.int_type, i));
+                values.push(element_a.to_rvalue() ^ element_b.to_rvalue());
+            }
+            self.context.new_array_constructor(None, int_type.typ, &values)
+        }
+    }
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -645,7 +671,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn gcc_shl(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
+        let a_native = self.supports_native_int_type(a_type);
+        let b_native = self.supports_native_int_type(b_type);
+        if a_native && b_native {
             // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
             if a_type.is_unsigned(self) && b_type.is_signed(self) {
                 let a = self.context.new_cast(None, a, b_type);
@@ -659,6 +687,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             else {
                 a << b
             }
+        }
+        else if a_native && !b_native {
+            self.gcc_shl(a, self.gcc_int_cast(b, a_type))
         }
         else {
             // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.

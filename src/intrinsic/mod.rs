@@ -673,24 +673,24 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 },
                 128 => {
                     // TODO(antoyo): find a more efficient implementation?
-                    let sixty_four = self.context.new_rvalue_from_long(typ, 64);
-                    let high = self.context.new_cast(None, value >> sixty_four, self.u64_type);
-                    let low = self.context.new_cast(None, value, self.u64_type);
+                    let sixty_four = self.gcc_int(typ, 64);
+                    let high = self.gcc_int_cast(self.gcc_lshr(value, sixty_four), self.u64_type);
+                    let low = self.gcc_int_cast(value, self.u64_type);
 
                     let reversed_high = self.bit_reverse(64, high);
                     let reversed_low = self.bit_reverse(64, low);
 
-                    let new_low = self.context.new_cast(None, reversed_high, typ);
-                    let new_high = self.context.new_cast(None, reversed_low, typ) << sixty_four;
+                    let new_low = self.gcc_int_cast(reversed_high, typ);
+                    let new_high = self.shl(self.gcc_int_cast(reversed_low, typ), sixty_four);
 
-                    new_low | new_high
+                    self.gcc_or(new_low, new_high)
                 },
                 _ => {
                     panic!("cannot bit reverse with width = {}", width);
                 },
             };
 
-        self.context.new_cast(None, result, result_type)
+        self.gcc_int_cast(result, result_type)
     }
 
     fn count_leading_zeroes(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
@@ -884,17 +884,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 value
             };
 
-        if value_type.is_u128(&self.cx) {
+        if value_type.is_u128(&self.cx) || value_type == self.u128_type {
             // TODO(antoyo): implement in the normal algorithm below to have a more efficient
             // implementation (that does not require a call to __popcountdi2).
             let popcount = self.context.get_builtin_function("__builtin_popcountll");
-            let sixty_four = self.context.new_rvalue_from_long(value_type, 64);
-            let high = self.context.new_cast(None, value >> sixty_four, self.cx.ulonglong_type);
+            let sixty_four = self.gcc_int(value_type, 64);
+            let high = self.gcc_int_cast(self.gcc_lshr(value, sixty_four), self.cx.ulonglong_type);
             let high = self.context.new_call(None, popcount, &[high]);
-            let low = self.context.new_cast(None, value, self.cx.ulonglong_type);
+            let low = self.gcc_int_cast(value, self.cx.ulonglong_type);
             let low = self.context.new_call(None, popcount, &[low]);
             let res = high + low;
-            return self.context.new_cast(None, res, result_type);
+            return self.gcc_int_cast(res, result_type);
         }
 
         // First step.
@@ -971,13 +971,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     // Algorithm from: https://blog.regehr.org/archives/1063
     fn rotate_right(&mut self, value: RValue<'gcc>, shift: RValue<'gcc>, width: u64) -> RValue<'gcc> {
-        let max = self.context.new_rvalue_from_long(shift.get_type(), width as i64);
-        let shift = shift % max;
+        let max = self.gcc_int(shift.get_type(), width as i64);
+        let shift = self.gcc_urem(shift, max);
         let lhs = self.lshr(value, shift);
         let result_and =
             self.and(
-                self.context.new_unary_op(None, UnaryOp::Minus, shift.get_type(), shift),
-                self.context.new_rvalue_from_long(shift.get_type(), width as i64 - 1),
+                self.gcc_neg(shift),
+                self.gcc_int(shift.get_type(), width as i64 - 1),
             );
         let rhs = self.shl(value, result_and);
         self.or(lhs, rhs)

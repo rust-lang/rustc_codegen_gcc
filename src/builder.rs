@@ -549,23 +549,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn ashr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO: implement for unsupported integer types.
         // TODO(antoyo): check whether behavior is an arithmetic shift for >> .
-        // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if a_type.is_unsigned(self) && b_type.is_signed(self) {
-            let a = self.context.new_cast(None, a, b_type);
-            let result = a >> b;
-            self.context.new_cast(None, result, a_type)
-        }
-        else if a_type.is_signed(self) && b_type.is_unsigned(self) {
-            let b = self.context.new_cast(None, b, a_type);
-            a >> b
-        }
-        else {
-            a >> b
-        }
+        self.gcc_lshr(a, b)
     }
 
     fn and(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -577,7 +562,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn xor(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        a ^ b
+        self.gcc_xor(a, b)
     }
 
     fn neg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
@@ -597,7 +582,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn unchecked_uadd(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        a + b
+        self.gcc_add(a, b)
     }
 
     fn unchecked_ssub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -606,7 +591,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn unchecked_usub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): should generate poison value?
-        a - b
+        self.gcc_sub(a, b)
     }
 
     fn unchecked_smul(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -885,7 +870,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     /* Casts */
     fn trunc(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check that it indeed truncate the value.
-        self.context.new_cast(None, value, dest_ty)
+        self.gcc_int_cast(value, dest_ty)
     }
 
     fn sext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
