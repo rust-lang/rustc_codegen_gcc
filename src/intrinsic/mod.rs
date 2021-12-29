@@ -971,13 +971,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     // Algorithm from: https://blog.regehr.org/archives/1063
     fn rotate_right(&mut self, value: RValue<'gcc>, shift: RValue<'gcc>, width: u64) -> RValue<'gcc> {
-        let max = self.gcc_int(shift.get_type(), width as i64);
-        let shift = self.gcc_urem(shift, max);
+        let max = self.const_uint(shift.get_type(), width);
+        let shift = self.urem(shift, max);
         let lhs = self.lshr(value, shift);
+        let result_neg = self.neg(shift);
         let result_and =
             self.and(
-                self.gcc_neg(shift),
-                self.gcc_int(shift.get_type(), width as i64 - 1),
+                result_neg,
+                self.const_uint(shift.get_type(), width - 1),
             );
         let rhs = self.shl(value, result_and);
         self.or(lhs, rhs)

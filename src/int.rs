@@ -2,7 +2,9 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
 
-// TODO: add test in tests/.
+// FIXME: this should be rewritten in a recurisve way, i.e. 128-bit integers should be written
+// by using 64-bit integer operations. If those are not supported as way, that will recursively
+// use 32-bit integer operations.
 
 use std::convert::TryFrom;
 
@@ -540,6 +542,99 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
+
+    pub fn gcc_shl(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        let a_native = self.supports_native_int_type(a_type);
+        let b_native = self.supports_native_int_type(b_type);
+        if a_native && b_native {
+            // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
+            if a_type.is_unsigned(self) && b_type.is_signed(self) {
+                let a = self.context.new_cast(None, a, b_type);
+                let result = a << b;
+                self.context.new_cast(None, result, a_type)
+            }
+            else if a_type.is_signed(self) && b_type.is_unsigned(self) {
+                let b = self.context.new_cast(None, b, a_type);
+                a << b
+            }
+            else {
+                a << b
+            }
+        }
+        else if a_native && !b_native {
+            self.gcc_shl(a, self.gcc_int_cast(b, a_type))
+        }
+        else {
+            // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.
+            let int_type = self.get_int_type(a_type);
+            let size = int_type.bits;
+            let element_size = int_type.element_size;
+            let element_type = int_type.typ.dyncast_array().expect("element type");
+            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
+
+            let casted_b = self.gcc_int_cast(b, element_type);
+            // NOTE: to support shift by more than the width of an element, we modulo the shift
+            // value by the width and later, we move the elements to take this reduction of the
+            // shift into account.
+            let adjusted_shift = casted_b % element_size_value;
+            let reverse_shift = element_size_value - adjusted_shift;
+
+            // TODO: take endianness into account.
+            let end = (size / element_size) as i32;
+            let mut overflow = self.context.new_rvalue_zero(element_type);
+            let mut values = vec![];
+            for current_index in 0..end {
+                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
+                let shifted_value = current_element << adjusted_shift;
+                let new_element = shifted_value | overflow;
+                values.push(new_element);
+                overflow = current_element >> reverse_shift;
+            }
+
+            let current_func = self.current_func.borrow().expect("current func");
+            let current_block = self.current_block.borrow().expect("current block");
+            let while_block = current_func.new_block("while");
+
+            let result = current_func.new_local(None, int_type.typ, "shiftResult");
+            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            current_block.add_assignment(None, result, array_value);
+
+            let casted_b_var = current_func.new_local(None, casted_b.get_type(), "current_shift_value");
+            current_block.add_assignment(None, casted_b_var, casted_b);
+
+            current_block.end_with_jump(None, while_block);
+
+            // NOTE: if shifting by WIDTH or more, shift the elements in the array by one until the
+            // values are at the right location.
+            let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, casted_b_var.to_rvalue(), element_size_value);
+
+            let loop_block = current_func.new_block("loop");
+            let after_block = current_func.new_block("after");
+
+            while_block.end_with_conditional(None, cond, loop_block, after_block);
+
+            for current_index in 0..end - 1 {
+                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
+                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
+                loop_block.add_assignment(None, target, source);
+                loop_block.add_assignment_op(None, casted_b_var, gccjit::BinaryOp::Minus, element_size_value);
+            }
+            // TODO: handle endianness.
+            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, 0));
+            loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
+
+            loop_block.end_with_jump(None, while_block);
+
+            // NOTE: since jumps were added in a place rustc does not expect, the current block in the
+            // state need to be updated.
+            self.block = Some(after_block);
+            *self.cx.current_block.borrow_mut() = Some(after_block);
+
+            result.to_rvalue()
+        }
+    }
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -592,19 +687,35 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
+    pub fn gcc_uint_big(&self, typ: Type<'gcc>, mut num: u128) -> RValue<'gcc> {
         if num >> 64 != 0 {
             // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
             // FIXME: calling new_rvalue_from_long directly could not work if the type is
             // non-native.
             // TODO: make this code generic by using the parts of the non-native type if it is
             // non-native.
-            let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-            let high = self.gcc_int(typ, (num >> 64) as u64 as i64);
+            if self.supports_native_int_type(typ) {
+                let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
+                let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
 
-            let sixty_four = self.gcc_int(typ, 64);
-            let shift = self.gcc_shl(high, sixty_four);
-            self.gcc_or(self.gcc_int_cast(shift, typ), self.gcc_int_cast(low, typ))
+                let sixty_four = self.context.new_rvalue_from_long(typ, 64);
+                let shift = high << sixty_four;
+                shift | low
+            }
+            else {
+                let int_type = self.get_int_type(typ);
+                let element_size = int_type.element_size as u32;
+                let mask = (element_size - 1) as u128;
+                let element_type = int_type.typ.dyncast_array().expect("get element type");
+                let element_count = int_type.bits as u32 / element_size;
+                let mut values = vec![];
+                for _ in 0..element_count {
+                    let value = num & mask;
+                    num >>= element_size; // TODO: switch to overflowing_shr()?
+                    values.push(self.context.new_rvalue_from_long(element_type, value as i64));
+                }
+                self.context.new_array_constructor(None, int_type.typ, &values)
+            }
         }
         else if typ.is_i128(self) {
             let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
@@ -663,65 +774,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i));
                 let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.int_type, i));
                 values.push(element_a.to_rvalue() | element_b.to_rvalue());
-            }
-            self.context.new_array_constructor(None, int_type.typ, &values)
-        }
-    }
-
-    pub fn gcc_shl(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        let a_native = self.supports_native_int_type(a_type);
-        let b_native = self.supports_native_int_type(b_type);
-        if a_native && b_native {
-            // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
-            if a_type.is_unsigned(self) && b_type.is_signed(self) {
-                let a = self.context.new_cast(None, a, b_type);
-                let result = a << b;
-                self.context.new_cast(None, result, a_type)
-            }
-            else if a_type.is_signed(self) && b_type.is_unsigned(self) {
-                let b = self.context.new_cast(None, b, a_type);
-                a << b
-            }
-            else {
-                a << b
-            }
-        }
-        else if a_native && !b_native {
-            self.gcc_shl(a, self.gcc_int_cast(b, a_type))
-        }
-        else {
-            // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.
-
-            let int_type = self.get_int_type(a_type);
-            let size = int_type.bits;
-            let element_size = int_type.element_size;
-            let element_type = int_type.typ.dyncast_array().expect("element type");
-            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
-
-            let casted_b = self.gcc_int_cast(b, element_type);
-            // FIXME: the reverse shift won't work if shifting for more than element_size.
-            let reverse_shift = element_size_value - casted_b;
-
-            // TODO: take endianness into account.
-            let end = (size / element_size) as i32;
-            let mut overflow = self.context.new_rvalue_zero(element_type);
-            let mut values = vec![];
-            for current_index in 0..end {
-                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-
-                // NOTE: shifting an integer by more than its width is undefined behavior.
-                // So we apply a mask to get a value of 0 in this case.
-                let shifted_value = current_element << casted_b;
-                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b, element_size_value);
-                let mask = self.context.new_cast(None, mask, element_type);
-                let mask = self.context.new_unary_op(None, UnaryOp::Minus, element_type, mask);
-                let shifted = shifted_value & mask;
-
-                let new_element = shifted | overflow;
-                values.push(new_element);
-                overflow = current_element >> reverse_shift;
             }
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
