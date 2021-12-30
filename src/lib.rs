@@ -1,4 +1,5 @@
 /*
+ * TODO(antoyo): implement equality in libgccjit based on https://zpz.github.io/blog/overloading-equality-operator-in-cpp-class-hierarchy/
  * TODO(antoyo): support #[inline] attributes.
  * TODO(antoyo): support LTO (gcc's equivalent to Thin LTO is enabled by -fwhopr: https://stackoverflow.com/questions/64954525/does-gcc-have-thin-lto).
  *

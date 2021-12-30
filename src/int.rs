@@ -700,7 +700,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
                 let sixty_four = self.context.new_rvalue_from_long(typ, 64);
                 let shift = high << sixty_four;
-                shift | low
+                shift | self.context.new_cast(None, low, typ)
             }
             else {
                 let int_type = self.get_int_type(typ);

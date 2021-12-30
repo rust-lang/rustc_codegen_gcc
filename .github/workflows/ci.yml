@@ -10,6 +10,8 @@ jobs:
 
     strategy:
       fail-fast: false
+      matrix:
+        features: ["", "--features test_128bit_non_native_ints"]
 
     steps:
     - uses: actions/checkout@v2
@@ -67,7 +69,7 @@ jobs:
     - name: Build
       run: |
         ./prepare_build.sh
-        ./build.sh
+        ./build.sh ${{ matrix.features }}
         cargo test
         ./clean_all.sh
 
@@ -93,4 +95,4 @@ jobs:
         export COMPILE_RUNS=2
         export RUN_RUNS=2
 
-        ./test.sh --release
+        ./test.sh --release ${{ matrix.features }}

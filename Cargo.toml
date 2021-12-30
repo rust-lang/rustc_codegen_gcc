@@ -8,16 +8,19 @@ license = "MIT OR Apache-2.0"
 [lib]
 crate-type = ["dylib"]
 
+[features]
+test_128bit_non_native_ints = []
+
 [[test]]
 name = "lang_tests"
 path = "tests/lib.rs"
 harness = false
 
 [dependencies]
-#gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
+gccjit = { git = "https://github.com/antoyo/gccjit.rs" }
 
 # Local copy.
-gccjit = { path = "../gccjit.rs" }
+#gccjit = { path = "../gccjit.rs" }
 
 target-lexicon = "0.10.0"
 
