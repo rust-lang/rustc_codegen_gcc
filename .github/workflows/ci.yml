@@ -16,6 +16,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - uses: actions/checkout@v2
+      with:
+        repository: llvm/llvm-project
+        path: llvm
+
     - name: Install packages
       run: sudo apt-get install ninja-build ripgrep
 
@@ -32,10 +37,11 @@ jobs:
           echo $(readlink -f gcc-build) > gcc_path
           ln gcc-build/libgccjit.so gcc-build/libgccjit.so.0
 
-    - name: Set LIBRARY_PATH
+    - name: Set env
       run: |
         echo "LIBRARY_PATH=$(cat gcc_path)" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=$(cat gcc_path)" >> $GITHUB_ENV
+        echo "workspace="$GITHUB_WORKSPACE >> $GITHUB_ENV
 
     # https://github.com/actions/cache/issues/133
     - name: Fixup owner of ~/.cargo/
@@ -67,7 +73,12 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('rust-toolchain') }}
 
     - name: Build
+      env:
+        RUST_COMPILER_RT_ROOT: ${{ env.workspace }}/llvm/compiler-rt
       run: |
+        ls /home/runner/work/rustc_codegen_gcc/rustc_codegen_gcc/llvm
+        echo Workspace ${{ env.workspace }}
+        ls ${{ env.workspace }}/llvm
         ./prepare_build.sh
         ./build.sh ${{ matrix.features }}
         cargo test
