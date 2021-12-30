@@ -10,7 +10,7 @@ use std::convert::TryFrom;
 
 use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
-use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeMethods, OverflowOp};
+use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeMethods, BuilderMethods, OverflowOp};
 use rustc_middle::ty::Ty;
 
 use crate::builder::ToGccComp;
@@ -135,8 +135,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     pub fn gcc_lshr(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        use crate::rustc_codegen_ssa::traits::BuilderMethods;
-
         let a_type = a.get_type();
         let b_type = b.get_type();
         let a_native = self.supports_native_int_type(a_type);
@@ -504,24 +502,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_count_trailing_zeroes(&self, int: RValue<'gcc>) -> RValue<'gcc> {
-        let arg_type = int.get_type();
-        let param = self.context.new_parameter(None, arg_type, "n");
-
-        let int_type = self.get_int_type(arg_type);
-        let func_name =
-            match int_type.bits {
-                32 => "__ctzsi2",
-                64 => "__ctzdi2",
-                128 => "__ctzti2",
-                size => unimplemented!("count trailing zeroes not implemented for integers of size {}", size),
-            };
-
-        let func = self.context.new_function(None, FunctionType::Extern, self.int_type, &[param], func_name, false);
-        let result = self.context.new_call(None, func, &[int]);
-        self.gcc_int_cast(result, arg_type)
-    }
-
     pub fn gcc_xor(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
@@ -635,6 +615,25 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             result.to_rvalue()
         }
     }
+
+    pub fn gcc_bswap(&mut self, mut arg: RValue<'gcc>, width: u64) -> RValue<'gcc> {
+        let arg_type = arg.get_type();
+        if !self.supports_native_int_type(arg_type) {
+            // TODO
+            return arg;
+        }
+
+        // TODO(antoyo): check if it's faster to use string literals and a
+        // match instead of format!.
+        let bswap = self.cx.context.get_builtin_function(&format!("__builtin_bswap{}", width));
+        // FIXME(antoyo): this cast should not be necessary. Remove
+        // when having proper sized integer types.
+        let param_type = bswap.get_param(0).to_rvalue().get_type();
+        if param_type != arg_type {
+            arg = self.bitcast(arg, param_type);
+        }
+        self.cx.context.new_call(None, bswap, &[arg])
+    }
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -720,7 +719,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else if typ.is_i128(self) {
             let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
             // FIXME: that cast is probably going to fail for non-native types.
-            self.context.new_cast(None, num, typ)
+            self.gcc_int_cast(num, typ)
         }
         else {
             self.gcc_uint(typ, num as u64)

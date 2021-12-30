@@ -48,9 +48,9 @@ mod type_;
 mod type_of;
 
 use std::any::Any;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use gccjit::{Context, OptimizationLevel};
+use gccjit::{Context, OptimizationLevel, CType};
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
@@ -79,13 +79,21 @@ impl<F: Fn() -> String> Drop for PrintOnPanic<F> {
 }
 
 #[derive(Clone)]
-pub struct GccCodegenBackend;
+pub struct GccCodegenBackend {
+    supports_128bit_integers: Arc<Mutex<bool>>,
+}
 
 impl CodegenBackend for GccCodegenBackend {
     fn init(&self, sess: &Session) {
         if sess.lto() != Lto::No {
             sess.warn("LTO is not supported. You may get a linker error.");
         }
+
+        /*let check_context = Context::default();
+        let _int128_ty = check_context.new_c_type(CType::UInt128t);
+        check_context.compile();
+        *self.supports_128bit_integers.lock().expect("lock") = check_context.get_last_error() == Ok(None);*/
+        *self.supports_128bit_integers.lock().expect("lock") = false;
     }
 
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, metadata: EncodedMetadata, need_metadata_module: bool) -> Box<dyn Any> {
@@ -131,7 +139,7 @@ impl ExtraBackendMethods for GccCodegenBackend {
     }
 
     fn compile_codegen_unit<'tcx>(&self, tcx: TyCtxt<'tcx>, cgu_name: Symbol) -> (ModuleCodegen<Self::Module>, u64) {
-        base::compile_codegen_unit(tcx, cgu_name)
+        base::compile_codegen_unit(tcx, cgu_name, *self.supports_128bit_integers.lock().expect("lock"))
     }
 
     fn target_machine_factory(&self, _sess: &Session, _opt_level: OptLevel) -> TargetMachineFactoryFn<Self> {
@@ -239,7 +247,9 @@ impl WriteBackendMethods for GccCodegenBackend {
 /// This is the entrypoint for a hot plugged rustc_codegen_gccjit
 #[no_mangle]
 pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
-    Box::new(GccCodegenBackend)
+    Box::new(GccCodegenBackend {
+        supports_128bit_integers: Arc::new(Mutex::new(false)),
+    })
 }
 
 fn to_gcc_opt_level(optlevel: Option<OptLevel>) -> OptimizationLevel {

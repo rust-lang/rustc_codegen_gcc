@@ -176,7 +176,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                     let arg = args[0].immediate();
                                     let result = func.new_local(None, arg.get_type(), "zeros");
                                     let zero = self.cx.gcc_zero(arg.get_type());
-                                    let cond = self.cx.context.new_comparison(None, ComparisonOp::Equals, arg, zero);
+                                    let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
                                     self.llbb().end_with_conditional(None, cond, then_block, else_block);
 
                                     let zero_result = self.cx.gcc_uint(arg.get_type(), width);
@@ -217,17 +217,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                         args[0].immediate() // byte swap a u8/i8 is just a no-op
                                     }
                                     else {
-                                        // TODO(antoyo): check if it's faster to use string literals and a
-                                        // match instead of format!.
-                                        let bswap = self.cx.context.get_builtin_function(&format!("__builtin_bswap{}", width));
-                                        let mut arg = args[0].immediate();
-                                        // FIXME(antoyo): this cast should not be necessary. Remove
-                                        // when having proper sized integer types.
-                                        let param_type = bswap.get_param(0).to_rvalue().get_type();
-                                        if param_type != arg.get_type() {
-                                            arg = self.bitcast(arg, param_type);
-                                        }
-                                        self.cx.context.new_call(None, bswap, &[arg])
+                                        self.gcc_bswap(args[0].immediate(), width)
                                     }
                                 },
                                 sym::bitreverse => self.bit_reverse(width, args[0].immediate()),
@@ -800,9 +790,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let result = self.current_func()
                     .new_local(None, array_type, "count_loading_zeroes_results");
 
-                let sixty_four = self.context.new_rvalue_from_long(arg_type, 64);
-                let high = self.context.new_cast(None, arg >> sixty_four, self.u64_type);
-                let low = self.context.new_cast(None, arg, self.u64_type);
+                let sixty_four = self.gcc_int(arg_type, 64);
+                let shift = self.gcc_lshr(arg, sixty_four);
+                let high = self.gcc_int_cast(shift, self.u64_type);
+                let low = self.gcc_int_cast(arg, self.u64_type);
 
                 let zero = self.context.new_rvalue_zero(self.usize_type);
                 let one = self.context.new_rvalue_one(self.usize_type);
@@ -811,17 +802,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let ctzll = self.context.get_builtin_function("__builtin_ctzll");
 
                 let first_elem = self.context.new_array_access(None, result, zero);
-                let first_value = self.context.new_cast(None, self.context.new_call(None, ctzll, &[low]), arg_type);
+                let first_value = self.gcc_int_cast(self.context.new_call(None, ctzll, &[low]), arg_type);
                 self.llbb()
                     .add_assignment(None, first_elem, first_value);
 
                 let second_elem = self.context.new_array_access(None, result, one);
-                let second_value = self.context.new_cast(None, self.context.new_call(None, ctzll, &[high]), arg_type) + sixty_four;
+                let second_value = self.gcc_add(self.gcc_int_cast(self.context.new_call(None, ctzll, &[high]), arg_type), sixty_four);
                 self.llbb()
                     .add_assignment(None, second_elem, second_value);
 
                 let third_elem = self.context.new_array_access(None, result, two);
-                let third_value = self.context.new_rvalue_from_long(arg_type, 128);
+                let third_value = self.gcc_int(arg_type, 128);
                 self.llbb()
                     .add_assignment(None, third_elem, third_value);
 
@@ -837,14 +828,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
                 let res = self.context.new_array_access(None, result, index);
 
-                return self.context.new_cast(None, res, result_type);
-            }
-            else if self.is_non_native_int_type(arg_type) {
-                // TODO(antoyo): uniformize this intrinsic for native and non-native types?
-                // The reason why I prefer not to call into compiler-builtins for native types is
-                // because that would mean #[nocore] would not work as it is not linked for this
-                // mode.
-                return self.gcc_count_trailing_zeroes(arg);
+                return self.gcc_int_cast(res.to_rvalue(), result_type);
             }
             else {
                 let count_trailing_zeroes = self.context.get_builtin_function("__builtin_ctzll");

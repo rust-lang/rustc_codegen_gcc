@@ -121,26 +121,73 @@ pub struct CodegenCx<'gcc, 'tcx> {
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn new(context: &'gcc Context<'gcc>, codegen_unit: &'tcx CodegenUnit<'tcx>, tcx: TyCtxt<'tcx>) -> Self {
+    pub fn new(context: &'gcc Context<'gcc>, codegen_unit: &'tcx CodegenUnit<'tcx>, tcx: TyCtxt<'tcx>, supports_128bit_integers: bool) -> Self {
         let check_overflow = tcx.sess.overflow_checks();
-        // TODO(antoyo): fix this mess. libgccjit seems to return random type when using new_int_type().
-        let isize_type = context.new_c_type(CType::LongLong);
-        let usize_type = context.new_c_type(CType::ULongLong);
-        let bool_type = context.new_type::<bool>();
-        let i8_type = context.new_c_type(CType::Int8t);
-        let i16_type = context.new_c_type(CType::Int16t);
-        let i32_type = context.new_c_type(CType::Int32t);
-        let i64_type = context.new_c_type(CType::Int64t);
-        let i128_type = context.new_c_type(CType::Int128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
-        let u8_type = context.new_c_type(CType::UInt8t);
-        let u16_type = context.new_c_type(CType::UInt16t);
-        let u32_type = context.new_c_type(CType::UInt32t);
-        let u64_type = context.new_c_type(CType::UInt64t);
 
-        #[cfg(feature = "test_128bit_non_native_ints")]
-        let u128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
-        #[cfg(not(feature = "test_128bit_non_native_ints"))]
-        let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?
+        let mut native_int_types = vec![];
+
+        let mut add_int_type = |ctype: CType, bits, element_size, signed| {
+            let typ = context.new_c_type(ctype);
+            native_int_types.push(IntType {
+                bits,
+                element_size,
+                signed,
+                typ,
+            });
+            typ
+        };
+
+        let i8_type = add_int_type(CType::Int8t, 8, 8, true);
+        let i16_type = add_int_type(CType::Int16t, 16, 16, true);
+        let i32_type = add_int_type(CType::Int32t, 32, 32, true);
+        let i64_type = add_int_type(CType::Int64t, 64, 64, true);
+        let u8_type = add_int_type(CType::UInt8t, 8, 8, false);
+        let u16_type = add_int_type(CType::UInt16t, 16, 16, false);
+        let u32_type = add_int_type(CType::UInt32t, 32, 32, false);
+        let u64_type = add_int_type(CType::UInt64t, 64, 64, false);
+
+        let mut non_native_int_types = vec![];
+
+        let (i128_type, u128_type) =
+            if supports_128bit_integers {
+                // FIXME: maybe we use a builtin that has a 128-bit argument/return type?
+                let i128_type = context.new_c_type(CType::Int128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?;
+                native_int_types.push(IntType {
+                    bits: 128,
+                    element_size: 128,
+                    signed: true,
+                    typ: i128_type,
+                });
+
+                let u128_type = context.new_c_type(CType::UInt128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?;
+                native_int_types.push(IntType {
+                    bits: 128,
+                    element_size: 128,
+                    signed: false,
+                    typ: u128_type,
+                });
+
+                (i128_type, u128_type)
+            }
+            else {
+                let i128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
+                non_native_int_types.push(IntType {
+                    bits: 128,
+                    element_size: 64,
+                    signed: true,
+                    typ: i128_type,
+                });
+
+                let u128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
+                non_native_int_types.push(IntType {
+                    bits: 128,
+                    element_size: 64,
+                    signed: false,
+                    typ: u128_type,
+                });
+
+                (i128_type, u128_type)
+            };
 
         let tls_model = to_gcc_tls_mode(tcx.sess.tls_model());
 
@@ -154,83 +201,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let ulonglong_type = context.new_c_type(CType::ULongLong);
         let sizet_type = context.new_c_type(CType::SizeT);
 
-        let mut non_native_int_types = vec![];
+        let isize_type = context.new_c_type(CType::LongLong);
+        let usize_type = context.new_c_type(CType::ULongLong);
+        let bool_type = context.new_type::<bool>();
 
-        #[cfg(feature = "test_128bit_non_native_ints")]
-        non_native_int_types.push(IntType {
-            bits: 128,
-            element_size: 64,
-            signed: false,
-            typ: u128_type,
-        });
-
-        let mut native_int_types = vec![];
-
-        #[cfg(not(feature = "test_128bit_non_native_ints"))]
-        native_int_types.push(IntType {
-            bits: 128,
-            element_size: 64,
-            signed: false,
-            typ: u128_type,
-        });
-        native_int_types.push(IntType {
-            bits: 128,
-            element_size: 128,
-            signed: true,
-            typ: i128_type,
-        });
-        native_int_types.push(IntType {
-            bits: 64,
-            element_size: 64,
-            signed: false,
-            typ: u64_type,
-        });
-        native_int_types.push(IntType {
-            bits: 64,
-            element_size: 64,
-            signed: true,
-            typ: i64_type,
-        });
-
-        native_int_types.push(IntType {
-            bits: 32,
-            element_size: 32,
-            signed: false,
-            typ: u32_type,
-        });
-        native_int_types.push(IntType {
-            bits: 32,
-            element_size: 32,
-            signed: true,
-            typ: i32_type,
-        });
-
-        native_int_types.push(IntType {
-            bits: 16,
-            element_size: 16,
-            signed: false,
-            typ: u16_type,
-        });
-        native_int_types.push(IntType {
-            bits: 16,
-            element_size: 16,
-            signed: true,
-            typ: i16_type,
-        });
-
-        native_int_types.push(IntType {
-            bits: 8,
-            element_size: 8,
-            signed: false,
-            typ: u8_type,
-        });
-        native_int_types.push(IntType {
-            bits: 8,
-            element_size: 8,
-            signed: true,
-            typ: i8_type,
-        });
-
+        // NOTE: insert the unsized types by fetching their info by comparing them to the sized
+        // types.
         let mut new_native_int_types = vec![];
         let int_types = [isize_type, usize_type, int_type, uint_type, long_type, ulong_type, ulonglong_type, sizet_type];
         for int_type in int_types {

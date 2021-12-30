@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features: ["", "--features test_128bit_non_native_ints"]
+        libgccjit_version: ["libgccjit.so", "libgccjit_without_int128.so"]
 
     steps:
     - uses: actions/checkout@v2
@@ -28,14 +28,14 @@ jobs:
       uses: dawidd6/action-download-artifact@v2
       with:
           workflow: main.yml
-          name: libgccjit.so
+          name: ${{ matrix.libgccjit_version }}
           path: gcc-build
           repo: antoyo/gcc
 
     - name: Setup path to libgccjit
       run: |
           echo $(readlink -f gcc-build) > gcc_path
-          ln gcc-build/libgccjit.so gcc-build/libgccjit.so.0
+          ln gcc-build/${{ matrix.libgccjit_version }} gcc-build/${{ matrix.libgccjit_version }}.0
 
     - name: Set env
       run: |
@@ -81,7 +81,7 @@ jobs:
         echo Workspace ${{ env.workspace }}
         ls ${{ env.workspace }}/llvm
         ./prepare_build.sh
-        ./build.sh ${{ matrix.features }}
+        ./build.sh
         cargo test
         ./clean_all.sh
 
@@ -107,4 +107,4 @@ jobs:
         export COMPILE_RUNS=2
         export RUN_RUNS=2
 
-        ./test.sh --release ${{ matrix.features }}
+        ./test.sh --release
