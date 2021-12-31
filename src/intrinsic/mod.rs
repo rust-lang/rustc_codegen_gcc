@@ -1,7 +1,7 @@
 pub mod llvm;
 mod simd;
 
-use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
+use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp, FunctionType};
 use rustc_codegen_ssa::MemFlags;
 use rustc_codegen_ssa::base::wants_msvc_seh;
 use rustc_codegen_ssa::common::{IntPredicate, span_invalid_monomorphization_error};
@@ -1022,31 +1022,59 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn saturating_sub(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>, signed: bool, width: u64) -> RValue<'gcc> {
         if signed {
             // Also based on algorithm from: https://stackoverflow.com/a/56531252/389119
-            let func_name =
-                match width {
-                    8 => "__builtin_sub_overflow",
-                    16 => "__builtin_sub_overflow",
-                    32 => "__builtin_ssub_overflow",
-                    64 => "__builtin_ssubll_overflow",
-                    128 => "__builtin_sub_overflow",
-                    _ => unreachable!(),
-                };
-            let overflow_func = self.context.get_builtin_function(func_name);
             let result_type = lhs.get_type();
             let func = self.current_func.borrow().expect("func");
             let res = func.new_local(None, result_type, "saturating_diff");
-            let overflow = self.overflow_call(overflow_func, &[lhs, rhs, res.get_address(None)], None);
+            let supports_native_type = self.supports_native_int_type(result_type);
+            let overflow =
+                if supports_native_type {
+                    let func_name =
+                        match width {
+                            8 => "__builtin_sub_overflow",
+                            16 => "__builtin_sub_overflow",
+                            32 => "__builtin_ssub_overflow",
+                            64 => "__builtin_ssubll_overflow",
+                            128 => "__builtin_sub_overflow",
+                            _ => unreachable!(),
+                        };
+                    let overflow_func = self.context.get_builtin_function(func_name);
+                    self.overflow_call(overflow_func, &[lhs, rhs, res.get_address(None)], None)
+                }
+                else {
+                    let func_name =
+                        match width {
+                            128 => "__rust_i128_subo",
+                            _ => unreachable!(),
+                        };
+                    let param_a = self.context.new_parameter(None, result_type, "a");
+                    let param_b = self.context.new_parameter(None, result_type, "b");
+                    let result_field = self.context.new_field(None, result_type, "result");
+                    let overflow_field = self.context.new_field(None, self.bool_type, "overflow");
+                    let return_type = self.context.new_struct_type(None, "result_overflow", &[result_field, overflow_field]);
+                    let func = self.context.new_function(None, FunctionType::Extern, return_type.as_type(), &[param_a, param_b], func_name, false);
+                    let result = self.context.new_call(None, func, &[lhs, rhs]);
+                    let overflow = result.access_field(None, overflow_field);
+                    let int_result = result.access_field(None, result_field);
+                    self.llbb().add_assignment(None, res, int_result);
+                    overflow
+                };
 
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
-            let unsigned_type = self.context.new_int_type(width as i32 / 8, false);
-            let shifted = self.context.new_cast(None, lhs, unsigned_type) >> self.context.new_rvalue_from_int(unsigned_type, width as i32 - 1);
-            let uint_max = self.context.new_unary_op(None, UnaryOp::BitwiseNegate, unsigned_type,
-                self.context.new_rvalue_from_int(unsigned_type, 0)
-            );
-            let int_max = uint_max >> self.context.new_rvalue_one(unsigned_type);
-            then_block.add_assignment(None, res, self.context.new_cast(None, shifted + int_max, result_type));
+            let unsigned_type =
+                if supports_native_type {
+                    // TODO: do we actually need to cast to unsigned? If so, document why.
+                    // Maybe that's to have an unsigned shift.
+                    self.context.new_int_type(width as i32 / 8, false)
+                }
+                else {
+                    result_type
+                };
+            let shifted = self.gcc_lshr(self.gcc_int_cast(lhs, unsigned_type), self.gcc_int(unsigned_type, width as i64 - 1));
+            let uint_max = self.gcc_not(self.gcc_int(unsigned_type, 0));
+            let int_max = self.gcc_lshr(uint_max, self.gcc_int(unsigned_type, 1));
+            then_block.add_assignment(None, res, self.gcc_int_cast(self.gcc_add(shifted, int_max), result_type));
             then_block.end_with_jump(None, after_block);
 
             self.llbb().end_with_conditional(None, overflow, then_block, after_block);

@@ -17,7 +17,7 @@ use crate::builder::ToGccComp;
 use crate::{builder::Builder, common::{SignType, TypeReflection}, context::CodegenCx};
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
-    pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn gcc_rem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
@@ -80,7 +80,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let element_value = self.cx.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i as i32));
                 values.push(self.cx.context.new_unary_op(None, operation, element_type, element_value));
             }
-            let array_type = self.context.new_array_type(None, element_type, element_count as i32);
             self.cx.context.new_array_constructor(None, array_type, &values)
         }
     }
@@ -297,6 +296,37 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
+    // TODO: merge with gcc_udiv.
+    pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        let b_type = b.get_type();
+        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+            // TODO(antoyo): convert the arguments to signed?
+            a / b
+        }
+        else {
+            /*
+             * 32-bit, signed: __divsi3
+             * 64-bit, signed: __divdi3
+             * 128-bit, signed: __divti3
+             */
+            let int_type = self.get_int_type(a_type);
+            // TODO: check if the type is unsigned?
+            let size =
+                match int_type.bits {
+                    32 => 's',
+                    64 => 'd',
+                    128 => 't',
+                    size => unimplemented!("signed division not implemented for integers of size {}", size),
+                };
+            let func_name = format!("__div{}i3", size);
+            let param_a = self.context.new_parameter(None, a_type, "a");
+            let param_b = self.context.new_parameter(None, b_type, "b");
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            self.context.new_call(None, func, &[a, b])
+        }
+    }
+
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
@@ -306,11 +336,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             /*
-             * 32-bit, signed: __divsi3
              * 32-bit, unsigned: __udivsi3
-             * 64-bit, signed: __divdi3
              * 64-bit, unsigned: __udivdi3
-             * 128-bit, signed: __divti3
              * 128-bit, unsigned: __udivti3
              */
             let int_type = self.get_int_type(a_type);
@@ -820,11 +847,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let int_type = self.get_int_type(value_type);
             let src_size = int_type.bits;
             let src_element_size = int_type.element_size;
-            let dest_size = self.get_int_type(dest_typ).bits;
+            let dest_int_type = self.get_int_type(dest_typ);
+            let dest_size = dest_int_type.bits;
             // FIXME: the following is probably wrong. It should be dest_size /
             // dest_int_type.element_size.
             let factor = (dest_size / src_size) as usize;
-            let array_type = self.context.new_array_type(None, value_type, factor as i32);
+            let array_type = dest_int_type.typ;
 
             if src_size < dest_size {
                 // TODO: initialize to -1 if negative.
@@ -858,6 +886,27 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
+    pub fn gcc_int_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(value_type) {
+            return self.context.new_cast(None, value, dest_typ);
+        }
+
+        let int_type = self.get_int_type(value_type);
+
+        let func_name =
+            match (int_type.bits, self.type_kind(dest_typ)) {
+                (64, TypeKind::Float) => "__floatdisf",
+                (64, TypeKind::Double) => "__floatdidf",
+                (128, TypeKind::Float) => "__floattisf",
+                (128, TypeKind::Double) => "__floattidf",
+                (size, kind) => panic!("cannot cast a non-native signed integer of size {} to type {:?}", size, kind),
+            };
+        let param = self.context.new_parameter(None, value_type, "n");
+        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
+        self.context.new_call(None, func, &[value])
+    }
+
     pub fn gcc_uint_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
         if self.supports_native_int_type_or_bool(value_type) {
@@ -873,6 +922,27 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 (128, TypeKind::Float) => "__floatuntisf",
                 (128, TypeKind::Double) => "__floatuntidf",
                 (size, kind) => panic!("cannot cast a non-native unsigned integer of size {} to type {:?}", size, kind),
+            };
+        let param = self.context.new_parameter(None, value_type, "n");
+        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
+        self.context.new_call(None, func, &[value])
+    }
+
+    pub fn gcc_float_to_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        let value_type = value.get_type();
+        if self.supports_native_int_type_or_bool(dest_typ) {
+            return self.context.new_cast(None, value, dest_typ);
+        }
+
+        let int_type = self.get_int_type(dest_typ);
+
+        let func_name =
+            match (int_type.bits, self.type_kind(value_type)) {
+                (64, TypeKind::Float) => "__fixsfdi",
+                (64, TypeKind::Double) => "__fixdfdi",
+                (128, TypeKind::Float) => "__fixsfti",
+                (128, TypeKind::Double) => "__fixdfti",
+                (size, kind) => panic!("cannot cast a {:?} to non-native integer of size {}", kind, size),
             };
         let param = self.context.new_parameter(None, value_type, "n");
         let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);

@@ -32,6 +32,10 @@ else
     cargo rustc $features
 fi
 
+if [[ "$1" == "--build" ]]; then
+    exit
+fi
+
 source config.sh
 
 function clean() {
