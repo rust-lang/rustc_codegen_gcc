@@ -36,8 +36,8 @@ jobs:
     - name: Setup path to libgccjit
       run: |
           echo $(readlink -f gcc-build) > gcc_path
-          ls gcc-build
-          ln gcc-build/${{ matrix.libgccjit_version }} gcc-build/${{ matrix.libgccjit_version }}.0
+          # NOTE: the filename is still libgccjit.so even when the artifact name is different.
+          ln gcc-build/libgccjit.so gcc-build/libgccjit.so.0
 
     - name: Set env
       run: |
