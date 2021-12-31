@@ -31,10 +31,12 @@ jobs:
           name: ${{ matrix.libgccjit_version }}
           path: gcc-build
           repo: antoyo/gcc
+          search_artifacts: true # Because, instead, the action only check the last job ran and that won't work since we want multiple artifacts.
 
     - name: Setup path to libgccjit
       run: |
           echo $(readlink -f gcc-build) > gcc_path
+          ls gcc-build
           ln gcc-build/${{ matrix.libgccjit_version }} gcc-build/${{ matrix.libgccjit_version }}.0
 
     - name: Set env
