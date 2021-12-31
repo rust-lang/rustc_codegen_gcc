@@ -89,11 +89,10 @@ impl CodegenBackend for GccCodegenBackend {
             sess.warn("LTO is not supported. You may get a linker error.");
         }
 
-        /*let check_context = Context::default();
+        let check_context = Context::default();
         let _int128_ty = check_context.new_c_type(CType::UInt128t);
         check_context.compile();
-        *self.supports_128bit_integers.lock().expect("lock") = check_context.get_last_error() == Ok(None);*/
-        *self.supports_128bit_integers.lock().expect("lock") = false;
+        *self.supports_128bit_integers.lock().expect("lock") = check_context.get_last_error() == Ok(None);
     }
 
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, metadata: EncodedMetadata, need_metadata_module: bool) -> Box<dyn Any> {
