@@ -841,7 +841,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let cond = self.context.new_comparison(None, ComparisonOp::Equals, masked, mask);
                 let diff = diff * self.context.new_cast(None, cond, self.int_type);
                 let res = self.context.new_call(None, count_trailing_zeroes, &[casted_arg]) - diff;
-                return self.context.new_cast(None, res, arg_type);
+                return self.context.new_cast(None, res, result_type);
             };
         let count_trailing_zeroes = self.context.get_builtin_function(count_trailing_zeroes);
         let arg =
