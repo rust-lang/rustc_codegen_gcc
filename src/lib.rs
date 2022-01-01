@@ -22,6 +22,7 @@ extern crate rustc_middle;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
+extern crate tempfile;
 
 // This prevents duplicating functions and statics that are already part of the host rustc process.
 #[allow(unused_extern_crates)]
@@ -67,6 +68,7 @@ use rustc_session::config::{Lto, OptLevel, OutputFilenames};
 use rustc_session::Session;
 use rustc_span::Symbol;
 use rustc_span::fatal_error::FatalError;
+use tempfile::TempDir;
 
 pub struct PrintOnPanic<F: Fn() -> String>(pub F);
 
@@ -89,11 +91,13 @@ impl CodegenBackend for GccCodegenBackend {
             sess.warn("LTO is not supported. You may get a linker error.");
         }
 
+        let temp_dir = TempDir::new().expect("cannot create temporary directory");
+        let temp_file = temp_dir.into_path().join("result.asm");
         let check_context = Context::default();
         let _int128_ty = check_context.new_c_type(CType::UInt128t);
-        check_context.compile();
+        // NOTE: we cannot just call compile() as this would require other files than libgccjit.so.
+        check_context.compile_to_file(gccjit::OutputKind::Assembler, temp_file.to_str().expect("path to str"));
         *self.supports_128bit_integers.lock().expect("lock") = check_context.get_last_error() == Ok(None);
-        println!("128-bit integers are supported: {}", self.supports_128bit_integers.lock().expect("lock"));
     }
 
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>, metadata: EncodedMetadata, need_metadata_module: bool) -> Box<dyn Any> {

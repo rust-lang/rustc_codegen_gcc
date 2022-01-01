@@ -79,9 +79,6 @@ jobs:
 
     - name: Build
       run: |
-        ls /home/runner/work/rustc_codegen_gcc/rustc_codegen_gcc/llvm
-        echo Workspace ${{ env.workspace }}
-        ls ${{ env.workspace }}/llvm
         ./prepare_build.sh
         ./build.sh
         cargo test
