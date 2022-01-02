@@ -109,6 +109,13 @@ Or add a breakpoint to `add_error` in gdb and print the line number using:
 
 ```
 p loc->m_line
+p loc->m_filename->m_buffer
+```
+
+To print a debug representation of a tree:
+
+```c
+debug_tree(expr);
 ```
 
 To get the `rustc` command to run in `gdb`, add the `--verbose` flag to `cargo build`.
