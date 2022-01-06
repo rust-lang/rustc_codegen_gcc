@@ -222,6 +222,10 @@ case $1 in
         std_tests
         ;;
 
+    "--build-sysroot")
+        build_sysroot
+        ;;
+
     *)
         clean
         mini_tests
