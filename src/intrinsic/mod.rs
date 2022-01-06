@@ -195,8 +195,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                                             sym::cttz => self.count_trailing_zeroes(width, arg),
                                             _ => unreachable!(),
                                         };
-                                    else_block.add_assignment(None, result, zeros);
-                                    else_block.end_with_jump(None, after_block);
+                                    self.llbb().add_assignment(None, result, zeros);
+                                    self.llbb().end_with_jump(None, after_block);
 
                                     // NOTE: since jumps were added in a place rustc does not
                                     // expect, the current blocks in the state need to be updated.

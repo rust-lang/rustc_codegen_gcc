@@ -196,6 +196,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let while_block = current_func.new_block("while");
 
             let result = current_func.new_local(None, int_type.typ, "shiftResult");
+
+            // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
+            // element at the start.
+            values.reverse();
+
             let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
             current_block.add_assignment(None, result, array_value);
 
@@ -215,13 +220,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             let end = (size / element_size) as i32;
             for current_index in 0..end - 1 {
-                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
-                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
+                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
+                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
                 loop_block.add_assignment(None, target, source);
                 loop_block.add_assignment_op(None, casted_b_var, gccjit::BinaryOp::Minus, element_size_value);
             }
             // TODO: handle endianness.
-            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, 0));
+            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, end - 1));
             loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
 
             loop_block.end_with_jump(None, while_block);
@@ -231,12 +236,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.block = Some(after_block);
             *self.cx.current_block.borrow_mut() = Some(after_block);
 
-            // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
-            // element at the start.
-            // FIXME: this looks wrong to reverse values here and return it. Don't we lose what we
-            // did in result?
-            values.reverse();
-            self.context.new_array_constructor(None, int_type.typ, &values)
+            result.to_rvalue()
         }
     }
 

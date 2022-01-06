@@ -316,10 +316,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let current_block = self.current_block.borrow().expect("block");
         let current_func = current_block.get_function();
         // TODO(antoyo): return the new_call() directly? Since the overflow function has no side-effects.
-        unsafe { RETURN_VALUE_COUNT += 1 };
-        if unsafe { RETURN_VALUE_COUNT == 1112 } {
-            println!("**** {:?}", args);
-        }
         let result = current_func.new_local(None, return_type, &format!("overflowReturnValue{}", unsafe { RETURN_VALUE_COUNT }));
         current_block.add_assignment(None, result, self.cx.context.new_call(None, func, &args));
         result.to_rvalue()

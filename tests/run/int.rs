@@ -50,6 +50,7 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     assert_eq!(var << (argc + 60) as u128, 309485304969250248077606912);
     assert_eq!(var << (argc + 62) as u128, 1237941219877000992310427648);
     assert_eq!(var << (argc + 63) as u128, 2475882439754001984620855296);
+    assert_eq!(var << (argc + 80) as u128, 324518863143436548128224745357312);
 
     assert_eq!(var2 << argc as u128, 20950745466795983104);
     assert_eq!(var2 << (argc + 32) as u128, 89982766606709001335848566784);
@@ -64,7 +65,6 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     assert_eq!(var3 << (argc + 60) as u128, 24154564986213503432893119171609493504);
     assert_eq!(var3 << (argc + 62) as u128, 96618259944854013731572476686437974016);
     assert_eq!(var3 << (argc + 63) as u128, 193236519889708027463144953372875948032);
-    //assert_eq!(var3 << (argc + 80) as u128, );
 
     assert_eq!(var >> argc as u128, 67108928);
     assert_eq!(var >> (argc + 32) as u128, 0);
@@ -86,7 +86,7 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     assert_eq!(var3 >> (argc + 60) as u128, 83802981867183932420);
     assert_eq!(var3 >> (argc + 62) as u128, 20950745466795983105);
     assert_eq!(var3 >> (argc + 63) as u128, 10475372733397991552);
-    //assert_eq!(var3 >> (argc + 80) as u128, 159841502889984); // FIXME
+    assert_eq!(var3 >> (argc + 80) as u128, 79920751444992);
 
     // Casts
     assert_eq!((var >> (argc + 32) as u128) as u64, 0);
