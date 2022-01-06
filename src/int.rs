@@ -2,7 +2,7 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
 
-// FIXME: this should be rewritten in a recurisve way, i.e. 128-bit integers should be written
+// FIXME: this should be rewritten in a recursive way, i.e. 128-bit integers should be written
 // by using 64-bit integer operations. If those are not supported as way, that will recursively
 // use 32-bit integer operations.
 
@@ -168,15 +168,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             let casted_b = self.gcc_int_cast(b, element_type);
 
-            let casted_b_var = self.current_func().new_local(None, casted_b.get_type(), "casted_b"); // TODO: remove.
-            self.llbb().add_assignment(None, casted_b_var, casted_b); // TODO: remove.
-
             // FIXME: the reverse shift won't work if shifting for more than element_size.
             let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
-            let reverse_shift = element_size_value - casted_b;
 
-            let reverse_shift_var = self.current_func().new_local(None, casted_b.get_type(), "reverse_shift"); // TODO: remove.
-            self.llbb().add_assignment(None, reverse_shift_var, reverse_shift); // TODO: remove.
+            // NOTE: to support shift by more than the width of an element, we modulo the shift
+            // value by the width and later, we move the elements to take this reduction of the
+            // shift into account.
+            let adjusted_shift = casted_b % element_size_value;
+            let reverse_shift = element_size_value - casted_b;
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
@@ -186,26 +185,20 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             while current_index >= 0 {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
 
-                let current_element_var = self.current_func().new_local(None, current_element.get_type(), &format!("current_element_{}", current_index)); // TODO: remove.
-                self.llbb().add_assignment(None, current_element_var, current_element); // TODO: remove.
-
-                let shifted_var = self.current_func().new_local(None, current_element.get_type(), &format!("shifted_var_{}", current_index)); // TODO: remove.
-
                 // NOTE: shifting an integer by more than its width is undefined behavior.
                 // So we apply a mask to get a value of 0 in this case.
-                let shifted_value = current_element_var.to_rvalue() >> casted_b_var.to_rvalue();
-                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b_var.to_rvalue(), element_size_value);
+                let shifted_value = current_element >> casted_b;
+                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b, element_size_value);
                 let mask = self.context.new_cast(None, mask, element_type);
                 let mask = self.context.new_unary_op(None, UnaryOp::Minus, element_type, mask);
-                self.llbb().add_assignment(None, shifted_var, shifted_value & mask); // TODO: remove.
 
-                let new_element = shifted_var.to_rvalue() | overflow;
+                let new_element = shifted_value & mask.to_rvalue() | overflow;
                 values.push(new_element);
                 current_index -= 1;
 
                 let overflow_var = self.current_func().new_local(None, current_element.get_type(), &format!("overflow_var_{}", current_index)); // TODO: remove.
                 // TODO: check if we need to apply a mask for the reverse shift as well.
-                self.llbb().add_assignment(None, overflow_var, current_element_var.to_rvalue() << reverse_shift_var.to_rvalue()); // TODO: remove.
+                self.llbb().add_assignment(None, overflow_var, current_element << reverse_shift.to_rvalue()); // TODO: remove.
 
                 overflow = overflow_var.to_rvalue();
             }
