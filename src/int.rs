@@ -133,7 +133,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_lshr(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn gcc_lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         let a_native = self.supports_native_int_type(a_type);
@@ -168,14 +168,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             let casted_b = self.gcc_int_cast(b, element_type);
 
-            // FIXME: the reverse shift won't work if shifting for more than element_size.
             let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
 
             // NOTE: to support shift by more than the width of an element, we modulo the shift
             // value by the width and later, we move the elements to take this reduction of the
             // shift into account.
             let adjusted_shift = casted_b % element_size_value;
-            let reverse_shift = element_size_value - casted_b;
+            let reverse_shift = element_size_value - adjusted_shift;
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
@@ -184,27 +183,58 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // TODO: remove all the temporary variables created here for debugging purposes.
             while current_index >= 0 {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-
-                // NOTE: shifting an integer by more than its width is undefined behavior.
-                // So we apply a mask to get a value of 0 in this case.
-                let shifted_value = current_element >> casted_b;
-                let mask = self.context.new_comparison(None, ComparisonOp::LessThan, casted_b, element_size_value);
-                let mask = self.context.new_cast(None, mask, element_type);
-                let mask = self.context.new_unary_op(None, UnaryOp::Minus, element_type, mask);
-
-                let new_element = shifted_value & mask.to_rvalue() | overflow;
+                let shifted_value = current_element >> adjusted_shift;
+                let new_element = shifted_value | overflow;
                 values.push(new_element);
                 current_index -= 1;
-
-                let overflow_var = self.current_func().new_local(None, current_element.get_type(), &format!("overflow_var_{}", current_index)); // TODO: remove.
-                // TODO: check if we need to apply a mask for the reverse shift as well.
-                self.llbb().add_assignment(None, overflow_var, current_element << reverse_shift.to_rvalue()); // TODO: remove.
-
-                overflow = overflow_var.to_rvalue();
+                overflow = current_element << reverse_shift;
             }
             // TODO: do I need to use overflow here?
+
+            let current_func = self.current_func.borrow().expect("current func");
+            let current_block = self.current_block.borrow().expect("current block");
+            let while_block = current_func.new_block("while");
+
+            let result = current_func.new_local(None, int_type.typ, "shiftResult");
+            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            current_block.add_assignment(None, result, array_value);
+
+            let casted_b_var = current_func.new_local(None, casted_b.get_type(), "current_shift_value");
+            current_block.add_assignment(None, casted_b_var, casted_b);
+
+            current_block.end_with_jump(None, while_block);
+
+            // NOTE: if shifting by WIDTH or more, shift the elements in the array by one until the
+            // values are at the right location.
+            let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, casted_b_var.to_rvalue(), element_size_value);
+
+            let loop_block = current_func.new_block("loop");
+            let after_block = current_func.new_block("after");
+
+            while_block.end_with_conditional(None, cond, loop_block, after_block);
+
+            let end = (size / element_size) as i32;
+            for current_index in 0..end - 1 {
+                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
+                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
+                loop_block.add_assignment(None, target, source);
+                loop_block.add_assignment_op(None, casted_b_var, gccjit::BinaryOp::Minus, element_size_value);
+            }
+            // TODO: handle endianness.
+            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, 0));
+            loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
+
+            loop_block.end_with_jump(None, while_block);
+
+            // NOTE: since jumps were added in a place rustc does not expect, the current block in the
+            // state need to be updated.
+            self.block = Some(after_block);
+            *self.cx.current_block.borrow_mut() = Some(after_block);
+
             // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
             // element at the start.
+            // FIXME: this looks wrong to reverse values here and return it. Don't we lose what we
+            // did in result?
             values.reverse();
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
@@ -724,7 +754,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             else {
                 let int_type = self.get_int_type(typ);
                 let element_size = int_type.element_size as u32;
-                let mask = (element_size - 1) as u128;
+                let mask = 2_u128.wrapping_pow(element_size).wrapping_sub(1);
                 let element_type = int_type.typ.dyncast_array().expect("get element type");
                 let element_count = int_type.bits as u32 / element_size;
                 let mut values = vec![];

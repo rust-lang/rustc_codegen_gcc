@@ -664,7 +664,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 128 => {
                     // TODO(antoyo): find a more efficient implementation?
                     let sixty_four = self.gcc_int(typ, 64);
-                    let high = self.gcc_int_cast(self.gcc_lshr(value, sixty_four), self.u64_type);
+                    let right_shift = self.gcc_lshr(value, sixty_four);
+                    let high = self.gcc_int_cast(right_shift, self.u64_type);
                     let low = self.gcc_int_cast(value, self.u64_type);
 
                     let reversed_high = self.bit_reverse(64, high);
@@ -760,7 +761,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.context.new_cast(None, res, arg_type)
     }
 
-    fn count_trailing_zeroes(&self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+    fn count_trailing_zeroes(&mut self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
         let result_type = arg.get_type();
         let arg =
             if result_type.is_signed(self.cx) {
@@ -855,7 +856,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.context.new_cast(None, res, result_type)
     }
 
-    fn pop_count(&self, value: RValue<'gcc>) -> RValue<'gcc> {
+    fn pop_count(&mut self, value: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): use the optimized version with fewer operations.
         let result_type = value.get_type();
         let value_type = result_type.to_unsigned(self.cx);
@@ -873,7 +874,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // implementation (that does not require a call to __popcountdi2).
             let popcount = self.context.get_builtin_function("__builtin_popcountll");
             let sixty_four = self.gcc_int(value_type, 64);
-            let high = self.gcc_int_cast(self.gcc_lshr(value, sixty_four), self.cx.ulonglong_type);
+            let right_shift = self.gcc_lshr(value, sixty_four);
+            let high = self.gcc_int_cast(right_shift, self.cx.ulonglong_type);
             let high = self.context.new_call(None, popcount, &[high]);
             let low = self.gcc_int_cast(value, self.cx.ulonglong_type);
             let low = self.context.new_call(None, popcount, &[low]);
