@@ -2,6 +2,8 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
 
+// FIXME: The following error is printed when 128-bit integers are not supported:
+// libgccjit.so: error: unrecognized (enum gcc_jit_types) value: 18
 // FIXME: this should be rewritten in a recursive way, i.e. 128-bit integers should be written
 // by using 64-bit integer operations. If those are not supported as way, that will recursively
 // use 32-bit integer operations.
@@ -227,6 +229,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
             // TODO: handle endianness.
             let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, end - 1));
+            // TODO: handle sign.
             loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
 
             loop_block.end_with_jump(None, while_block);
@@ -864,6 +867,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
             values[0] = self.context.new_cast(None, value, dest_element_type);
+            // NOTE: set the sign of the value.
+            let zero = self.context.new_rvalue_zero(value_type);
+            let is_negative = self.context.new_comparison(None, ComparisonOp::LessThan, value, zero);
+            let is_negative = self.gcc_int_cast(is_negative, dest_element_type);
+            values[1] = self.context.new_unary_op(None, UnaryOp::Minus, dest_element_type, is_negative);
             self.context.new_array_constructor(None, dest_int_type.typ, &values)
         }
         else {
@@ -872,18 +880,24 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let src_element_size = int_type.element_size;
             let dest_int_type = self.get_int_type(dest_typ);
             let dest_size = dest_int_type.bits;
+            let dest_element_type = dest_int_type.typ.dyncast_array().expect("element type");
             // FIXME: the following is probably wrong. It should be dest_size /
             // dest_int_type.element_size.
             let factor = (dest_size / src_size) as usize;
             let array_type = dest_int_type.typ;
 
             if src_size < dest_size {
-                // TODO: initialize to -1 if negative.
-                let mut values = vec![self.context.new_rvalue_zero(value_type); factor];
+                let zero = self.context.new_rvalue_zero(dest_element_type);
+                let mut values = vec![zero; factor];
                 // TODO: take endianness into account.
                 // FIXME: this is assuming that value is not an array and that it fits in one array
                 // element.
                 values[0] = value;
+                // NOTE: set the sign of the value.
+                let zero = self.context.new_rvalue_zero(value_type); // FIXME: this will probably fail. Use self.gcc_int() instead.
+                let is_negative = self.context.new_comparison(None, ComparisonOp::LessThan, value, zero);
+                let is_negative = self.gcc_int_cast(is_negative, value_type);
+                values[1] = self.context.new_unary_op(None, UnaryOp::Minus, value_type, is_negative);
                 let array_value = self.context.new_array_constructor(None, array_type, &values);
                 self.context.new_bitcast(None, array_value, dest_typ)
             }
@@ -891,7 +905,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 self.context.new_bitcast(None, value, dest_typ)
             }
             else {
-                // TODO: also implement casting from a native integer type.
                 let mut current_size = 0;
                 // TODO: take endianness into account.
                 let mut current_index = src_size / src_element_size - 1;
