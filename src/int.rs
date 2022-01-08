@@ -189,7 +189,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let new_element = shifted_value | overflow;
                 values.push(new_element);
                 current_index -= 1;
-                overflow = current_element << reverse_shift;
+                overflow = current_element << reverse_shift; // FIXME: for a shift of 0, this will generate a reverse shift of 64, which is UB.
             }
             // TODO: do I need to use overflow here?
 
@@ -623,7 +623,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let shifted_value = current_element << adjusted_shift;
                 let new_element = shifted_value | overflow;
                 values.push(new_element);
-                overflow = current_element >> reverse_shift;
+
+                // NOTE: to avoid shifting by the width of an element (which is undefined
+                // behavior), we have the following adjustment to the result of the shift.
+                let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, reverse_shift, element_size_value);
+                let mask = self.context.new_cast(None, cond, element_type) - self.context.new_rvalue_one(element_type);
+                overflow = (current_element >> reverse_shift) & mask;
             }
 
             let current_func = self.current_func.borrow().expect("current func");
@@ -730,8 +735,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             // FIXME: if dest_element_size < dest_size, this loop is infinite.
             while bit_set /*% dest_element_size*/ < dest_size {
                 let value = int & mask;
-                int = int.overflowing_shr(dest_size).0; // TODO: check if that overflows and if it does, check that we're done?
-                //int >>= dest_size;
+                let (new_int, overflow) = int.overflowing_shr(dest_size);
+                int =
+                    if overflow {
+                        0
+                    }
+                    else {
+                        new_int
+                    };
                 values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
                 bit_set += dest_element_size;
             }
