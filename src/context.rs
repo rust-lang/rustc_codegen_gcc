@@ -26,7 +26,7 @@ pub struct FuncSig<'gcc> {
     pub return_type: Type<'gcc>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IntType<'gcc> {
     pub bits: u8,
     pub element_size: u8,
@@ -170,7 +170,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 (i128_type, u128_type)
             }
             else {
-                let i128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
+                let i128_type = context.new_array_type(None, i64_type, 2); // TODO: don't forget to apply the right alignment.
                 non_native_int_types.push(IntType {
                     bits: 128,
                     element_size: 64,
@@ -358,16 +358,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
 
         panic!("{:?} not an integer type", typ);
-    }
-
-    pub fn get_unsigned_int_type_by_size(&self, size: u8) -> IntType<'gcc> {
-        for native_type in &self.native_int_types {
-            if native_type.bits == size && !native_type.signed {
-                return native_type.clone();
-            }
-        }
-
-        panic!("no native type of size {} found", size);
     }
 
     pub fn sess(&self) -> &Session {

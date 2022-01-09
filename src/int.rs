@@ -705,7 +705,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let dest_size = int_type.bits as u32;
             let dest_element_size = int_type.element_size as u32;
             let mask = 2_i64.wrapping_pow(dest_element_size).wrapping_sub(1);
-            let native_int_type = self.get_unsigned_int_type_by_size(dest_element_size as u8).typ;
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
             let mut bit_set = 0;
             let mut values = vec![];
             // FIXME: if dest_element_size < dest_size, this loop is infinite.
@@ -729,7 +729,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let dest_size = int_type.bits as u32;
             let dest_element_size = int_type.element_size as u32;
             let mask = 2_u64.wrapping_pow(dest_element_size).wrapping_sub(1);
-            let native_int_type = self.get_unsigned_int_type_by_size(dest_element_size as u8).typ;
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
             let mut bit_set = 0;
             let mut values = vec![];
             // FIXME: if dest_element_size < dest_size, this loop is infinite.
