@@ -1064,14 +1064,15 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
+            // TODO: Document why we need to have an unsigned type.
+            // Maybe that's to have an unsigned shift.
             let unsigned_type =
                 if supports_native_type {
-                    // TODO: do we actually need to cast to unsigned? If so, document why.
-                    // Maybe that's to have an unsigned shift.
+                    // TODO: only use to_unsigned()?
                     self.context.new_int_type(width as i32 / 8, false)
                 }
                 else {
-                    result_type
+                    result_type.to_unsigned(&self.cx)
                 };
             let shifted = self.gcc_lshr(self.gcc_int_cast(lhs, unsigned_type), self.gcc_int(unsigned_type, width as i64 - 1));
             let uint_max = self.gcc_not(self.gcc_int(unsigned_type, 0));
