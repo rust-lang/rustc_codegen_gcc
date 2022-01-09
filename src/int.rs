@@ -4,6 +4,7 @@
 
 // FIXME: The following error is printed when 128-bit integers are not supported:
 // libgccjit.so: error: unrecognized (enum gcc_jit_types) value: 18
+// FIXME: the UI tests are probably failing because of the above ^ .
 // FIXME: this should be rewritten in a recursive way, i.e. 128-bit integers should be written
 // by using 64-bit integer operations. If those are not supported as way, that will recursively
 // use 32-bit integer operations.
@@ -167,10 +168,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let size = int_type.bits;
             let element_size = int_type.element_size;
             let element_type = int_type.typ.dyncast_array().expect("element type");
+            let unsigned_element_type = element_type.to_unsigned(&self.cx);
 
-            let casted_b = self.gcc_int_cast(b, element_type);
+            let casted_b = self.gcc_int_cast(b, unsigned_element_type);
 
-            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
+            let element_size_value = self.context.new_rvalue_from_int(unsigned_element_type, element_size as i32);
 
             // NOTE: to support shift by more than the width of an element, we modulo the shift
             // value by the width and later, we move the elements to take this reduction of the
@@ -180,14 +182,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
-            let mut overflow = self.context.new_rvalue_zero(element_type);
+            let mut overflow = self.context.new_rvalue_zero(unsigned_element_type);
             let mut values = vec![];
             // TODO: remove all the temporary variables created here for debugging purposes.
             while current_index >= 0 {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
+                // NOTE: for the right shift to work as expected here (i.e. without keeping the
+                // sign), we cast the value to unsigned.
+                let current_element = self.context.new_cast(None, current_element, unsigned_element_type);
                 let shifted_value = current_element >> adjusted_shift;
                 let new_element = shifted_value | overflow;
-                values.push(new_element);
+                values.push(self.context.new_cast(None, new_element, element_type));
                 current_index -= 1;
                 overflow = current_element << reverse_shift; // FIXME: for a shift of 0, this will generate a reverse shift of 64, which is UB.
             }
@@ -605,9 +610,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let size = int_type.bits;
             let element_size = int_type.element_size;
             let element_type = int_type.typ.dyncast_array().expect("element type");
-            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
+            let unsigned_element_type = element_type.to_unsigned(&self.cx);
+            let element_size_value = self.context.new_rvalue_from_int(unsigned_element_type, element_size as i32);
 
-            let casted_b = self.gcc_int_cast(b, element_type);
+            let casted_b = self.gcc_int_cast(b, unsigned_element_type);
             // NOTE: to support shift by more than the width of an element, we modulo the shift
             // value by the width and later, we move the elements to take this reduction of the
             // shift into account.
@@ -616,18 +622,21 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             // TODO: take endianness into account.
             let end = (size / element_size) as i32;
-            let mut overflow = self.context.new_rvalue_zero(element_type);
+            let mut overflow = self.context.new_rvalue_zero(unsigned_element_type);
             let mut values = vec![];
             for current_index in 0..end {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
+                // NOTE: for the right (reverse) shift to work as expected here (i.e. without keeping the
+                // sign), we cast the value to unsigned.
+                let current_element = self.context.new_cast(None, current_element, unsigned_element_type);
                 let shifted_value = current_element << adjusted_shift;
                 let new_element = shifted_value | overflow;
-                values.push(new_element);
+                values.push(self.context.new_cast(None, new_element, element_type));
 
                 // NOTE: to avoid shifting by the width of an element (which is undefined
                 // behavior), we have the following adjustment to the result of the shift.
                 let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, reverse_shift, element_size_value);
-                let mask = self.context.new_cast(None, cond, element_type) - self.context.new_rvalue_one(element_type);
+                let mask = self.context.new_cast(None, cond, unsigned_element_type) - self.context.new_rvalue_one(unsigned_element_type);
                 overflow = (current_element >> reverse_shift) & mask;
             }
 

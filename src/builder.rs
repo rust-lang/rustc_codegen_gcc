@@ -548,6 +548,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn ashr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check whether behavior is an arithmetic shift for >> .
+        // It seems to be if the value is signed.
         self.gcc_lshr(a, b)
     }
 
