@@ -516,7 +516,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         let value =
             if result_type.is_signed(self.cx) {
-                self.context.new_cast(None, value, typ)
+                self.gcc_int_cast(value, typ)
             }
             else {
                 value
@@ -766,7 +766,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let arg =
             if result_type.is_signed(self.cx) {
                 let new_type = result_type.to_unsigned(self.cx);
-                self.context.new_cast(None, arg, new_type)
+                self.gcc_int_cast(arg, new_type)
             }
             else {
                 arg
@@ -863,13 +863,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         let value =
             if result_type.is_signed(self.cx) {
-                self.context.new_cast(None, value, value_type)
+                self.gcc_int_cast(value, value_type)
             }
             else {
                 value
             };
 
-        if value_type.is_u128(&self.cx) || value_type == self.u128_type {
+        if value_type.is_u128(&self.cx) || value_type == self.u128_type { // FIXME: the comparison to self.u128_type is probably useless now that is_u128() is fixed?
             // TODO(antoyo): implement in the normal algorithm below to have a more efficient
             // implementation (that does not require a call to __popcountdi2).
             let popcount = self.context.get_builtin_function("__builtin_popcountll");

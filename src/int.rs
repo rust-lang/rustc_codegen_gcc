@@ -687,8 +687,18 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_bswap(&mut self, mut arg: RValue<'gcc>, width: u64) -> RValue<'gcc> {
         let arg_type = arg.get_type();
         if !self.supports_native_int_type(arg_type) {
-            // TODO
-            return arg;
+            let int_type = self.get_int_type(arg_type);
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let lsb = self.context.new_array_access(None, arg, self.context.new_rvalue_from_int(self.int_type, 0)).to_rvalue();
+            let swapped_lsb = self.gcc_bswap(lsb, width / 2);
+            let swapped_lsb = self.context.new_cast(None, swapped_lsb, native_int_type);
+            let msb = self.context.new_array_access(None, arg, self.context.new_rvalue_from_int(self.int_type, 1)).to_rvalue();
+            let swapped_msb = self.gcc_bswap(msb, width / 2);
+            let swapped_msb = self.context.new_cast(None, swapped_msb, native_int_type);
+
+            // NOTE: we also need to swap the two elements here, in addition two swapping inside
+            // the elements themselves like done above.
+            return self.context.new_array_constructor(None, int_type.typ, &[swapped_msb, swapped_lsb]);
         }
 
         // TODO(antoyo): check if it's faster to use string literals and a
