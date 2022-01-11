@@ -168,11 +168,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let size = int_type.bits;
             let element_size = int_type.element_size;
             let element_type = int_type.typ.dyncast_array().expect("element type");
-            let unsigned_element_type = element_type.to_unsigned(&self.cx);
 
-            let casted_b = self.gcc_int_cast(b, unsigned_element_type);
+            let casted_b = self.gcc_int_cast(b, element_type);
 
-            let element_size_value = self.context.new_rvalue_from_int(unsigned_element_type, element_size as i32);
+            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
 
             // NOTE: to support shift by more than the width of an element, we modulo the shift
             // value by the width and later, we move the elements to take this reduction of the
@@ -182,14 +181,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             // TODO: take endianness into account.
             let mut current_index = (size / element_size - 1) as i32;
-            let mut overflow = self.context.new_rvalue_zero(unsigned_element_type);
+            let mut overflow = self.context.new_rvalue_zero(element_type);
             let mut values = vec![];
             // TODO: remove all the temporary variables created here for debugging purposes.
             while current_index >= 0 {
                 let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-                // NOTE: for the right shift to work as expected here (i.e. without keeping the
-                // sign), we cast the value to unsigned.
-                let current_element = self.context.new_cast(None, current_element, unsigned_element_type);
                 let shifted_value = current_element >> adjusted_shift;
                 let new_element = shifted_value | overflow;
                 values.push(self.context.new_cast(None, new_element, element_type));
@@ -234,8 +230,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
             // TODO: handle endianness.
             let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, end - 1));
-            // TODO: handle sign.
-            loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
+
+            // NOTE: set the sign of the most significant bytes.
+            let zero = self.gcc_int(a_type, 0);
+            let is_negative = self.gcc_icmp(IntPredicate::IntSLT, a, zero);
+            let is_negative = self.gcc_int_cast(is_negative, element_type);
+            let sign_bytes = self.context.new_unary_op(None, UnaryOp::Minus, element_type, is_negative);
+            loop_block.add_assignment(None, target, sign_bytes);
 
             loop_block.end_with_jump(None, while_block);
 
