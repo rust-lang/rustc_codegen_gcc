@@ -696,7 +696,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let swapped_msb = self.gcc_bswap(msb, width / 2);
             let swapped_msb = self.context.new_cast(None, swapped_msb, native_int_type);
 
-            // NOTE: we also need to swap the two elements here, in addition two swapping inside
+            // NOTE: we also need to swap the two elements here, in addition to swapping inside
             // the elements themselves like done above.
             return self.context.new_array_constructor(None, int_type.typ, &[swapped_msb, swapped_lsb]);
         }
