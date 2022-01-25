@@ -97,7 +97,7 @@ impl CodegenBackend for GccCodegenBackend {
         let temp_dir = TempDir::new().expect("cannot create temporary directory");
         let temp_file = temp_dir.into_path().join("result.asm");
         let check_context = Context::default();
-        check_context.set_hide_log_stderr(true);
+        check_context.set_print_errors_to_stderr(false);
         let _int128_ty = check_context.new_c_type(CType::UInt128t);
         // NOTE: we cannot just call compile() as this would require other files than libgccjit.so.
         check_context.compile_to_file(gccjit::OutputKind::Assembler, temp_file.to_str().expect("path to str"));
