@@ -41,7 +41,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
                         global_variable.set_alignment(alignment);
                     }
                 }
-                // TODO(antoyo): upgrade alignment.
                 return *variable;
             }
         }
