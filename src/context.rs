@@ -83,6 +83,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     /// Cache of emitted const globals (value -> global)
     pub const_globals: RefCell<FxHashMap<RValue<'gcc>, RValue<'gcc>>>,
+    /// Map from the address of a global variable (rvalue) to the global variable itself (lvalue).
     pub global_lvalues: RefCell<FxHashMap<RValue<'gcc>, LValue<'gcc>>>,
 
     /// Cache of constant strings,
