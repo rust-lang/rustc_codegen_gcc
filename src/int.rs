@@ -123,15 +123,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             let int_type = self.get_int_type(a_type);
-            let dest_size = int_type.bits as u32;
-            let dest_element_size = int_type.element_size as u32;
-            let factor = (dest_size / dest_element_size) as i32;
-            let mut values = vec![];
-            for i in 0..factor {
-                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.cx.int_type, i));
-                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.cx.int_type, i));
-                values.push(element_a.to_rvalue() & element_b.to_rvalue());
-            }
+            let values = [
+                self.low(a) & self.low(b),
+                self.high(a) & self.high(b),
+            ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
@@ -849,15 +844,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else {
             assert!(!a_native && !b_native, "both types should either be native or non-native for or operation");
             let int_type = self.get_int_type(a_type);
-            let dest_size = int_type.bits as u32;
-            let dest_element_size = int_type.element_size as u32;
-            let factor = (dest_size / dest_element_size) as i32;
-            let mut values = vec![];
-            for i in 0..factor {
-                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i));
-                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.int_type, i));
-                values.push(element_a.to_rvalue() | element_b.to_rvalue());
-            }
+            let values = [
+                self.low(a) | self.low(b),
+                self.high(a) | self.high(b),
+            ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
@@ -1035,5 +1025,15 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let param = self.context.new_parameter(None, value_type, "n");
         let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
         self.context.new_call(None, func, &[value])
+    }
+
+    fn high(&self, value: RValue<'gcc>) -> RValue<'gcc> {
+        self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, 1))
+            .to_rvalue()
+    }
+
+    fn low(&self, value: RValue<'gcc>) -> RValue<'gcc> {
+        self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, 0))
+            .to_rvalue()
     }
 }
