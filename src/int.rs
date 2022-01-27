@@ -859,34 +859,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_cast(None, value, dest_typ)
         }
         else if self.supports_native_int_type_or_bool(dest_typ) {
-            // FIXME: this is assuming a cast to a smaller type.
-            let dest_size = self.get_int_type(dest_typ).bits as u32;
-            let int_type = self.get_int_type(value_type);
-            let src_element_size = int_type.element_size as u32;
-            let mut casted_value = self.context.new_rvalue_zero(dest_typ);
-            let shift_value = self.context.new_rvalue_from_int(dest_typ, src_element_size as i32);
-            let mut current_index = 0;
-
-            let mut current_bit_count = 0;
-
-            while current_bit_count < dest_size {
-                let element = self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index));
-                casted_value = casted_value << shift_value;
-                casted_value = casted_value + self.context.new_cast(None, element.to_rvalue(), dest_typ);
-                current_bit_count += src_element_size;
-                current_index += 1;
-            }
-
-            casted_value
+            self.context.new_cast(None, self.low(value), dest_typ)
         }
         else if self.supports_native_int_type_or_bool(value_type) {
             // FIXME: this is assuming the value fits in a single element of the destination type.
             let dest_int_type = self.get_int_type(dest_typ);
             let dest_element_type = dest_int_type.typ.dyncast_array().expect("get element type");
-            let dest_size = dest_int_type.bits;
-            let factor = (dest_size / dest_int_type.element_size) as usize;
 
-            let mut values = vec![self.context.new_rvalue_zero(dest_element_type); factor];
+            let mut values = [self.context.new_rvalue_zero(dest_element_type); 2];
             values[0] = self.context.new_cast(None, value, dest_element_type);
             // NOTE: set the sign of the value.
             let zero = self.context.new_rvalue_zero(value_type);
@@ -898,21 +878,17 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else {
             let int_type = self.get_int_type(value_type);
             let src_size = int_type.bits;
-            let src_element_size = int_type.element_size;
             let dest_int_type = self.get_int_type(dest_typ);
             let dest_size = dest_int_type.bits;
             let dest_element_type = dest_int_type.typ.dyncast_array().expect("element type");
             // FIXME: the following is probably wrong. It should be dest_size /
             // dest_int_type.element_size.
-            let factor = (dest_size / src_size) as usize;
             let array_type = dest_int_type.typ;
 
             if src_size < dest_size {
                 let zero = self.context.new_rvalue_zero(dest_element_type);
-                let mut values = vec![zero; factor];
+                let mut values = [zero; 2];
                 // TODO: take endianness into account.
-                // FIXME: this is assuming that value is not an array and that it fits in one array
-                // element.
                 values[0] = value;
                 // NOTE: set the sign of the value.
                 let zero = self.context.new_rvalue_zero(value_type); // FIXME: this will probably fail. Use self.gcc_int() instead.
@@ -922,23 +898,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let array_value = self.context.new_array_constructor(None, array_type, &values);
                 self.context.new_bitcast(None, array_value, dest_typ)
             }
-            else if src_size == dest_size {
-                self.context.new_bitcast(None, value, dest_typ)
+            else if src_size > dest_size {
+                self.context.new_cast(None, self.low(value), dest_typ)
             }
             else {
-                let mut current_size = 0;
-                // TODO: take endianness into account.
-                let mut current_index = src_size / src_element_size - 1;
-                let mut values = vec![];
-                while current_size < dest_size {
-                    values.push(self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, current_index as i32)).to_rvalue());
-                    current_size += src_element_size;
-                    current_index -= 1;
-                }
-                values.reverse(); // TODO: check that doing this is correct.
-                let array_value = self.context.new_array_constructor(None, array_type, &values);
-                // FIXME: that's not working since we can cast from u8 to struct u128.
-                self.context.new_bitcast(None, array_value, dest_typ)
+                self.context.new_bitcast(None, value, dest_typ)
             }
         }
     }
