@@ -323,8 +323,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    // TODO: merge with gcc_udiv.
-    pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn gcc_div(&self, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
@@ -338,7 +337,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
              * 128-bit, signed: __divti3
              */
             let int_type = self.get_int_type(a_type);
-            // TODO: check if the type is unsigned?
             let size =
                 match int_type.bits {
                     32 => 's',
@@ -346,7 +344,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     128 => 't',
                     size => unimplemented!("signed division not implemented for integers of size {}", size),
                 };
-            let func_name = format!("__div{}i3", size);
+            let sign =
+                if signed {
+                    ""
+                }
+                else {
+                    "u"
+                };
+            let func_name = format!("__{}div{}i3", sign, size);
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
             let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
@@ -354,34 +359,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
+    // TODO: merge with gcc_udiv.
+    pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        // TODO: check if the types are signed?
+        self.gcc_div(true, a, b)
+    }
+
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
-            // TODO(antoyo): convert the arguments to unsigned?
-            a / b
-        }
-        else {
-            /*
-             * 32-bit, unsigned: __udivsi3
-             * 64-bit, unsigned: __udivdi3
-             * 128-bit, unsigned: __udivti3
-             */
-            let int_type = self.get_int_type(a_type);
-            // TODO: check if the type is unsigned?
-            let size =
-                match int_type.bits {
-                    32 => 's',
-                    64 => 'd',
-                    128 => 't',
-                    size => unimplemented!("unsigned division not implemented for integers of size {}", size),
-                };
-            let func_name = format!("__udiv{}i3", size);
-            let param_a = self.context.new_parameter(None, a_type, "a");
-            let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
-            self.context.new_call(None, func, &[a, b])
-        }
+        self.gcc_div(false, a, b)
     }
 
     pub fn gcc_checked_binop(&self, oop: OverflowOp, typ: Ty<'_>, lhs: <Self as BackendTypes>::Value, rhs: <Self as BackendTypes>::Value) -> (<Self as BackendTypes>::Value, <Self as BackendTypes>::Value) {
@@ -564,15 +549,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             let int_type = self.get_int_type(a_type);
-            let dest_size = int_type.bits as u32;
-            let dest_element_size = int_type.element_size as u32;
-            let factor = (dest_size / dest_element_size) as i32;
-            let mut values = vec![];
-            for i in 0..factor {
-                let element_a = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.cx.int_type, i));
-                let element_b = self.context.new_array_access(None, b, self.context.new_rvalue_from_int(self.cx.int_type, i));
-                values.push(element_a.to_rvalue() ^ element_b.to_rvalue());
-            }
+            let values = [
+                self.low(a) ^ self.low(b),
+                self.high(a) ^ self.high(b),
+            ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
@@ -710,57 +690,33 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    pub fn gcc_int(&self, typ: Type<'gcc>, mut int: i64) -> RValue<'gcc> {
+    pub fn gcc_int(&self, typ: Type<'gcc>, int: i64) -> RValue<'gcc> {
         if self.supports_native_int_type_or_bool(typ) {
             self.context.new_rvalue_from_long(typ, i64::try_from(int).expect("i64::try_from"))
         }
         else {
-            // TODO: set the sign.
             let int_type = self.get_int_type(typ);
-            let dest_size = int_type.bits as u32;
-            let dest_element_size = int_type.element_size as u32;
-            let mask = 2_i64.wrapping_pow(dest_element_size).wrapping_sub(1);
             let native_int_type = int_type.typ.dyncast_array().expect("get element type");
-            let mut bit_set = 0;
-            let mut values = vec![];
-            // FIXME: if dest_element_size < dest_size, this loop is infinite.
-            while bit_set /*% dest_element_size*/ < dest_size {
-                let value = int & mask;
-                int = int.overflowing_shr(dest_size).0; // TODO: check if that overflows and if it does, check that we're done?
-                //int >>= dest_size;
-                values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
-                bit_set += dest_element_size;
-            }
+            let high = self.context.new_rvalue_from_int(native_int_type, -(int.is_negative() as i32));
+            let values = [
+                self.context.new_rvalue_from_long(native_int_type, int),
+                high,
+            ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
 
-    pub fn gcc_uint(&self, typ: Type<'gcc>, mut int: u64) -> RValue<'gcc> {
+    pub fn gcc_uint(&self, typ: Type<'gcc>, int: u64) -> RValue<'gcc> {
         if self.supports_native_int_type_or_bool(typ) {
             self.context.new_rvalue_from_long(typ, u64::try_from(int).expect("u64::try_from") as i64)
         }
         else {
             let int_type = self.get_int_type(typ);
-            let dest_size = int_type.bits as u32;
-            let dest_element_size = int_type.element_size as u32;
-            let mask = 2_u64.wrapping_pow(dest_element_size).wrapping_sub(1);
             let native_int_type = int_type.typ.dyncast_array().expect("get element type");
-            let mut bit_set = 0;
-            let mut values = vec![];
-            // FIXME: if dest_element_size < dest_size, this loop is infinite.
-            while bit_set /*% dest_element_size*/ < dest_size {
-                let value = int & mask;
-                let (new_int, overflow) = int.overflowing_shr(dest_size);
-                int =
-                    if overflow {
-                        0
-                    }
-                    else {
-                        new_int
-                    };
-                values.push(self.context.new_rvalue_from_long(native_int_type, value as i64));
-                bit_set += dest_element_size;
-            }
+            let values = [
+                self.context.new_rvalue_from_long(native_int_type, int as i64),
+                self.context.new_rvalue_zero(native_int_type),
+            ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
     }
@@ -881,8 +837,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let dest_int_type = self.get_int_type(dest_typ);
             let dest_size = dest_int_type.bits;
             let dest_element_type = dest_int_type.typ.dyncast_array().expect("element type");
-            // FIXME: the following is probably wrong. It should be dest_size /
-            // dest_int_type.element_size.
             let array_type = dest_int_type.typ;
 
             if src_size < dest_size {
