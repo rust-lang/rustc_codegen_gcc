@@ -91,9 +91,6 @@ impl CodegenBackend for GccCodegenBackend {
             sess.warn("LTO is not supported. You may get a linker error.");
         }
 
-        // FIXME: this way of checking if 128-bit integers are supported will overwrite the global
-        // state of libgccjit regarding types, causing some issues for bitcast.
-        // While waiting for a better solution, try using fork to avoid this overwrite.
         let temp_dir = TempDir::new().expect("cannot create temporary directory");
         let temp_file = temp_dir.into_path().join("result.asm");
         let check_context = Context::default();

@@ -2,13 +2,6 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
 
-// FIXME: The following error is printed when 128-bit integers are not supported:
-// libgccjit.so: error: unrecognized (enum gcc_jit_types) value: 18
-// FIXME: the UI tests are probably failing because of the above ^ .
-// FIXME: this should be rewritten in a recursive way, i.e. 128-bit integers should be written
-// by using 64-bit integer operations. If those are not supported as way, that will recursively
-// use 32-bit integer operations.
-
 use std::convert::TryFrom;
 
 use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp, BinaryOp};
@@ -24,14 +17,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         /*
          * 128-bit unsigned %: __umodti3
          */
-        self.div_operation(BinaryOp::Modulo, "mod", false, a, b)
+        self.multiplicative_operation(BinaryOp::Modulo, "mod", false, a, b)
     }
 
     pub fn gcc_srem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         /*
          * 128-bit signed %:   __modti3
          */
-        self.div_operation(BinaryOp::Modulo, "mod", true, a, b)
+        self.multiplicative_operation(BinaryOp::Modulo, "mod", true, a, b)
     }
 
     pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
@@ -188,67 +181,24 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_add(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
-            // FIXME(antoyo): this should not be required.
-            // TODO(antoyo): explain why it is required for now.
-            if format!("{:?}", a_type) != format!("{:?}", b_type) {
-                b = self.context.new_cast(None, b, a_type);
-            }
-            a + b
-        }
-        else {
-            let int_type = self.get_int_type(a_type);
-            let func_name =
-                if int_type.signed {
-                    "__rust_i128_add"
-                }
-                else {
-                    "__rust_u128_add"
-                };
-            let param_a = self.context.new_parameter(None, a_type, "a");
-            let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
-            self.context.new_call(None, func, &[a, b])
-        }
-    }
-
-    pub fn gcc_mul(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
-            a * b
-        }
-        else {
-            /*
-             * 128-bit, signed: __multi3
-             */
-            let param_a = self.context.new_parameter(None, a_type, "a");
-            let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], "__multi3", false);
-            self.context.new_call(None, func, &[a, b])
-        }
-    }
-
-    pub fn gcc_sub(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+    fn additive_operation(&self, operation: BinaryOp, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
             if a.get_type() != b.get_type() {
                 b = self.context.new_cast(None, b, a.get_type());
             }
-            a - b
+            self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
             let int_type = self.get_int_type(a_type);
             let func_name =
-                if int_type.signed {
-                    "__rust_i128_sub"
-                }
-                else {
-                    "__rust_u128_sub"
+                match (operation, int_type.signed) {
+                    (BinaryOp::Plus, true) => "__rust_i128_add",
+                    (BinaryOp::Plus, false) => "__rust_u128_add",
+                    (BinaryOp::Minus, true) => "__rust_i128_sub",
+                    (BinaryOp::Minus, false) => "__rust_u128_sub",
+                    _ => unreachable!("unexpected additive operation {:?}", operation),
                 };
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
@@ -257,7 +207,19 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn div_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn gcc_add(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.additive_operation(BinaryOp::Plus, a, b)
+    }
+
+    pub fn gcc_mul(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.multiplicative_operation(BinaryOp::Mult, "mul", true, a, b)
+    }
+
+    pub fn gcc_sub(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.additive_operation(BinaryOp::Minus, a, b)
+    }
+
+    fn multiplicative_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
@@ -286,14 +248,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         /*
          * 128-bit, signed: __divti3
          */
-        self.div_operation(BinaryOp::Divide, "div", true, a, b)
+        self.multiplicative_operation(BinaryOp::Divide, "div", true, a, b)
     }
 
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         /*
          * 128-bit, unsigned: __udivti3
          */
-        self.div_operation(BinaryOp::Divide, "div", false, a, b)
+        self.multiplicative_operation(BinaryOp::Divide, "div", false, a, b)
     }
 
     pub fn gcc_checked_binop(&self, oop: OverflowOp, typ: Ty<'_>, lhs: <Self as BackendTypes>::Value, rhs: <Self as BackendTypes>::Value) -> (<Self as BackendTypes>::Value, <Self as BackendTypes>::Value) {
@@ -667,7 +629,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
         else if typ.is_i128(self) {
             let num = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-            // FIXME: that cast is probably going to fail for non-native types.
             self.gcc_int_cast(num, typ)
         }
         else {
