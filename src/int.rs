@@ -20,42 +20,22 @@ use crate::builder::ToGccComp;
 use crate::{builder::Builder, common::{SignType, TypeReflection}, context::CodegenCx};
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
-    pub fn gcc_rem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if self.supports_native_int_type(a_type) && self.supports_native_int_type(b_type) {
-            a % b
-        }
-        else {
-            let a_int_type = self.get_int_type(a_type);
-            /*
-             * 32-bit unsigned %:  __umodsi3
-             * 32-bit signed %:    __modsi3
-             * 64-bit unsigned %:  __umoddi3
-             * 64-bit signed %:    __moddi3
-             * 128-bit unsigned %: __umodti3
-             * 128-bit signed %:   __modti3
-             */
-            let sign =
-                if a_int_type.signed {
-                    ""
-                }
-                else {
-                    "u"
-                };
-            let size =
-                match a_int_type.bits {
-                    32 => 's',
-                    64 => 'd',
-                    128 => 't',
-                    n => unimplemented!("modulo operation for integer of size {}", n),
-                };
-            let func_name = format!("__{}mod{}i3", sign, size);
-            let param_a = self.context.new_parameter(None, a_type, "n");
-            let param_b = self.context.new_parameter(None, b_type, "d");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
-            self.context.new_call(None, func, &[a, b])
-        }
+    pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        /*
+         * 32-bit unsigned %:  __umodsi3
+         * 64-bit unsigned %:  __umoddi3
+         * 128-bit unsigned %: __umodti3
+         */
+        self.gcc_div_operation(BinaryOp::Modulo, "mod", false, a, b)
+    }
+
+    pub fn gcc_srem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        /*
+         * 32-bit signed %:    __modsi3
+         * 64-bit signed %:    __moddi3
+         * 128-bit signed %:   __modti3
+         */
+        self.gcc_div_operation(BinaryOp::Modulo, "mod", true, a, b)
     }
 
     pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
@@ -308,12 +288,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn gcc_div(&self, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn gcc_div_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
             // TODO(antoyo): convert the arguments to signed?
-            a / b
+            self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
             /*
@@ -336,7 +316,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 else {
                     "u"
                 };
-            let func_name = format!("__{}div{}i3", sign, size);
+            let func_name = format!("__{}{}{}i3", sign, operation_name, size);
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
             let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
@@ -347,11 +327,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     // TODO: merge with gcc_udiv.
     pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO: check if the types are signed?
-        self.gcc_div(true, a, b)
+        self.gcc_div_operation(BinaryOp::Divide, "div", true, a, b)
     }
 
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        self.gcc_div(false, a, b)
+        self.gcc_div_operation(BinaryOp::Divide, "div", false, a, b)
     }
 
     pub fn gcc_checked_binop(&self, oop: OverflowOp, typ: Ty<'_>, lhs: <Self as BackendTypes>::Value, rhs: <Self as BackendTypes>::Value) -> (<Self as BackendTypes>::Value, <Self as BackendTypes>::Value) {
