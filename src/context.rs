@@ -150,7 +150,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         let (i128_type, u128_type) =
             if supports_128bit_integers {
-                // FIXME: maybe we use a builtin that has a 128-bit argument/return type?
                 let i128_type = context.new_c_type(CType::Int128t).get_aligned(8); // TODO(antoyo): should the alignment be hard-coded?;
                 native_int_types.push(IntType {
                     bits: 128,
@@ -170,7 +169,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 (i128_type, u128_type)
             }
             else {
-                let i128_type = context.new_array_type(None, i64_type, 2); // TODO: don't forget to apply the right alignment.
+                let i128_type = context.new_array_type(None, i64_type, 2);
                 non_native_int_types.push(IntType {
                     bits: 128,
                     element_size: 64,
@@ -178,7 +177,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     typ: i128_type,
                 });
 
-                let u128_type = context.new_array_type(None, u64_type, 2); // TODO: don't forget to apply the right alignment.
+                let u128_type = context.new_array_type(None, u64_type, 2);
                 non_native_int_types.push(IntType {
                     bits: 128,
                     element_size: 64,

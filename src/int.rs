@@ -383,7 +383,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         (res.dereference(None).to_rvalue(), overflow)
     }
 
-    pub fn gcc_icmp(&self, op: IntPredicate, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn gcc_icmp(&self, op: IntPredicate, mut lhs: RValue<'gcc>, mut rhs: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = lhs.get_type();
         let b_type = rhs.get_type();
         if self.is_non_native_int_type(a_type) || self.is_non_native_int_type(b_type) {
@@ -420,6 +420,19 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.context.new_comparison(None, op, cmp, self.context.new_rvalue_from_int(self.int_type, limit))
         }
         else {
+            let left_type = lhs.get_type();
+            let right_type = rhs.get_type();
+            if left_type != right_type {
+                // NOTE: because libgccjit cannot compare function pointers.
+                if left_type.dyncast_function_ptr_type().is_some() && right_type.dyncast_function_ptr_type().is_some() {
+                    lhs = self.context.new_cast(None, lhs, self.usize_type.make_pointer());
+                    rhs = self.context.new_cast(None, rhs, self.usize_type.make_pointer());
+                }
+                // NOTE: hack because we try to cast a vector type to the same vector type.
+                else if format!("{:?}", left_type) != format!("{:?}", right_type) {
+                    rhs = self.context.new_cast(None, rhs, left_type);
+                }
+            }
             self.context.new_comparison(None, op.to_gcc_comparison(), lhs, rhs)
         }
     }

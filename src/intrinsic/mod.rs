@@ -714,8 +714,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let one = self.context.new_rvalue_one(self.usize_type);
                 let two = self.context.new_rvalue_from_long(self.usize_type, 2);
 
-                // TODO: do we actually have access to this builtin function when 128-bit integer
-                // is not supported?
                 let clzll = self.context.get_builtin_function("__builtin_clzll");
 
                 let first_elem = self.context.new_array_access(None, result, zero);
@@ -869,7 +867,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 value
             };
 
-        if value_type.is_u128(&self.cx) || value_type == self.u128_type { // FIXME: the comparison to self.u128_type is probably useless now that is_u128() is fixed?
+        if value_type.is_u128(&self.cx) {
             // TODO(antoyo): implement in the normal algorithm below to have a more efficient
             // implementation (that does not require a call to __popcountdi2).
             let popcount = self.context.get_builtin_function("__builtin_popcountll");
@@ -1064,16 +1062,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let then_block = func.new_block("then");
             let after_block = func.new_block("after");
 
-            // TODO: Document why we need to have an unsigned type.
-            // Maybe that's to have an unsigned shift.
-            let unsigned_type =
-                if supports_native_type {
-                    // TODO: only use to_unsigned()?
-                    self.context.new_int_type(width as i32 / 8, false)
-                }
-                else {
-                    result_type.to_unsigned(&self.cx)
-                };
+            // NOTE: convert the type to unsigned to have an unsigned shift.
+            let unsigned_type = result_type.to_unsigned(&self.cx);
             let shifted = self.gcc_lshr(self.gcc_int_cast(lhs, unsigned_type), self.gcc_int(unsigned_type, width as i64 - 1));
             let uint_max = self.gcc_not(self.gcc_int(unsigned_type, 0));
             let int_max = self.gcc_lshr(uint_max, self.gcc_int(unsigned_type, 1));

@@ -941,21 +941,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     /* Comparisons */
-    fn icmp(&mut self, op: IntPredicate, mut lhs: RValue<'gcc>, mut rhs: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME: most likely wrong for integers of unsupported types.
-        let left_type = lhs.get_type();
-        let right_type = rhs.get_type();
-        if left_type != right_type {
-            // NOTE: because libgccjit cannot compare function pointers.
-            if left_type.dyncast_function_ptr_type().is_some() && right_type.dyncast_function_ptr_type().is_some() {
-                lhs = self.context.new_cast(None, lhs, self.usize_type.make_pointer());
-                rhs = self.context.new_cast(None, rhs, self.usize_type.make_pointer());
-            }
-            // NOTE: hack because we try to cast a vector type to the same vector type.
-            else if format!("{:?}", left_type) != format!("{:?}", right_type) {
-                rhs = self.context.new_cast(None, rhs, left_type);
-            }
-        }
+    fn icmp(&mut self, op: IntPredicate, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         self.gcc_icmp(op, lhs, rhs)
     }
 
