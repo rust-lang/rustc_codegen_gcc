@@ -22,47 +22,39 @@ use crate::{builder::Builder, common::{SignType, TypeReflection}, context::Codeg
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         /*
-         * 32-bit unsigned %:  __umodsi3
-         * 64-bit unsigned %:  __umoddi3
          * 128-bit unsigned %: __umodti3
          */
-        self.gcc_div_operation(BinaryOp::Modulo, "mod", false, a, b)
+        self.div_operation(BinaryOp::Modulo, "mod", false, a, b)
     }
 
     pub fn gcc_srem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         /*
-         * 32-bit signed %:    __modsi3
-         * 64-bit signed %:    __moddi3
          * 128-bit signed %:   __modti3
          */
-        self.gcc_div_operation(BinaryOp::Modulo, "mod", true, a, b)
+        self.div_operation(BinaryOp::Modulo, "mod", true, a, b)
     }
 
     pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
         let typ = a.get_type();
-        let operation =
-            if typ.is_bool() {
-                UnaryOp::LogicalNegate
-            }
-            else {
-                UnaryOp::BitwiseNegate
-            };
         if self.supports_native_int_type_or_bool(typ) {
+            let operation =
+                if typ.is_bool() {
+                    UnaryOp::LogicalNegate
+                }
+                else {
+                    UnaryOp::BitwiseNegate
+                };
             self.cx.context.new_unary_op(None, operation, typ, a)
         }
         else {
-            // TODO: use __negdi2 and __negti2 instead?
+            // TODO(antoyo): use __negdi2 and __negti2 instead?
             let int_type = self.cx.get_int_type(typ);
-            let src_size = int_type.bits;
-            let src_element_size = int_type.element_size;
             let array_type = int_type.typ;
             let element_type = array_type.dyncast_array().expect("element type");
-            let element_count = src_size / src_element_size;
-            let mut values = vec![];
-            for i in 0..element_count {
-                let element_value = self.cx.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, i as i32));
-                values.push(self.cx.context.new_unary_op(None, operation, element_type, element_value));
-            }
+            let values = [
+                self.cx.context.new_unary_op(None, UnaryOp::BitwiseNegate, element_type, self.low(a)),
+                self.cx.context.new_unary_op(None, UnaryOp::BitwiseNegate, element_type, self.high(a)),
+            ];
             self.cx.context.new_array_constructor(None, array_type, &values)
         }
     }
@@ -73,21 +65,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.cx.context.new_unary_op(None, UnaryOp::Minus, a.get_type(), a)
         }
         else {
-            /*
-             * 64-bit -:  __negdi2
-             * 128-bit -: __negti2
-             */
-            //a
-            let a_int_type = self.get_int_type(a_type);
-            let size =
-                match a_int_type.bits {
-                    64 => 'd',
-                    128 => 't',
-                    n => unimplemented!("unary negation for integer of size {}", n),
-                };
-            let func_name = format!("__neg{}i2", size);
             let param_a = self.context.new_parameter(None, a_type, "a");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a], func_name, false);
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a], "__negti2", false);
             self.context.new_call(None, func, &[a])
         }
     }
@@ -223,12 +202,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         else {
             let int_type = self.get_int_type(a_type);
             let func_name =
-                match (int_type.signed, int_type.bits) {
-                    (true, 32) => "__addvsi3", // FIXME: that's trapping on overflow.
-                    (true, 64) => "__addvdi3", // FIXME: that's trapping on overflow.
-                    (true, 128) => "__rust_i128_add",
-                    (false, 128) => "__rust_u128_add",
-                    (_, size) => unimplemented!("addition for integer of size {}", size),
+                if int_type.signed {
+                    "__rust_i128_add"
+                }
+                else {
+                    "__rust_u128_add"
                 };
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
@@ -245,19 +223,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             /*
-             * 64-bit, signed: __muldi3
              * 128-bit, signed: __multi3
              */
-            let int_type = self.get_int_type(a_type);
-            let func_name =
-                match int_type.bits {
-                    64 => "__muldi3",
-                    128 => "__multi3",
-                    size => unimplemented!("multiplication for integer of size {}", size),
-                };
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
-            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
+            let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], "__multi3", false);
             self.context.new_call(None, func, &[a, b])
         }
     }
@@ -274,12 +244,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         else {
             let int_type = self.get_int_type(a_type);
             let func_name =
-                match (int_type.signed, int_type.bits) {
-                    (true, 32) => "__subvsi3", // FIXME: that's trapping on overflow.
-                    (true, 64) => "__subvdi3", // FIXME: that's trapping on overflow.
-                    (true, 128) => "__rust_i128_sub",
-                    (false, 128) => "__rust_u128_sub",
-                    (_, size) => unimplemented!("subtraction for integer of size {}", size),
+                if int_type.signed {
+                    "__rust_i128_sub"
+                }
+                else {
+                    "__rust_u128_sub"
                 };
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
@@ -288,7 +257,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    fn gcc_div_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    fn div_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
@@ -296,19 +265,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
-            /*
-             * 32-bit, signed: __divsi3
-             * 64-bit, signed: __divdi3
-             * 128-bit, signed: __divti3
-             */
-            let int_type = self.get_int_type(a_type);
-            let size =
-                match int_type.bits {
-                    32 => 's',
-                    64 => 'd',
-                    128 => 't',
-                    size => unimplemented!("signed division not implemented for integers of size {}", size),
-                };
             let sign =
                 if signed {
                     ""
@@ -316,7 +272,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 else {
                     "u"
                 };
-            let func_name = format!("__{}{}{}i3", sign, operation_name, size);
+            let func_name = format!("__{}{}ti3", sign, operation_name);
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
             let func = self.context.new_function(None, FunctionType::Extern, a_type, &[param_a, param_b], func_name, false);
@@ -327,11 +283,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     // TODO: merge with gcc_udiv.
     pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO: check if the types are signed?
-        self.gcc_div_operation(BinaryOp::Divide, "div", true, a, b)
+        /*
+         * 128-bit, signed: __divti3
+         */
+        self.div_operation(BinaryOp::Divide, "div", true, a, b)
     }
 
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        self.gcc_div_operation(BinaryOp::Divide, "div", false, a, b)
+        /*
+         * 128-bit, unsigned: __udivti3
+         */
+        self.div_operation(BinaryOp::Divide, "div", false, a, b)
     }
 
     pub fn gcc_checked_binop(&self, oop: OverflowOp, typ: Ty<'_>, lhs: <Self as BackendTypes>::Value, rhs: <Self as BackendTypes>::Value) -> (<Self as BackendTypes>::Value, <Self as BackendTypes>::Value) {
@@ -471,13 +433,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 else {
                     "u"
                 };
-            let size =
-                match a_int_type.bits {
-                    64 => 'd',
-                    128 => 't',
-                    size => unimplemented!("icmp not implemented for integers of size {}", size),
-                };
-            let func_name = format!("__{}cmp{}i2", sign, size);
+            let func_name = format!("__{}cmpti2", sign);
             let param_a = self.context.new_parameter(None, a_type, "a");
             let param_b = self.context.new_parameter(None, b_type, "b");
             let func = self.context.new_function(None, FunctionType::Extern, self.int_type, &[param_a, param_b], func_name, false);
@@ -804,15 +760,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             return self.context.new_cast(None, value, dest_typ);
         }
 
-        let int_type = self.get_int_type(value_type);
-
         let name_suffix =
-            match (int_type.bits, self.type_kind(dest_typ)) {
-                (64, TypeKind::Float) => "disf",
-                (64, TypeKind::Double) => "didf",
-                (128, TypeKind::Float) => "tisf",
-                (128, TypeKind::Double) => "tidf",
-                (size, kind) => panic!("cannot cast a non-native integer of size {} to type {:?}", size, kind),
+            match self.type_kind(dest_typ) {
+                TypeKind::Float => "tisf",
+                TypeKind::Double => "tidf",
+                kind => panic!("cannot cast a non-native integer to type {:?}", kind),
             };
         let sign =
             if signed {
@@ -841,15 +793,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             return self.context.new_cast(None, value, dest_typ);
         }
 
-        let int_type = self.get_int_type(dest_typ);
-
         let name_suffix =
-            match (int_type.bits, self.type_kind(value_type)) {
-                (64, TypeKind::Float) => "sfdi",
-                (64, TypeKind::Double) => "dfdi",
-                (128, TypeKind::Float) => "sfti",
-                (128, TypeKind::Double) => "dfti",
-                (size, kind) => panic!("cannot cast a {:?} to non-native integer of size {}", kind, size),
+            match self.type_kind(value_type) {
+                TypeKind::Float => "sfti",
+                TypeKind::Double => "dfti",
+                kind => panic!("cannot cast a {:?} to non-native integer", kind),
             };
         let sign =
             if signed {
