@@ -721,16 +721,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_uint_big(&self, typ: Type<'gcc>, mut num: u128) -> RValue<'gcc> {
+    pub fn gcc_uint_big(&self, typ: Type<'gcc>, num: u128) -> RValue<'gcc> {
+        let low = num as u64;
+        let high = (num >> 64) as u64;
         if num >> 64 != 0 {
             // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
-            // FIXME: calling new_rvalue_from_long directly could not work if the type is
-            // non-native.
-            // TODO: make this code generic by using the parts of the non-native type if it is
-            // non-native.
             if self.supports_native_int_type(typ) {
-                let low = self.context.new_rvalue_from_long(self.u64_type, num as u64 as i64);
-                let high = self.context.new_rvalue_from_long(typ, (num >> 64) as u64 as i64);
+                let low = self.context.new_rvalue_from_long(self.u64_type, low as i64);
+                let high = self.context.new_rvalue_from_long(typ, high as i64);
 
                 let sixty_four = self.context.new_rvalue_from_long(typ, 64);
                 let shift = high << sixty_four;
@@ -738,16 +736,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             }
             else {
                 let int_type = self.get_int_type(typ);
-                let element_size = int_type.element_size as u32;
-                let mask = 2_u128.wrapping_pow(element_size).wrapping_sub(1);
-                let element_type = int_type.typ.dyncast_array().expect("get element type");
-                let element_count = int_type.bits as u32 / element_size;
-                let mut values = vec![];
-                for _ in 0..element_count {
-                    let value = num & mask;
-                    num >>= element_size; // TODO: switch to overflowing_shr()?
-                    values.push(self.context.new_rvalue_from_long(element_type, value as i64));
-                }
+                let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+                let values = [
+                    self.context.new_rvalue_from_long(native_int_type, low as i64),
+                    self.context.new_rvalue_from_long(native_int_type, high as i64),
+                ];
                 self.context.new_array_constructor(None, int_type.typ, &values)
             }
         }
@@ -767,11 +760,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
         else {
             let int_type = self.get_int_type(typ);
-            let size = int_type.bits;
-            let factor = (size / int_type.element_size) as usize;
             let element_type = int_type.typ.dyncast_array().expect("get element type");
             let zero = self.context.new_rvalue_zero(element_type);
-            let zeroes = vec![zero; factor];
+            let zeroes = [zero; 2];
             self.context.new_array_constructor(None, int_type.typ, &zeroes)
         }
     }
@@ -818,7 +809,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_cast(None, self.low(value), dest_typ)
         }
         else if self.supports_native_int_type_or_bool(value_type) {
-            // FIXME: this is assuming the value fits in a single element of the destination type.
             let dest_int_type = self.get_int_type(dest_typ);
             let dest_element_type = dest_int_type.typ.dyncast_array().expect("get element type");
 
@@ -832,36 +822,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_array_constructor(None, dest_int_type.typ, &values)
         }
         else {
-            let int_type = self.get_int_type(value_type);
-            let src_size = int_type.bits;
-            let dest_int_type = self.get_int_type(dest_typ);
-            let dest_size = dest_int_type.bits;
-            let dest_element_type = dest_int_type.typ.dyncast_array().expect("element type");
-            let array_type = dest_int_type.typ;
-
-            if src_size < dest_size {
-                let zero = self.context.new_rvalue_zero(dest_element_type);
-                let mut values = [zero; 2];
-                // TODO: take endianness into account.
-                values[0] = value;
-                // NOTE: set the sign of the value.
-                let zero = self.context.new_rvalue_zero(value_type); // FIXME: this will probably fail. Use self.gcc_int() instead.
-                let is_negative = self.context.new_comparison(None, ComparisonOp::LessThan, value, zero);
-                let is_negative = self.gcc_int_cast(is_negative, value_type);
-                values[1] = self.context.new_unary_op(None, UnaryOp::Minus, value_type, is_negative);
-                let array_value = self.context.new_array_constructor(None, array_type, &values);
-                self.context.new_bitcast(None, array_value, dest_typ)
-            }
-            else if src_size > dest_size {
-                self.context.new_cast(None, self.low(value), dest_typ)
-            }
-            else {
-                self.context.new_bitcast(None, value, dest_typ)
-            }
+            // Since u128 and i128 are the only types that can be unsupported, we know the type of
+            // value and the destination type have the same size, so a bitcast is fine.
+            self.context.new_bitcast(None, value, dest_typ)
         }
     }
 
-    pub fn gcc_int_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+    fn int_to_float_cast(&self, signed: bool, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
         if self.supports_native_int_type_or_bool(value_type) {
             return self.context.new_cast(None, value, dest_typ);
@@ -869,80 +836,70 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         let int_type = self.get_int_type(value_type);
 
-        let func_name =
+        let name_suffix =
             match (int_type.bits, self.type_kind(dest_typ)) {
-                (64, TypeKind::Float) => "__floatdisf",
-                (64, TypeKind::Double) => "__floatdidf",
-                (128, TypeKind::Float) => "__floattisf",
-                (128, TypeKind::Double) => "__floattidf",
-                (size, kind) => panic!("cannot cast a non-native signed integer of size {} to type {:?}", size, kind),
+                (64, TypeKind::Float) => "disf",
+                (64, TypeKind::Double) => "didf",
+                (128, TypeKind::Float) => "tisf",
+                (128, TypeKind::Double) => "tidf",
+                (size, kind) => panic!("cannot cast a non-native integer of size {} to type {:?}", size, kind),
             };
+        let sign =
+            if signed {
+                ""
+            }
+            else {
+                "un"
+            };
+        let func_name = format!("__float{}{}", sign, name_suffix);
         let param = self.context.new_parameter(None, value_type, "n");
         let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
         self.context.new_call(None, func, &[value])
     }
 
+    pub fn gcc_int_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        self.int_to_float_cast(true, value, dest_typ)
+    }
+
     pub fn gcc_uint_to_float_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
+        self.int_to_float_cast(false, value, dest_typ)
+    }
+
+    fn float_to_int_cast(&self, signed: bool, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(value_type) {
+        if self.supports_native_int_type_or_bool(dest_typ) {
             return self.context.new_cast(None, value, dest_typ);
         }
 
-        let int_type = self.get_int_type(value_type);
+        let int_type = self.get_int_type(dest_typ);
 
-        let func_name =
-            match (int_type.bits, self.type_kind(dest_typ)) {
-                (64, TypeKind::Float) => "__floatundisf",
-                (64, TypeKind::Double) => "__floatundidf",
-                (128, TypeKind::Float) => "__floatuntisf",
-                (128, TypeKind::Double) => "__floatuntidf",
-                (size, kind) => panic!("cannot cast a non-native unsigned integer of size {} to type {:?}", size, kind),
+        let name_suffix =
+            match (int_type.bits, self.type_kind(value_type)) {
+                (64, TypeKind::Float) => "sfdi",
+                (64, TypeKind::Double) => "dfdi",
+                (128, TypeKind::Float) => "sfti",
+                (128, TypeKind::Double) => "dfti",
+                (size, kind) => panic!("cannot cast a {:?} to non-native integer of size {}", kind, size),
             };
+        let sign =
+            if signed {
+                ""
+            }
+            else {
+                "uns"
+            };
+        let func_name = format!("__fix{}{}", sign, name_suffix);
         let param = self.context.new_parameter(None, value_type, "n");
         let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
         self.context.new_call(None, func, &[value])
     }
 
     pub fn gcc_float_to_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
-        let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(dest_typ) {
-            return self.context.new_cast(None, value, dest_typ);
-        }
-
-        let int_type = self.get_int_type(dest_typ);
-
-        let func_name =
-            match (int_type.bits, self.type_kind(value_type)) {
-                (64, TypeKind::Float) => "__fixsfdi",
-                (64, TypeKind::Double) => "__fixdfdi",
-                (128, TypeKind::Float) => "__fixsfti",
-                (128, TypeKind::Double) => "__fixdfti",
-                (size, kind) => panic!("cannot cast a {:?} to non-native integer of size {}", kind, size),
-            };
-        let param = self.context.new_parameter(None, value_type, "n");
-        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
-        self.context.new_call(None, func, &[value])
+        self.float_to_int_cast(true, value, dest_typ)
     }
 
     pub fn gcc_float_to_uint_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
-        let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(dest_typ) {
-            return self.context.new_cast(None, value, dest_typ);
-        }
-
-        let int_type = self.get_int_type(dest_typ);
-
-        let func_name =
-            match (int_type.bits, self.type_kind(value_type)) {
-                (64, TypeKind::Float) => "__fixunssfdi",
-                (64, TypeKind::Double) => "__fixunsdfdi",
-                (128, TypeKind::Float) => "__fixunssfti",
-                (128, TypeKind::Double) => "__fixunsdfti",
-                (size, kind) => panic!("cannot cast a {:?} to non-native unsigned integer of size {}", kind, size),
-            };
-        let param = self.context.new_parameter(None, value_type, "n");
-        let func = self.context.new_function(None, FunctionType::Extern, dest_typ, &[param], func_name, false);
-        self.context.new_call(None, func, &[value])
+        self.float_to_int_cast(false, value, dest_typ)
     }
 
     fn high(&self, value: RValue<'gcc>) -> RValue<'gcc> {
