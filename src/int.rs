@@ -11,7 +11,7 @@
 
 use std::convert::TryFrom;
 
-use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp};
+use gccjit::{ComparisonOp, FunctionType, RValue, ToRValue, Type, UnaryOp, BinaryOp};
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
 use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeMethods, BuilderMethods, OverflowOp};
 use rustc_middle::ty::Ty;
@@ -112,23 +112,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_and(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
-        let a_type = a.get_type();
-        let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
-            if a_type != b_type {
-                b = self.context.new_cast(None, b, a_type);
-            }
-            a & b
-        }
-        else {
-            let int_type = self.get_int_type(a_type);
-            let values = [
-                self.low(a) & self.low(b),
-                self.high(a) & self.high(b),
-            ];
-            self.context.new_array_constructor(None, int_type.typ, &values)
-        }
+    pub fn gcc_and(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.cx.bitwise_operation(BinaryOp::BitwiseAnd, a, b)
     }
 
     pub fn gcc_lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
@@ -777,26 +762,31 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    pub fn gcc_or(&self, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
+    fn bitwise_operation(&self, operation: BinaryOp, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         let a_native = self.supports_native_int_type_or_bool(a_type);
         let b_native = self.supports_native_int_type_or_bool(b_type);
         if a_native && b_native {
-            if a.get_type() != b.get_type() {
-                b = self.context.new_cast(None, b, a.get_type());
+            if a_type != b_type {
+                b = self.context.new_cast(None, b, a_type);
             }
-            a | b
+            self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
             assert!(!a_native && !b_native, "both types should either be native or non-native for or operation");
             let int_type = self.get_int_type(a_type);
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
             let values = [
-                self.low(a) | self.low(b),
-                self.high(a) | self.high(b),
+                self.context.new_binary_op(None, operation, native_int_type, self.low(a), self.low(b)),
+                self.context.new_binary_op(None, operation, native_int_type, self.high(a), self.high(b)),
             ];
             self.context.new_array_constructor(None, int_type.typ, &values)
         }
+    }
+
+    pub fn gcc_or(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        self.bitwise_operation(BinaryOp::BitwiseOr, a, b)
     }
 
     // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
