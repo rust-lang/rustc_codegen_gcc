@@ -544,13 +544,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_rvalue_from_long(typ, i64::try_from(int).expect("i64::try_from"))
         }
         else {
-            let native_int_type = typ.dyncast_array().expect("get element type");
-            let high = self.context.new_rvalue_from_int(native_int_type, -(int.is_negative() as i32));
-            let values = [
-                self.context.new_rvalue_from_long(native_int_type, int),
-                high,
-            ];
-            self.context.new_array_constructor(None, typ, &values)
+            self.from_low_high(typ, int, -(int.is_negative() as i64))
         }
     }
 
@@ -559,12 +553,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_rvalue_from_long(typ, u64::try_from(int).expect("u64::try_from") as i64)
         }
         else {
-            let native_int_type = typ.dyncast_array().expect("get element type");
-            let values = [
-                self.context.new_rvalue_from_long(native_int_type, int as i64),
-                self.context.new_rvalue_zero(native_int_type),
-            ];
-            self.context.new_array_constructor(None, typ, &values)
+            self.from_low_high(typ, int as i64, 0)
         }
     }
 
@@ -582,12 +571,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 shift | self.context.new_cast(None, low, typ)
             }
             else {
-                let native_int_type = typ.dyncast_array().expect("get element type");
-                let values = [
-                    self.context.new_rvalue_from_long(native_int_type, low as i64),
-                    self.context.new_rvalue_from_long(native_int_type, high as i64),
-                ];
-                self.context.new_array_constructor(None, typ, &values)
+                self.from_low_high(typ, low as i64, high as i64)
             }
         }
         else if typ.is_i128(self) {
@@ -606,8 +590,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else {
             let element_type = typ.dyncast_array().expect("get element type");
             let zero = self.context.new_rvalue_zero(element_type);
-            let zeroes = [zero; 2];
-            self.context.new_array_constructor(None, typ, &zeroes)
+            self.context.new_array_constructor(None, typ, &[zero; 2])
         }
     }
 
@@ -658,13 +641,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         else if self.is_native_int_type_or_bool(value_type) {
             let dest_element_type = dest_typ.dyncast_array().expect("get element type");
 
-            let mut values = [self.context.new_rvalue_zero(dest_element_type); 2];
-            values[0] = self.context.new_cast(None, value, dest_element_type);
             // NOTE: set the sign of the value.
             let zero = self.context.new_rvalue_zero(value_type);
             let is_negative = self.context.new_comparison(None, ComparisonOp::LessThan, value, zero);
             let is_negative = self.gcc_int_cast(is_negative, dest_element_type);
-            values[1] = self.context.new_unary_op(None, UnaryOp::Minus, dest_element_type, is_negative);
+            let values = [
+                self.context.new_cast(None, value, dest_element_type),
+                self.context.new_unary_op(None, UnaryOp::Minus, dest_element_type, is_negative),
+            ];
             self.context.new_array_constructor(None, dest_typ, &values)
         }
         else {
@@ -748,5 +732,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     fn low(&self, value: RValue<'gcc>) -> RValue<'gcc> {
         self.context.new_array_access(None, value, self.context.new_rvalue_from_int(self.int_type, 0))
             .to_rvalue()
+    }
+
+    fn from_low_high(&self, typ: Type<'gcc>, low: i64, high: i64) -> RValue<'gcc> {
+        let native_int_type = typ.dyncast_array().expect("get element type");
+        let values = [
+            self.context.new_rvalue_from_long(native_int_type, low),
+            self.context.new_rvalue_from_long(native_int_type, high),
+        ];
+        self.context.new_array_constructor(None, typ, &values)
     }
 }
