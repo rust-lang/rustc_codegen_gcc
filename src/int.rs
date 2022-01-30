@@ -29,7 +29,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
         let typ = a.get_type();
-        if self.supports_native_int_type_or_bool(typ) {
+        if self.is_native_int_type_or_bool(typ) {
             let operation =
                 if typ.is_bool() {
                     UnaryOp::LogicalNegate
@@ -41,14 +41,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             // TODO(antoyo): use __negdi2 and __negti2 instead?
-            let int_type = self.cx.get_int_type(typ);
-            let array_type = int_type.typ;
-            let element_type = array_type.dyncast_array().expect("element type");
+            let element_type = typ.dyncast_array().expect("element type");
             let values = [
                 self.cx.context.new_unary_op(None, UnaryOp::BitwiseNegate, element_type, self.low(a)),
                 self.cx.context.new_unary_op(None, UnaryOp::BitwiseNegate, element_type, self.high(a)),
             ];
-            self.cx.context.new_array_constructor(None, array_type, &values)
+            self.cx.context.new_array_constructor(None, typ, &values)
         }
     }
 
@@ -96,8 +94,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // NOTE: we cannot use the lshr builtin because it's calling hi() (to get the most
             // significant half of the number) which uses lshr.
 
-            let int_type = self.get_int_type(a_type);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = a_type.dyncast_array().expect("get element type");
 
             let func = self.current_func();
             let then_block = func.new_block("then");
@@ -106,7 +103,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let b0_block = func.new_block("b0");
             let actual_else_block = func.new_block("actual_else");
 
-            let result = func.new_local(None, int_type.typ, "shiftResult");
+            let result = func.new_local(None, a_type, "shiftResult");
 
             let sixty_four = self.gcc_int(native_int_type, 64);
             let sixty_three = self.gcc_int(native_int_type, 63);
@@ -129,7 +126,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 high >> shift_value,
                 sign,
             ];
-            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            let array_value = self.context.new_array_constructor(None, a_type, &values);
             then_block.add_assignment(None, result, array_value);
             then_block.end_with_jump(None, after_block);
 
@@ -149,7 +146,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 (high << shift_value) | shifted_low,
                 high >> b,
             ];
-            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            let array_value = self.context.new_array_constructor(None, a_type, &values);
             actual_else_block.add_assignment(None, result, array_value);
             actual_else_block.end_with_jump(None, after_block);
 
@@ -165,16 +162,16 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn additive_operation(&self, operation: BinaryOp, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+        if self.is_native_int_type_or_bool(a_type) && self.is_native_int_type_or_bool(b_type) {
             if a.get_type() != b.get_type() {
                 b = self.context.new_cast(None, b, a.get_type());
             }
             self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
-            let int_type = self.get_int_type(a_type);
+            let signed = a_type.is_compatible_with(self.i128_type);
             let func_name =
-                match (operation, int_type.signed) {
+                match (operation, signed) {
                     (BinaryOp::Plus, true) => "__rust_i128_add",
                     (BinaryOp::Plus, false) => "__rust_u128_add",
                     (BinaryOp::Minus, true) => "__rust_i128_sub",
@@ -203,7 +200,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn multiplicative_operation(&self, operation: BinaryOp, operation_name: &str, signed: bool, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+        if self.is_native_int_type_or_bool(a_type) && self.is_native_int_type_or_bool(b_type) {
             // TODO(antoyo): convert the arguments to signed?
             self.context.new_binary_op(None, operation, a_type, a, b)
         }
@@ -367,9 +364,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let a_type = lhs.get_type();
         let b_type = rhs.get_type();
         if self.is_non_native_int_type(a_type) || self.is_non_native_int_type(b_type) {
-            let a_int_type = self.get_int_type(a_type);
+            let signed = a_type.is_compatible_with(self.i128_type);
             let sign =
-                if a_int_type.signed {
+                if signed {
                     ""
                 }
                 else {
@@ -420,16 +417,15 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_xor(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        if self.supports_native_int_type_or_bool(a_type) && self.supports_native_int_type_or_bool(b_type) {
+        if self.is_native_int_type_or_bool(a_type) && self.is_native_int_type_or_bool(b_type) {
             a ^ b
         }
         else {
-            let int_type = self.get_int_type(a_type);
             let values = [
                 self.low(a) ^ self.low(b),
                 self.high(a) ^ self.high(b),
             ];
-            self.context.new_array_constructor(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, a_type, &values)
         }
     }
 
@@ -458,8 +454,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
         else {
             // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.
-            let int_type = self.get_int_type(a_type);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = a_type.dyncast_array().expect("get element type");
 
             let func = self.current_func();
             let then_block = func.new_block("then");
@@ -468,7 +463,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let b0_block = func.new_block("b0");
             let actual_else_block = func.new_block("actual_else");
 
-            let result = func.new_local(None, int_type.typ, "shiftResult");
+            let result = func.new_local(None, a_type, "shiftResult");
 
             let b = self.gcc_int_cast(b, native_int_type);
             let sixty_four = self.gcc_int(native_int_type, 64);
@@ -481,7 +476,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 zero,
                 self.low(a) << (b - sixty_four),
             ];
-            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            let array_value = self.context.new_array_constructor(None, a_type, &values);
             then_block.add_assignment(None, result, array_value);
             then_block.end_with_jump(None, after_block);
 
@@ -501,7 +496,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 (self.high(a) << b) | high_low,
             ];
 
-            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            let array_value = self.context.new_array_constructor(None, a_type, &values);
             actual_else_block.add_assignment(None, result, array_value);
             actual_else_block.end_with_jump(None, after_block);
 
@@ -517,8 +512,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_bswap(&mut self, mut arg: RValue<'gcc>, width: u64) -> RValue<'gcc> {
         let arg_type = arg.get_type();
         if !self.is_native_int_type(arg_type) {
-            let int_type = self.get_int_type(arg_type);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = arg_type.dyncast_array().expect("get element type");
             let lsb = self.context.new_array_access(None, arg, self.context.new_rvalue_from_int(self.int_type, 0)).to_rvalue();
             let swapped_lsb = self.gcc_bswap(lsb, width / 2);
             let swapped_lsb = self.context.new_cast(None, swapped_lsb, native_int_type);
@@ -528,7 +522,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             // NOTE: we also need to swap the two elements here, in addition to swapping inside
             // the elements themselves like done above.
-            return self.context.new_array_constructor(None, int_type.typ, &[swapped_msb, swapped_lsb]);
+            return self.context.new_array_constructor(None, arg_type, &[swapped_msb, swapped_lsb]);
         }
 
         // TODO(antoyo): check if it's faster to use string literals and a
@@ -546,33 +540,31 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn gcc_int(&self, typ: Type<'gcc>, int: i64) -> RValue<'gcc> {
-        if self.supports_native_int_type_or_bool(typ) {
+        if self.is_native_int_type_or_bool(typ) {
             self.context.new_rvalue_from_long(typ, i64::try_from(int).expect("i64::try_from"))
         }
         else {
-            let int_type = self.get_int_type(typ);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = typ.dyncast_array().expect("get element type");
             let high = self.context.new_rvalue_from_int(native_int_type, -(int.is_negative() as i32));
             let values = [
                 self.context.new_rvalue_from_long(native_int_type, int),
                 high,
             ];
-            self.context.new_array_constructor(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, typ, &values)
         }
     }
 
     pub fn gcc_uint(&self, typ: Type<'gcc>, int: u64) -> RValue<'gcc> {
-        if self.supports_native_int_type_or_bool(typ) {
+        if self.is_native_int_type_or_bool(typ) {
             self.context.new_rvalue_from_long(typ, u64::try_from(int).expect("u64::try_from") as i64)
         }
         else {
-            let int_type = self.get_int_type(typ);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = typ.dyncast_array().expect("get element type");
             let values = [
                 self.context.new_rvalue_from_long(native_int_type, int as i64),
                 self.context.new_rvalue_zero(native_int_type),
             ];
-            self.context.new_array_constructor(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, typ, &values)
         }
     }
 
@@ -590,13 +582,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 shift | self.context.new_cast(None, low, typ)
             }
             else {
-                let int_type = self.get_int_type(typ);
-                let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+                let native_int_type = typ.dyncast_array().expect("get element type");
                 let values = [
                     self.context.new_rvalue_from_long(native_int_type, low as i64),
                     self.context.new_rvalue_from_long(native_int_type, high as i64),
                 ];
-                self.context.new_array_constructor(None, int_type.typ, &values)
+                self.context.new_array_constructor(None, typ, &values)
             }
         }
         else if typ.is_i128(self) {
@@ -609,33 +600,31 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn gcc_zero(&self, typ: Type<'gcc>) -> RValue<'gcc> {
-        if self.supports_native_int_type_or_bool(typ) {
+        if self.is_native_int_type_or_bool(typ) {
             self.context.new_rvalue_zero(typ)
         }
         else {
-            let int_type = self.get_int_type(typ);
-            let element_type = int_type.typ.dyncast_array().expect("get element type");
+            let element_type = typ.dyncast_array().expect("get element type");
             let zero = self.context.new_rvalue_zero(element_type);
             let zeroes = [zero; 2];
-            self.context.new_array_constructor(None, int_type.typ, &zeroes)
+            self.context.new_array_constructor(None, typ, &zeroes)
         }
     }
 
     pub fn gcc_int_width(&self, typ: Type<'gcc>) -> u64 {
-        if self.supports_native_int_type_or_bool(typ) {
+        if self.is_native_int_type_or_bool(typ) {
             typ.get_size() as u64 * 8
         }
         else {
-            let int_type = self.get_int_type(typ);
-            int_type.bits as u64
+            128
         }
     }
 
     fn bitwise_operation(&self, operation: BinaryOp, a: RValue<'gcc>, mut b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        let a_native = self.supports_native_int_type_or_bool(a_type);
-        let b_native = self.supports_native_int_type_or_bool(b_type);
+        let a_native = self.is_native_int_type_or_bool(a_type);
+        let b_native = self.is_native_int_type_or_bool(b_type);
         if a_native && b_native {
             if a_type != b_type {
                 b = self.context.new_cast(None, b, a_type);
@@ -644,13 +633,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
         else {
             assert!(!a_native && !b_native, "both types should either be native or non-native for or operation");
-            let int_type = self.get_int_type(a_type);
-            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
+            let native_int_type = a_type.dyncast_array().expect("get element type");
             let values = [
                 self.context.new_binary_op(None, operation, native_int_type, self.low(a), self.low(b)),
                 self.context.new_binary_op(None, operation, native_int_type, self.high(a), self.high(b)),
             ];
-            self.context.new_array_constructor(None, int_type.typ, &values)
+            self.context.new_array_constructor(None, a_type, &values)
         }
     }
 
@@ -661,15 +649,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
     pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(dest_typ) && self.supports_native_int_type_or_bool(value_type) {
+        if self.is_native_int_type_or_bool(dest_typ) && self.is_native_int_type_or_bool(value_type) {
             self.context.new_cast(None, value, dest_typ)
         }
-        else if self.supports_native_int_type_or_bool(dest_typ) {
+        else if self.is_native_int_type_or_bool(dest_typ) {
             self.context.new_cast(None, self.low(value), dest_typ)
         }
-        else if self.supports_native_int_type_or_bool(value_type) {
-            let dest_int_type = self.get_int_type(dest_typ);
-            let dest_element_type = dest_int_type.typ.dyncast_array().expect("get element type");
+        else if self.is_native_int_type_or_bool(value_type) {
+            let dest_element_type = dest_typ.dyncast_array().expect("get element type");
 
             let mut values = [self.context.new_rvalue_zero(dest_element_type); 2];
             values[0] = self.context.new_cast(None, value, dest_element_type);
@@ -678,7 +665,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let is_negative = self.context.new_comparison(None, ComparisonOp::LessThan, value, zero);
             let is_negative = self.gcc_int_cast(is_negative, dest_element_type);
             values[1] = self.context.new_unary_op(None, UnaryOp::Minus, dest_element_type, is_negative);
-            self.context.new_array_constructor(None, dest_int_type.typ, &values)
+            self.context.new_array_constructor(None, dest_typ, &values)
         }
         else {
             // Since u128 and i128 are the only types that can be unsupported, we know the type of
@@ -689,7 +676,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     fn int_to_float_cast(&self, signed: bool, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(value_type) {
+        if self.is_native_int_type_or_bool(value_type) {
             return self.context.new_cast(None, value, dest_typ);
         }
 
@@ -722,7 +709,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
     fn float_to_int_cast(&self, signed: bool, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
-        if self.supports_native_int_type_or_bool(dest_typ) {
+        if self.is_native_int_type_or_bool(dest_typ) {
             return self.context.new_cast(None, value, dest_typ);
         }
 
