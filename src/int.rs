@@ -54,7 +54,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     pub fn gcc_neg(&self, a: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
-        if self.supports_native_int_type(a_type) {
+        if self.is_native_int_type(a_type) {
             self.cx.context.new_unary_op(None, UnaryOp::Minus, a.get_type(), a)
         }
         else {
@@ -71,8 +71,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        let a_native = self.supports_native_int_type(a_type);
-        let b_native = self.supports_native_int_type(b_type);
+        let a_native = self.is_native_int_type(a_type);
+        let b_native = self.is_native_int_type(b_type);
         if a_native && b_native {
             // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
             // TODO(antoyo): cast to unsigned to do a logical shift if that does not work.
@@ -251,7 +251,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         // TODO(antoyo): remove duplication with intrinsic?
         let name =
-            if self.supports_native_int_type(lhs.get_type()) {
+            if self.is_native_int_type(lhs.get_type()) {
                 match oop {
                     OverflowOp::Add =>
                         match new_kind {
@@ -436,8 +436,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_shl(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
-        let a_native = self.supports_native_int_type(a_type);
-        let b_native = self.supports_native_int_type(b_type);
+        let a_native = self.is_native_int_type(a_type);
+        let b_native = self.is_native_int_type(b_type);
         if a_native && b_native {
             // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by an unsigned number.
             if a_type.is_unsigned(self) && b_type.is_signed(self) {
@@ -516,7 +516,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     pub fn gcc_bswap(&mut self, mut arg: RValue<'gcc>, width: u64) -> RValue<'gcc> {
         let arg_type = arg.get_type();
-        if !self.supports_native_int_type(arg_type) {
+        if !self.is_native_int_type(arg_type) {
             let int_type = self.get_int_type(arg_type);
             let native_int_type = int_type.typ.dyncast_array().expect("get element type");
             let lsb = self.context.new_array_access(None, arg, self.context.new_rvalue_from_int(self.int_type, 0)).to_rvalue();
@@ -581,7 +581,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let high = (num >> 64) as u64;
         if num >> 64 != 0 {
             // FIXME(antoyo): use a new function new_rvalue_from_unsigned_long()?
-            if self.supports_native_int_type(typ) {
+            if self.is_native_int_type(typ) {
                 let low = self.context.new_rvalue_from_long(self.u64_type, low as i64);
                 let high = self.context.new_rvalue_from_long(typ, high as i64);
 

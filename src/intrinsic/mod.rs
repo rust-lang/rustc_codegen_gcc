@@ -1025,7 +1025,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let result_type = lhs.get_type();
             let func = self.current_func.borrow().expect("func");
             let res = func.new_local(None, result_type, "saturating_diff");
-            let supports_native_type = self.supports_native_int_type(result_type);
+            let supports_native_type = self.is_native_int_type(result_type);
             let overflow =
                 if supports_native_type {
                     let func_name =
