@@ -42,6 +42,8 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     let var3 = 193236519889708027473620326106273939584_u128;
     let var4 = 123236519889708027473620326106273939584_u128;
     let var5 = 153236519889708027473620326106273939584_u128;
+    let var6 = 18446744073709551616_i128;
+    let var7 = 170141183460469231731687303715884105728_u128;
 
     // Shifts.
     assert_eq!(var << (argc as u128 - 1), var);
@@ -93,6 +95,10 @@ fn main(argc: isize, _argv: *const *const u8) -> isize {
     assert_eq!(var3 >> (argc + 62) as u128, 20950745466795983105);
     assert_eq!(var3 >> (argc + 63) as u128, 10475372733397991552);
     assert_eq!(var3 >> (argc + 80) as u128, 79920751444992);
+
+    assert_eq!(var6 >> argc as u128, 9223372036854775808);
+    assert_eq!((var6 - 1) >> argc as u128, 9223372036854775807);
+    assert_eq!(var7 >> argc as u128, 85070591730234615865843651857942052864);
 
     // Casts
     assert_eq!((var >> (argc + 32) as u128) as u64, 0);

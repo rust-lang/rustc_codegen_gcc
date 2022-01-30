@@ -96,81 +96,62 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // NOTE: we cannot use the lshr builtin because it's calling hi() (to get the most
             // significant half of the number) which uses lshr.
 
-            let int_type = self.cx.get_int_type(a_type);
-            let size = int_type.bits;
-            let element_size = int_type.element_size;
-            let element_type = int_type.typ.dyncast_array().expect("element type");
+            let int_type = self.get_int_type(a_type);
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
 
-            let casted_b = self.gcc_int_cast(b, element_type);
+            let func = self.current_func();
+            let then_block = func.new_block("then");
+            let else_block = func.new_block("else");
+            let after_block = func.new_block("after");
+            let b0_block = func.new_block("b0");
+            let actual_else_block = func.new_block("actual_else");
 
-            let element_size_value = self.context.new_rvalue_from_int(element_type, element_size as i32);
+            let result = func.new_local(None, int_type.typ, "shiftResult");
 
-            // NOTE: to support shift by more than the width of an element, we modulo the shift
-            // value by the width and later, we move the elements to take this reduction of the
-            // shift into account.
-            let adjusted_shift = casted_b % element_size_value;
-            let reverse_shift = element_size_value - adjusted_shift;
+            let sixty_four = self.gcc_int(native_int_type, 64);
+            let sixty_three = self.gcc_int(native_int_type, 63);
+            let zero = self.gcc_zero(native_int_type);
+            let b = self.gcc_int_cast(b, native_int_type);
+            let condition = self.gcc_icmp(IntPredicate::IntNE, self.gcc_and(b, sixty_four), zero);
+            self.llbb().end_with_conditional(None, condition, then_block, else_block);
 
             // TODO: take endianness into account.
-            let mut current_index = (size / element_size - 1) as i32;
-            let mut overflow = self.context.new_rvalue_zero(element_type);
-            let mut values = vec![];
-            // TODO: remove all the temporary variables created here for debugging purposes.
-            while current_index >= 0 {
-                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-                let shifted_value = current_element >> adjusted_shift;
-                let new_element = shifted_value | overflow;
-                values.push(self.context.new_cast(None, new_element, element_type));
-                current_index -= 1;
-                overflow = current_element << reverse_shift; // FIXME: for a shift of 0, this will generate a reverse shift of 64, which is UB.
-            }
-            // TODO: do I need to use overflow here?
-
-            let current_func = self.current_func.borrow().expect("current func");
-            let current_block = self.current_block.borrow().expect("current block");
-            let while_block = current_func.new_block("while");
-
-            let result = current_func.new_local(None, int_type.typ, "shiftResult");
-
-            // NOTE: reverse because we inserted in the reverse order, i.e. we added the last
-            // element at the start.
-            values.reverse();
-
+            let shift_value = self.gcc_sub(b, sixty_four);
+            let high = self.high(a);
+            let sign =
+                if a_type.is_signed(self) {
+                    high >> sixty_three
+                }
+                else {
+                    zero
+                };
+            let values = [
+                high >> shift_value,
+                sign,
+            ];
             let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
-            current_block.add_assignment(None, result, array_value);
+            then_block.add_assignment(None, result, array_value);
+            then_block.end_with_jump(None, after_block);
 
-            let casted_b_var = current_func.new_local(None, casted_b.get_type(), "current_shift_value");
-            current_block.add_assignment(None, casted_b_var, casted_b);
+            let condition = self.gcc_icmp(IntPredicate::IntEQ, b, zero);
+            else_block.end_with_conditional(None, condition, b0_block, actual_else_block);
 
-            current_block.end_with_jump(None, while_block);
+            b0_block.add_assignment(None, result, a);
+            b0_block.end_with_jump(None, after_block);
 
-            // NOTE: if shifting by WIDTH or more, shift the elements in the array by one until the
-            // values are at the right location.
-            let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, casted_b_var.to_rvalue(), element_size_value);
-
-            let loop_block = current_func.new_block("loop");
-            let after_block = current_func.new_block("after");
-
-            while_block.end_with_conditional(None, cond, loop_block, after_block);
-
-            let end = (size / element_size) as i32;
-            for current_index in 0..end - 1 {
-                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
-                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
-                loop_block.add_assignment(None, target, source);
-                loop_block.add_assignment_op(None, casted_b_var, gccjit::BinaryOp::Minus, element_size_value);
-            }
-            // TODO: handle endianness.
-            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, end - 1));
-
-            // NOTE: set the sign of the most significant bytes.
-            let zero = self.gcc_int(a_type, 0);
-            let is_negative = self.gcc_icmp(IntPredicate::IntSLT, a, zero);
-            let is_negative = self.gcc_int_cast(is_negative, element_type);
-            let sign_bytes = self.context.new_unary_op(None, UnaryOp::Minus, element_type, is_negative);
-            loop_block.add_assignment(None, target, sign_bytes);
-
-            loop_block.end_with_jump(None, while_block);
+            let shift_value = self.gcc_sub(sixty_four, b);
+            // NOTE: cast low to its unsigned type in order to perform a logical right shift.
+            let unsigned_type = native_int_type.to_unsigned(&self.cx);
+            let casted_low = self.context.new_cast(None, self.low(a), unsigned_type);
+            let shifted_low = casted_low >> self.context.new_cast(None, b, unsigned_type);
+            let shifted_low = self.context.new_cast(None, shifted_low, native_int_type);
+            let values = [
+                (high << shift_value) | shifted_low,
+                high >> b,
+            ];
+            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            actual_else_block.add_assignment(None, result, array_value);
+            actual_else_block.end_with_jump(None, after_block);
 
             // NOTE: since jumps were added in a place rustc does not expect, the current block in the
             // state need to be updated.
@@ -242,9 +223,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    // TODO: merge with gcc_udiv.
     pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO: check if the types are signed?
+        // TODO(antoyo): check if the types are signed?
         /*
          * 128-bit, signed: __divti3
          */
@@ -479,72 +459,51 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         else {
             // NOTE: we cannot use the ashl builtin because it's calling widen_hi() which uses ashl.
             let int_type = self.get_int_type(a_type);
-            let size = int_type.bits;
-            let element_size = int_type.element_size;
-            let element_type = int_type.typ.dyncast_array().expect("element type");
-            let unsigned_element_type = element_type.to_unsigned(&self.cx);
-            let element_size_value = self.context.new_rvalue_from_int(unsigned_element_type, element_size as i32);
+            let native_int_type = int_type.typ.dyncast_array().expect("get element type");
 
-            let casted_b = self.gcc_int_cast(b, unsigned_element_type);
-            // NOTE: to support shift by more than the width of an element, we modulo the shift
-            // value by the width and later, we move the elements to take this reduction of the
-            // shift into account.
-            let adjusted_shift = casted_b % element_size_value;
-            let reverse_shift = element_size_value - adjusted_shift;
+            let func = self.current_func();
+            let then_block = func.new_block("then");
+            let else_block = func.new_block("else");
+            let after_block = func.new_block("after");
+            let b0_block = func.new_block("b0");
+            let actual_else_block = func.new_block("actual_else");
+
+            let result = func.new_local(None, int_type.typ, "shiftResult");
+
+            let b = self.gcc_int_cast(b, native_int_type);
+            let sixty_four = self.gcc_int(native_int_type, 64);
+            let zero = self.gcc_zero(native_int_type);
+            let condition = self.gcc_icmp(IntPredicate::IntNE, self.gcc_and(b, sixty_four), zero);
+            self.llbb().end_with_conditional(None, condition, then_block, else_block);
 
             // TODO: take endianness into account.
-            let end = (size / element_size) as i32;
-            let mut overflow = self.context.new_rvalue_zero(unsigned_element_type);
-            let mut values = vec![];
-            for current_index in 0..end {
-                let current_element = self.context.new_array_access(None, a, self.context.new_rvalue_from_int(self.int_type, current_index)).to_rvalue();
-                // NOTE: for the right (reverse) shift to work as expected here (i.e. without keeping the
-                // sign), we cast the value to unsigned.
-                let current_element = self.context.new_cast(None, current_element, unsigned_element_type);
-                let shifted_value = current_element << adjusted_shift;
-                let new_element = shifted_value | overflow;
-                values.push(self.context.new_cast(None, new_element, element_type));
-
-                // NOTE: to avoid shifting by the width of an element (which is undefined
-                // behavior), we have the following adjustment to the result of the shift.
-                let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, reverse_shift, element_size_value);
-                let mask = self.context.new_cast(None, cond, unsigned_element_type) - self.context.new_rvalue_one(unsigned_element_type);
-                overflow = (current_element >> reverse_shift) & mask;
-            }
-
-            let current_func = self.current_func.borrow().expect("current func");
-            let current_block = self.current_block.borrow().expect("current block");
-            let while_block = current_func.new_block("while");
-
-            let result = current_func.new_local(None, int_type.typ, "shiftResult");
+            let values = [
+                zero,
+                self.low(a) << (b - sixty_four),
+            ];
             let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
-            current_block.add_assignment(None, result, array_value);
+            then_block.add_assignment(None, result, array_value);
+            then_block.end_with_jump(None, after_block);
 
-            let casted_b_var = current_func.new_local(None, casted_b.get_type(), "current_shift_value");
-            current_block.add_assignment(None, casted_b_var, casted_b);
+            let condition = self.gcc_icmp(IntPredicate::IntEQ, b, zero);
+            else_block.end_with_conditional(None, condition, b0_block, actual_else_block);
 
-            current_block.end_with_jump(None, while_block);
+            b0_block.add_assignment(None, result, a);
+            b0_block.end_with_jump(None, after_block);
 
-            // NOTE: if shifting by WIDTH or more, shift the elements in the array by one until the
-            // values are at the right location.
-            let cond = self.context.new_comparison(None, ComparisonOp::GreaterThanEquals, casted_b_var.to_rvalue(), element_size_value);
+            // NOTE: cast low to its unsigned type in order to perform a logical right shift.
+            let unsigned_type = native_int_type.to_unsigned(&self.cx);
+            let casted_low = self.context.new_cast(None, self.low(a), unsigned_type);
+            let shift_value = self.context.new_cast(None, sixty_four - b, unsigned_type);
+            let high_low = self.context.new_cast(None, casted_low >> shift_value, native_int_type);
+            let values = [
+                self.low(a) << b,
+                (self.high(a) << b) | high_low,
+            ];
 
-            let loop_block = current_func.new_block("loop");
-            let after_block = current_func.new_block("after");
-
-            while_block.end_with_conditional(None, cond, loop_block, after_block);
-
-            for current_index in 0..end - 1 {
-                let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index + 1));
-                let source = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, current_index));
-                loop_block.add_assignment(None, target, source);
-                loop_block.add_assignment_op(None, casted_b_var, gccjit::BinaryOp::Minus, element_size_value);
-            }
-            // TODO: handle endianness.
-            let target = self.context.new_array_access(None, result, self.context.new_rvalue_from_int(self.int_type, 0));
-            loop_block.add_assignment(None, target, self.context.new_rvalue_zero(element_type));
-
-            loop_block.end_with_jump(None, while_block);
+            let array_value = self.context.new_array_constructor(None, int_type.typ, &values);
+            actual_else_block.add_assignment(None, result, array_value);
+            actual_else_block.end_with_jump(None, after_block);
 
             // NOTE: since jumps were added in a place rustc does not expect, the current block in the
             // state need to be updated.
