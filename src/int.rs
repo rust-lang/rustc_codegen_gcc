@@ -1,6 +1,6 @@
 //! Module to handle integer operations.
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
-//! 128-bit integers on 32-bit platforms and thus requires to be handled manually.
+//! 128-bit integers on 32-bit platforms and thus require to be handled manually.
 
 use std::convert::TryFrom;
 
@@ -14,16 +14,12 @@ use crate::{builder::Builder, common::{SignType, TypeReflection}, context::Codeg
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        /*
-         * 128-bit unsigned %: __umodti3
-         */
+        // 128-bit unsigned %: __umodti3
         self.multiplicative_operation(BinaryOp::Modulo, "mod", false, a, b)
     }
 
     pub fn gcc_srem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        /*
-         * 128-bit signed %:   __modti3
-         */
+        // 128-bit signed %:   __modti3
         self.multiplicative_operation(BinaryOp::Modulo, "mod", true, a, b)
     }
 
@@ -112,7 +108,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let condition = self.gcc_icmp(IntPredicate::IntNE, self.gcc_and(b, sixty_four), zero);
             self.llbb().end_with_conditional(None, condition, then_block, else_block);
 
-            // TODO: take endianness into account.
+            // TODO(antoyo): take endianness into account.
             let shift_value = self.gcc_sub(b, sixty_four);
             let high = self.high(a);
             let sign =
@@ -201,7 +197,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.is_native_int_type_or_bool(a_type) && self.is_native_int_type_or_bool(b_type) {
-            // TODO(antoyo): convert the arguments to signed?
             self.context.new_binary_op(None, operation, a_type, a, b)
         }
         else {
@@ -222,16 +217,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check if the types are signed?
-        /*
-         * 128-bit, signed: __divti3
-         */
+        // 128-bit, signed: __divti3
+        // TODO(antoyo): convert the arguments to signed?
         self.multiplicative_operation(BinaryOp::Divide, "div", true, a, b)
     }
 
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        /*
-         * 128-bit, unsigned: __udivti3
-         */
+        // 128-bit, unsigned: __udivti3
         self.multiplicative_operation(BinaryOp::Divide, "div", false, a, b)
     }
 
@@ -471,7 +463,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let condition = self.gcc_icmp(IntPredicate::IntNE, self.gcc_and(b, sixty_four), zero);
             self.llbb().end_with_conditional(None, condition, then_block, else_block);
 
-            // TODO: take endianness into account.
+            // TODO(antoyo): take endianness into account.
             let values = [
                 zero,
                 self.low(a) << (b - sixty_four),
@@ -544,6 +536,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_rvalue_from_long(typ, i64::try_from(int).expect("i64::try_from"))
         }
         else {
+            // NOTE: set the sign in high.
             self.from_low_high(typ, int, -(int.is_negative() as i64))
         }
     }
@@ -588,9 +581,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             self.context.new_rvalue_zero(typ)
         }
         else {
-            let element_type = typ.dyncast_array().expect("get element type");
-            let zero = self.context.new_rvalue_zero(element_type);
-            self.context.new_array_constructor(None, typ, &[zero; 2])
+            self.from_low_high(typ, 0, 0)
         }
     }
 
@@ -599,6 +590,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             typ.get_size() as u64 * 8
         }
         else {
+            // NOTE: the only unsupported types are u128 and i128.
             128
         }
     }
@@ -629,7 +621,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.bitwise_operation(BinaryOp::BitwiseOr, a, b)
     }
 
-    // TODO: can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
+    // TODO(antoyo): can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
     pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
         if self.is_native_int_type_or_bool(dest_typ) && self.is_native_int_type_or_bool(value_type) {

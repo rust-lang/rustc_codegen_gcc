@@ -26,14 +26,6 @@ pub struct FuncSig<'gcc> {
     pub return_type: Type<'gcc>,
 }
 
-#[derive(Clone, Debug)]
-pub struct IntType<'gcc> {
-    pub bits: u8,
-    pub element_size: u8,
-    pub typ: Type<'gcc>,
-    pub signed: bool,
-}
-
 pub struct CodegenCx<'gcc, 'tcx> {
     pub check_overflow: bool,
     pub codegen_unit: &'tcx CodegenUnit<'tcx>,
