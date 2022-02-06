@@ -879,7 +879,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn sext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check that it indeed sign extend the value.
-        if dest_ty.dyncast_vector().is_some() {
+        // FIXME: only use dyncast_vector.
+        if dest_ty.dyncast_vector().is_some() || format!("{:?}", value.get_type()).contains("vector") {
             // TODO(antoyo): nothing to do as it is only for LLVM?
             return value;
         }
@@ -1294,6 +1295,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.context.new_parameter(None, return_type, "v2"),
             self.context.new_parameter(None, mask.get_type(), "mask"),
         ];
+        // FIXME: use the target builtin __builtin_ia32_pshufb128.
         let shuffle = self.context.new_function(None, FunctionType::Extern, return_type, &params, "_mm_shuffle_epi8", false);
         self.context.new_call(None, shuffle, &[v1, v2, mask])
     }

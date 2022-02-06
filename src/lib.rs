@@ -299,9 +299,16 @@ pub fn target_features(sess: &Session) -> Vec<Symbol> {
                 if sess.is_nightly_build() || gate.is_none() { Some(feature) } else { None }
             },
         )
-        .filter(|_feature| {
+        .filter(|feature| {
             // TODO(antoyo): implement a way to get enabled feature in libgccjit.
-            false
+            feature.contains("sse")
+            /*
+               adx, aes, avx, avx2, avx512bf16, avx512bitalg, avx512bw, avx512cd, avx512dq, avx512er, avx512f, avx512gfni,
+               avx512ifma, avx512pf, avx512vaes, avx512vbmi, avx512vbmi2, avx512vl, avx512vnni, avx512vp2intersect, avx512vpclmulqdq,
+               avx512vpopcntdq, bmi1, bmi2, cmpxchg16b, ermsb, f16c, fma, fxsr, lzcnt, movbe, pclmulqdq, popcnt, rdrand, rdseed, rtm,
+               sha, sse, sse2, sse3, sse4.1, sse4.2, sse4a, ssse3, tbm, xsave, xsavec, xsaveopt, xsaves
+             */
+            //false
         })
         .map(|feature| Symbol::intern(feature))
         .collect()

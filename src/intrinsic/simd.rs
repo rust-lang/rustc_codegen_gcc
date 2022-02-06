@@ -10,6 +10,7 @@ use rustc_middle::ty::{self, Ty};
 use rustc_span::{Span, Symbol, sym};
 
 use crate::builder::Builder;
+use crate::intrinsic;
 
 pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, name: Symbol, callee_ty: Ty<'tcx>, args: &[OperandRef<'tcx, RValue<'gcc>>], ret_ty: Ty<'tcx>, llret_ty: Type<'gcc>, span: Span) -> Result<RValue<'gcc>, ()> {
     // macros for error handling:
@@ -149,6 +150,105 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             })*
         }
     }
+
+    fn simd_simple_float_intrinsic<'gcc, 'tcx>(
+        name: Symbol,
+        in_elem: &rustc_middle::ty::TyS<'_>,
+        in_ty: &rustc_middle::ty::TyS<'_>,
+        in_len: u64,
+        bx: &mut Builder<'_, 'gcc, 'tcx>,
+        span: Span,
+        args: &[OperandRef<'tcx, RValue<'gcc>>],
+    ) -> Result<RValue<'gcc>, ()> {
+        macro_rules! emit_error {
+            ($msg: tt) => {
+                emit_error!($msg, )
+            };
+            ($msg: tt, $($fmt: tt)*) => {
+                span_invalid_monomorphization_error(
+                    bx.sess(), span,
+                    &format!(concat!("invalid monomorphization of `{}` intrinsic: ", $msg),
+                             name, $($fmt)*));
+            }
+        }
+        macro_rules! return_error {
+            ($($fmt: tt)*) => {
+                {
+                    emit_error!($($fmt)*);
+                    return Err(());
+                }
+            }
+        }
+
+        let (elem_ty_str, elem_ty) =
+            if let ty::Float(f) = in_elem.kind() {
+                let elem_ty = bx.cx.type_float_from_ty(*f);
+                match f.bit_width() {
+                    32 => ("f32", elem_ty),
+                    64 => ("f64", elem_ty),
+                    _ => {
+                        return_error!(
+                            "unsupported element type `{}` of floating-point vector `{}`",
+                            f.name_str(),
+                            in_ty
+                        );
+                    }
+                }
+            }
+            else {
+                return_error!("`{}` is not a floating-point type", in_ty);
+            };
+
+        let vec_ty = bx.cx.type_vector(elem_ty, in_len);
+
+        let (intr_name, fn_ty) =
+            match name {
+                sym::simd_ceil => ("ceil", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_fabs => ("fabs", bx.type_func(&[vec_ty], vec_ty)), // TODO: pand with 170141183420855150465331762880109871103
+                sym::simd_fcos => ("cos", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_fexp2 => ("exp2", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_fexp => ("exp", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_flog10 => ("log10", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_flog2 => ("log2", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_flog => ("log", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_floor => ("floor", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_fma => ("fma", bx.type_func(&[vec_ty, vec_ty, vec_ty], vec_ty)),
+                sym::simd_fpowi => ("powi", bx.type_func(&[vec_ty, bx.type_i32()], vec_ty)),
+                sym::simd_fpow => ("pow", bx.type_func(&[vec_ty, vec_ty], vec_ty)),
+                sym::simd_fsin => ("sin", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_fsqrt => ("sqrt", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_round => ("round", bx.type_func(&[vec_ty], vec_ty)),
+                sym::simd_trunc => ("trunc", bx.type_func(&[vec_ty], vec_ty)),
+                _ => return_error!("unrecognized intrinsic `{}`", name),
+            };
+        let llvm_name = &format!("llvm.{0}.v{1}{2}", intr_name, in_len, elem_ty_str);
+        let function = intrinsic::llvm::intrinsic(llvm_name, &bx.cx);
+        let function: RValue<'gcc> = unsafe { std::mem::transmute(function) };
+        let c = bx.call(fn_ty, function, &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(), None);
+        Ok(c)
+    }
+
+    /*if std::matches!(
+        name,
+        sym::simd_ceil
+            | sym::simd_fabs
+            | sym::simd_fcos
+            | sym::simd_fexp2
+            | sym::simd_fexp
+            | sym::simd_flog10
+            | sym::simd_flog2
+            | sym::simd_flog
+            | sym::simd_floor
+            | sym::simd_fma
+            | sym::simd_fpow
+            | sym::simd_fpowi
+            | sym::simd_fsin
+            | sym::simd_fsqrt
+            | sym::simd_round
+            | sym::simd_trunc
+    ) {
+        return simd_simple_float_intrinsic(name, in_elem, in_ty, in_len, bx, span, args);
+    }*/
 
     arith_binary! {
         simd_add: Uint, Int => add, Float => fadd;

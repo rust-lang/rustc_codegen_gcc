@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use gccjit::{RValue, Struct, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods};
 use rustc_codegen_ssa::common::TypeKind;
-use rustc_middle::bug;
+use rustc_middle::{bug, ty};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_target::abi::{AddressSpace, Align, Integer, Size};
 
@@ -59,6 +59,17 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // FIXME(eddyb) We could find a better approximation if ity.align < align.
         let ity = Integer::approximate_align(self, align);
         self.type_from_integer(ity)
+    }
+
+    pub fn type_vector(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
+        self.context.new_vector_type(ty, len)
+    }
+
+    pub fn type_float_from_ty(&self, t: ty::FloatTy) -> Type<'gcc> {
+        match t {
+            ty::FloatTy::F32 => self.type_f32(),
+            ty::FloatTy::F64 => self.type_f64(),
+        }
     }
 }
 
@@ -127,7 +138,8 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         else if typ.is_compatible_with(self.double_type) {
             TypeKind::Double
         }
-        else if typ.dyncast_vector().is_some() {
+        // FIXME: should only use dyncast_vector.
+        else if typ.dyncast_vector().is_some() || format!("{:?}", typ).contains("vector") {
             TypeKind::Vector
         }
         else {
