@@ -93,9 +93,9 @@ fn main() {
 
     println!("{:?}", std::intrinsics::caller_location());
 
-    /*unsafe {
+    unsafe {
         test_simd();
-    }*/
+    }
 
     Box::pin(move |mut _task_context| {
         yield ();
@@ -104,7 +104,7 @@ fn main() {
     println!("End");
 }
 
-/*#[target_feature(enable = "sse2")]
+#[target_feature(enable = "sse2")]
 unsafe fn test_simd() {
     let x = _mm_setzero_si128();
     let y = _mm_set1_epi16(7);
@@ -112,12 +112,12 @@ unsafe fn test_simd() {
     let cmp_eq = _mm_cmpeq_epi8(y, y);
     let cmp_lt = _mm_cmplt_epi8(y, y);
 
-    /*assert_eq!(std::mem::transmute::<_, [u16; 8]>(or), [7, 7, 7, 7, 7, 7, 7, 7]);
+    assert_eq!(std::mem::transmute::<_, [u16; 8]>(or), [7, 7, 7, 7, 7, 7, 7, 7]);
     assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_eq), [0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff]);
     assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_lt), [0, 0, 0, 0, 0, 0, 0, 0]);
 
     test_mm_slli_si128();
-    test_mm_movemask_epi8();
+    /*test_mm_movemask_epi8();
     test_mm256_movemask_epi8();
     test_mm_add_epi8();
     test_mm_add_pd();
@@ -129,9 +129,9 @@ unsafe fn test_simd() {
 
     let mask1 = _mm_movemask_epi8(dbg!(_mm_setr_epi8(255u8 as i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
     assert_eq!(mask1, 1);*/
-}*/
+}
 
-/*#[target_feature(enable = "sse2")]
+#[target_feature(enable = "sse2")]
 unsafe fn test_mm_slli_si128() {
     #[rustfmt::skip]
     let a = _mm_setr_epi8(
@@ -155,22 +155,9 @@ unsafe fn test_mm_slli_si128() {
     );
     let r = _mm_slli_si128(a, 16);
     assert_eq_m128i(r, _mm_set1_epi8(0));
-
-    #[rustfmt::skip]
-    let a = _mm_setr_epi8(
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    );
-    let r = _mm_slli_si128(a, -1);
-    assert_eq_m128i(_mm_set1_epi8(0), r);
-
-    #[rustfmt::skip]
-    let a = _mm_setr_epi8(
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    );
-    let r = _mm_slli_si128(a, -0x80000000);
-    assert_eq_m128i(r, _mm_set1_epi8(0));
 }
 
+/*
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_movemask_epi8() {
     #[rustfmt::skip]
@@ -213,7 +200,7 @@ unsafe fn test_mm_add_pd() {
     let b = _mm_setr_pd(5.0, 10.0);
     let r = _mm_add_pd(a, b);
     assert_eq_m128d(r, _mm_setr_pd(6.0, 12.0));
-}
+}*/
 
 fn assert_eq_m128i(x: std::arch::x86_64::__m128i, y: std::arch::x86_64::__m128i) {
     unsafe {
@@ -221,7 +208,7 @@ fn assert_eq_m128i(x: std::arch::x86_64::__m128i, y: std::arch::x86_64::__m128i)
     }
 }
 
-#[target_feature(enable = "sse2")]
+/*#[target_feature(enable = "sse2")]
 pub unsafe fn assert_eq_m128d(a: __m128d, b: __m128d) {
     if _mm_movemask_pd(_mm_cmpeq_pd(a, b)) != 0b11 {
         panic!("{:?} != {:?}", a, b);
