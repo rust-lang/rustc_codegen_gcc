@@ -301,7 +301,7 @@ pub fn target_features(sess: &Session) -> Vec<Symbol> {
         )
         .filter(|feature| {
             // TODO(antoyo): implement a way to get enabled feature in libgccjit.
-            feature.contains("sse")
+            feature.contains("sse") || feature.contains("avx")
             /*
                adx, aes, avx, avx2, avx512bf16, avx512bitalg, avx512bw, avx512cd, avx512dq, avx512er, avx512f, avx512gfni,
                avx512ifma, avx512pf, avx512vaes, avx512vbmi, avx512vbmi2, avx512vl, avx512vnni, avx512vp2intersect, avx512vpclmulqdq,

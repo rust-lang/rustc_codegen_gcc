@@ -78,6 +78,8 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol, supports_
         let context = Context::default();
         // TODO(antoyo): only set on x86 platforms.
         context.add_command_line_option("-masm=intel");
+        // TODO: only add the following cli argument if the feature is supported.
+        // context.add_command_line_option("-mavx2");
         for arg in &tcx.sess.opts.cg.llvm_args {
             context.add_command_line_option(arg);
         }

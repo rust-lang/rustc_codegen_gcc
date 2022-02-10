@@ -35,6 +35,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub normal_function_addresses: RefCell<FxHashSet<RValue<'gcc>>>,
 
     pub functions: RefCell<FxHashMap<String, Function<'gcc>>>,
+    pub target_builtin_function_type: RefCell<FxHashMap<&'static str, FuncSig<'gcc>>>,
 
     pub tls_model: gccjit::TlsModel,
 
@@ -176,6 +177,18 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         for builtin in builtins.iter() {
             functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
         }
+        
+        let mut target_builtin_function_type = FxHashMap::default();
+        let v16_qu = context.new_vector_type(u8_type, 16);
+        let v32_qu = context.new_vector_type(u8_type, 32);
+        target_builtin_function_type.insert("__builtin_ia32_pmovmskb128", FuncSig {
+            params: vec![v16_qu],
+            return_type: int_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmovmskb256", FuncSig {
+            params: vec![v32_qu],
+            return_type: int_type,
+        });
 
         Self {
             check_overflow,
@@ -184,6 +197,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             current_func: RefCell::new(None),
             normal_function_addresses: Default::default(),
             functions: RefCell::new(functions),
+            target_builtin_function_type: RefCell::new(target_builtin_function_type),
 
             tls_model,
 

@@ -117,9 +117,9 @@ unsafe fn test_simd() {
     assert_eq!(std::mem::transmute::<_, [u16; 8]>(cmp_lt), [0, 0, 0, 0, 0, 0, 0, 0]);
 
     test_mm_slli_si128();
-    /*test_mm_movemask_epi8();
+    test_mm_movemask_epi8();
     test_mm256_movemask_epi8();
-    test_mm_add_epi8();
+    /*test_mm_add_epi8();
     test_mm_add_pd();
     test_mm_cvtepi8_epi16();
     test_mm_cvtsi128_si64();
@@ -157,7 +157,7 @@ unsafe fn test_mm_slli_si128() {
     assert_eq_m128i(r, _mm_set1_epi8(0));
 }
 
-/*
+
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_movemask_epi8() {
     #[rustfmt::skip]
@@ -173,12 +173,14 @@ unsafe fn test_mm_movemask_epi8() {
 
 #[target_feature(enable = "avx2")]
 unsafe fn test_mm256_movemask_epi8() {
+    // FIXME: The -mavx2 flag fails with trying to access a field of a struct constructor.
     let a = _mm256_set1_epi8(-1);
     let r = _mm256_movemask_epi8(a);
     let e = -1;
     assert_eq!(r, e);
 }
 
+/*
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_add_epi8() {
     let a = _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
