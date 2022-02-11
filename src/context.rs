@@ -177,16 +177,25 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         for builtin in builtins.iter() {
             functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
         }
-        
+
         let mut target_builtin_function_type = FxHashMap::default();
         let v16_qu = context.new_vector_type(u8_type, 16);
         let v32_qu = context.new_vector_type(u8_type, 32);
+        let v2df = context.new_vector_type(double_type, 2);
         target_builtin_function_type.insert("__builtin_ia32_pmovmskb128", FuncSig {
             params: vec![v16_qu],
             return_type: int_type,
         });
         target_builtin_function_type.insert("__builtin_ia32_pmovmskb256", FuncSig {
             params: vec![v32_qu],
+            return_type: int_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_cmppd", FuncSig {
+            params: vec![v2df, v2df, int_type],
+            return_type: v2df,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_movmskpd", FuncSig {
+            params: vec![v2df],
             return_type: int_type,
         });
 

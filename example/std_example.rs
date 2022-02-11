@@ -119,9 +119,9 @@ unsafe fn test_simd() {
     test_mm_slli_si128();
     test_mm_movemask_epi8();
     test_mm256_movemask_epi8();
-    /*test_mm_add_epi8();
+    test_mm_add_epi8();
     test_mm_add_pd();
-    test_mm_cvtepi8_epi16();
+    /*test_mm_cvtepi8_epi16();
     test_mm_cvtsi128_si64();
 
     // FIXME(#666) implement `#[rustc_arg_required_const(..)]` support
@@ -179,7 +179,6 @@ unsafe fn test_mm256_movemask_epi8() {
     assert_eq!(r, e);
 }
 
-/*
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_add_epi8() {
     let a = _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
@@ -201,7 +200,7 @@ unsafe fn test_mm_add_pd() {
     let b = _mm_setr_pd(5.0, 10.0);
     let r = _mm_add_pd(a, b);
     assert_eq_m128d(r, _mm_setr_pd(6.0, 12.0));
-}*/
+}
 
 fn assert_eq_m128i(x: std::arch::x86_64::__m128i, y: std::arch::x86_64::__m128i) {
     unsafe {
@@ -209,13 +208,14 @@ fn assert_eq_m128i(x: std::arch::x86_64::__m128i, y: std::arch::x86_64::__m128i)
     }
 }
 
-/*#[target_feature(enable = "sse2")]
+#[target_feature(enable = "sse2")]
 pub unsafe fn assert_eq_m128d(a: __m128d, b: __m128d) {
     if _mm_movemask_pd(_mm_cmpeq_pd(a, b)) != 0b11 {
         panic!("{:?} != {:?}", a, b);
     }
 }
 
+/*
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_cvtsi128_si64() {
     let r = _mm_cvtsi128_si64(std::mem::transmute::<[i64; 2], _>([5, 0]));

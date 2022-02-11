@@ -153,8 +153,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         if self.is_native_int_type_or_bool(a_type) && self.is_native_int_type_or_bool(b_type) {
-            if a.get_type() != b.get_type() {
-                b = self.context.new_cast(None, b, a.get_type());
+            if a_type != b_type {
+                if a_type.is_vector() {
+                    // Vector types need to be bitcast.
+                    b = self.context.new_bitcast(None, b, a.get_type());
+                }
+                else {
+                    b = self.context.new_cast(None, b, a.get_type());
+                }
             }
             self.context.new_binary_op(None, operation, a_type, a, b)
         }
