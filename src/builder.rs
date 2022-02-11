@@ -1310,6 +1310,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         for i in 0..num_units {
             let field = struct_type.get_field(i as i32);
             vector_elements.push(self.context.new_cast(None, mask.access_field(None, field).to_rvalue(), self.i32_type));
+            //vector_elements.push(self.context.new_rvalue_from_int(self.u8_type, i as i32));
         }
         let element_type = v1.get_type().unqualified().dyncast_vector().expect("v1 of vector type").get_element_type();
         let result_type = self.context.new_vector_type(element_type, num_units as u64);
@@ -1317,6 +1318,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let mask = self.context.new_vector_constructor(None, mask_type, &vector_elements);
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
         self.context.new_bitcast(None, result, result_type)
+        // self.context.new_rvalue_zero(self.i32_type)
     }
 }
 
