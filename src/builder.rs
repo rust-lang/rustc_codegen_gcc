@@ -3,7 +3,6 @@ use std::cell::Cell;
 use std::convert::TryFrom;
 use std::ops::Deref;
 
-use gccjit::FunctionType;
 use gccjit::{
     BinaryOp,
     Block,
@@ -1329,18 +1328,40 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
 
+        let vector_type = v1.get_type().unqualified().dyncast_vector().expect("vector type");
+        let vec_num_units = vector_type.get_num_units();
+
         let num_units = struct_type.get_field_count();
         let mut vector_elements = vec![];
         for i in 0..num_units {
             let field = struct_type.get_field(i as i32);
             vector_elements.push(self.context.new_cast(None, mask.access_field(None, field).to_rvalue(), self.u8_type));
         }
+
+        // NOTE: the mask needs to be the same length as the input vectors.
+        for _ in num_units..vec_num_units {
+            vector_elements.push(self.context.new_rvalue_zero(self.u8_type));
+        }
+
         let element_type = v1.get_type().unqualified().dyncast_vector().expect("v1 of vector type").get_element_type();
         let result_type = self.context.new_vector_type(element_type, num_units as u64);
-        let mask_type = self.context.new_vector_type(self.u8_type, num_units as u64);
+        let mask_type = self.context.new_vector_type(self.u8_type, vec_num_units as u64);
         let mask = self.context.new_rvalue_from_vector(None, mask_type, &vector_elements);
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
-        self.context.new_bitcast(None, result, result_type)
+
+        if vec_num_units != num_units {
+            let mut elements = vec![];
+            let array_type = self.context.new_array_type(None, element_type, vec_num_units as i32);
+            let array = self.context.new_bitcast(None, result, array_type);
+            for i in 0..num_units {
+                elements.push(self.context.new_array_access(None, array, self.context.new_rvalue_from_int(self.int_type, i as i32)).to_rvalue());
+            }
+            self.context.new_rvalue_from_vector(None, result_type, &elements)
+        }
+        else {
+            result
+        }
+        //self.context.new_bitcast(None, result, result_type)
     }
 }
 

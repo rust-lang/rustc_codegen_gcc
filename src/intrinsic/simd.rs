@@ -1,4 +1,6 @@
-use gccjit::{RValue, Type};
+use std::cmp::Ordering;
+
+use gccjit::{RValue, Type, ToRValue};
 use rustc_codegen_ssa::base::compare_simd_types;
 use rustc_codegen_ssa::common::{TypeKind, span_invalid_monomorphization_error};
 use rustc_codegen_ssa::mir::operand::OperandRef;
@@ -132,6 +134,135 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             args[1].immediate(),
             vector,
         ));
+    }
+
+    if name == sym::simd_cast {
+        require_simd!(ret_ty, "return");
+        let (out_len, out_elem) = ret_ty.simd_size_and_type(bx.tcx());
+        require!(
+            in_len == out_len,
+            "expected return type with length {} (same as input type `{}`), \
+                  found `{}` with length {}",
+            in_len,
+            in_ty,
+            ret_ty,
+            out_len
+        );
+        // casting cares about nominal type, not just structural type
+        if in_elem == out_elem {
+            return Ok(args[0].immediate());
+        }
+
+        enum Style {
+            Float,
+            Int(/* is signed? */ bool),
+            Unsupported,
+        }
+
+        let (in_style, in_width) = match in_elem.kind() {
+            // vectors of pointer-sized integers should've been
+            // disallowed before here, so this unwrap is safe.
+            ty::Int(i) => (
+                Style::Int(true),
+                i.normalize(bx.tcx().sess.target.pointer_width).bit_width().unwrap(),
+            ),
+            ty::Uint(u) => (
+                Style::Int(false),
+                u.normalize(bx.tcx().sess.target.pointer_width).bit_width().unwrap(),
+            ),
+            ty::Float(f) => (Style::Float, f.bit_width()),
+            _ => (Style::Unsupported, 0),
+        };
+        let (out_style, out_width) = match out_elem.kind() {
+            ty::Int(i) => (
+                Style::Int(true),
+                i.normalize(bx.tcx().sess.target.pointer_width).bit_width().unwrap(),
+            ),
+            ty::Uint(u) => (
+                Style::Int(false),
+                u.normalize(bx.tcx().sess.target.pointer_width).bit_width().unwrap(),
+            ),
+            ty::Float(f) => (Style::Float, f.bit_width()),
+            _ => (Style::Unsupported, 0),
+        };
+
+        match (in_style, out_style) {
+            (Style::Int(in_is_signed), Style::Int(_)) => {
+                return Ok(match in_width.cmp(&out_width) {
+                    Ordering::Greater => bx.trunc(args[0].immediate(), llret_ty),
+                    Ordering::Equal => args[0].immediate(),
+                    Ordering::Less => {
+                        if in_is_signed {
+                            match (in_width, out_width) {
+                                (8, 16) => {
+                                    // FIXME: the function _mm_cvtepi8_epi16 should directly
+                                    // call an intrinsic equivalent to __builtin_ia32_pmovsxbw128 so that
+                                    // we can generate a call to it.
+                                    let vector_type = bx.context.new_vector_type(bx.cx.i16_type, 8);
+                                    let vector = args[0].immediate();
+                                    let array_type = bx.context.new_array_type(None, bx.cx.i8_type, 8);
+                                    let array = bx.context.new_bitcast(None, vector, array_type);
+
+                                    fn cast_vec_element<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, array: RValue<'gcc>, index: i32) -> RValue<'gcc> {
+                                        let index = bx.context.new_rvalue_from_int(bx.int_type, index);
+                                        bx.context.new_cast(None, bx.context.new_array_access(None, array, index).to_rvalue(), bx.i16_type)
+                                    }
+
+                                    bx.context.new_rvalue_from_vector(None, vector_type, &[
+                                        cast_vec_element(bx, array, 0),
+                                        cast_vec_element(bx, array, 1),
+                                        cast_vec_element(bx, array, 2),
+                                        cast_vec_element(bx, array, 3),
+                                        cast_vec_element(bx, array, 4),
+                                        cast_vec_element(bx, array, 5),
+                                        cast_vec_element(bx, array, 6),
+                                        cast_vec_element(bx, array, 7),
+                                    ])
+                                },
+                                _ => unimplemented!("in: {}, out: {}", in_width, out_width),
+                            }
+                            //bx.sext(args[0].immediate(), llret_ty)
+                        } else {
+                            unimplemented!();
+                            //bx.zext(args[0].immediate(), llret_ty)
+                        }
+                    }
+                });
+            }
+            (Style::Int(in_is_signed), Style::Float) => {
+                return Ok(if in_is_signed {
+                    unimplemented!();
+                    //bx.sitofp(args[0].immediate(), llret_ty)
+                } else {
+                    unimplemented!();
+                    //bx.uitofp(args[0].immediate(), llret_ty)
+                });
+            }
+            (Style::Float, Style::Int(out_is_signed)) => {
+                return Ok(match out_is_signed {
+                    false => unimplemented!(),
+                        //bx.fptoui(args[0].immediate(), llret_ty),
+                    true => unimplemented!(),
+                        //bx.fptosi(args[0].immediate(), llret_ty),
+                });
+            }
+            (Style::Float, Style::Float) => {
+                return Ok(match in_width.cmp(&out_width) {
+                    Ordering::Greater => unimplemented!(), //bx.fptrunc(args[0].immediate(), llret_ty),
+                    Ordering::Equal => unimplemented!(), //args[0].immediate(),
+                    Ordering::Less => unimplemented!(), //bx.fpext(args[0].immediate(), llret_ty),
+                });
+            }
+            _ => { /* Unsupported. Fallthrough. */ }
+        }
+        require!(
+            false,
+            "unsupported cast from `{}` with element `{}` to `{}` with element `{}`",
+            in_ty,
+            in_elem,
+            ret_ty,
+            out_elem
+        );
     }
 
     macro_rules! arith_binary {
