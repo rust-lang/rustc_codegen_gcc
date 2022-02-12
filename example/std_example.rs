@@ -122,11 +122,12 @@ unsafe fn test_simd() {
     test_mm_add_epi8();
     test_mm_add_pd();
     test_mm_cvtepi8_epi16();
-    /*test_mm_cvtsi128_si64();
+    test_mm_cvtsi128_si64();
 
     // FIXME(#666) implement `#[rustc_arg_required_const(..)]` support
     //test_mm_extract_epi8();
 
+    /*
     let mask1 = _mm_movemask_epi8(dbg!(_mm_setr_epi8(255u8 as i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
     assert_eq!(mask1, 1);*/
 }
@@ -215,13 +216,11 @@ pub unsafe fn assert_eq_m128d(a: __m128d, b: __m128d) {
     }
 }
 
-/*
 #[target_feature(enable = "sse2")]
 unsafe fn test_mm_cvtsi128_si64() {
     let r = _mm_cvtsi128_si64(std::mem::transmute::<[i64; 2], _>([5, 0]));
     assert_eq!(r, 5);
 }
-*/
 
 #[target_feature(enable = "sse4.1")]
 unsafe fn test_mm_cvtepi8_epi16() {

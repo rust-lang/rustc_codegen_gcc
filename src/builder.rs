@@ -1328,6 +1328,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
 
+        // FIXME: dyncast_vector() should not need unqualified().
         let vector_type = v1.get_type().unqualified().dyncast_vector().expect("vector type");
         let vec_num_units = vector_type.get_num_units();
 
@@ -1339,11 +1340,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
 
         // NOTE: the mask needs to be the same length as the input vectors.
+        // TODO: support a mask bigger than the input type.
         for _ in num_units..vec_num_units {
             vector_elements.push(self.context.new_rvalue_zero(self.u8_type));
         }
 
-        let element_type = v1.get_type().unqualified().dyncast_vector().expect("v1 of vector type").get_element_type();
+        let element_type = vector_type.get_element_type();
         let result_type = self.context.new_vector_type(element_type, num_units as u64);
         let mask_type = self.context.new_vector_type(self.u8_type, vec_num_units as u64);
         let mask = self.context.new_rvalue_from_vector(None, mask_type, &vector_elements);
