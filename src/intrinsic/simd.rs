@@ -136,6 +136,38 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
         ));
     }
 
+    if name == sym::simd_insert {
+        require!(
+            in_elem == arg_tys[2],
+            "expected inserted type `{}` (element of input `{}`), found `{}`",
+            in_elem,
+            in_ty,
+            arg_tys[2]
+        );
+        let vector = args[0].immediate();
+        let index = args[1].immediate();
+        let value = args[2].immediate();
+        // FIXME: dyncast_vector() should not need unqualified().
+        let vector_type = vector.get_type().unqualified().dyncast_vector().expect("vector type");
+        let element_type = vector_type.get_element_type();
+        // NOTE: we cannot cast to an array and assign to its element here because the value might
+        // not be an l-value.
+        let func_name =
+            match in_len {
+                8 => {
+                    if element_type == bx.i16_type {
+                        "__builtin_ia32_vec_set_v8hi"
+                    }
+                    else {
+                        unimplemented!();
+                    }
+                },
+                _ => unimplemented!(),
+            };
+        let builtin = bx.context.get_target_builtin_function(func_name);
+        let result = bx.context.new_call(None, builtin, &[vector, value, bx.context.new_cast(None, index, bx.int_type)]);
+        return Ok(bx.context.new_bitcast(None, result, vector.get_type()));
+    }
     if name == sym::simd_extract {
         require!(
             ret_ty == in_elem,

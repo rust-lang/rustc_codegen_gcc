@@ -25,7 +25,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 }
             }
         }
-        self.context.new_bitcast(None, value, typ)
+        // NOTE: since bitcast makes a value non-constant, don't bitcast if not necessary as some
+        // SIMD builtins require a constant value.
+        if value.get_type() != typ {
+            self.context.new_bitcast(None, value, typ)
+        }
+        else {
+            value
+        }
     }
 }
 

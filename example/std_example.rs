@@ -124,12 +124,11 @@ unsafe fn test_simd() {
     test_mm_cvtepi8_epi16();
     test_mm_cvtsi128_si64();
 
-    // FIXME(#666) implement `#[rustc_arg_required_const(..)]` support
-    //test_mm_extract_epi8();
+    test_mm_extract_epi8();
+    test_mm_insert_epi16();
 
-    /*
     let mask1 = _mm_movemask_epi8(dbg!(_mm_setr_epi8(255u8 as i8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
-    assert_eq!(mask1, 1);*/
+    assert_eq!(mask1, 1);
 }
 
 #[target_feature(enable = "sse2")]
@@ -234,7 +233,6 @@ unsafe fn test_mm_cvtepi8_epi16() {
     assert_eq_m128i(r, e);
 }
 
-/*
 #[target_feature(enable = "sse4.1")]
 unsafe fn test_mm_extract_epi8() {
     #[rustfmt::skip]
@@ -243,10 +241,19 @@ unsafe fn test_mm_extract_epi8() {
         8, 9, 10, 11, 12, 13, 14, 15
     );
     let r1 = _mm_extract_epi8(a, 0);
-    let r2 = _mm_extract_epi8(a, 19);
+    let r2 = _mm_extract_epi8(a, 3);
     assert_eq!(r1, 0xFF);
     assert_eq!(r2, 3);
-}*/
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn test_mm_insert_epi16() {
+    let a = _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7);
+    let r = _mm_insert_epi16(a, 9, 0);
+    let e = _mm_setr_epi16(9, 1, 2, 3, 4, 5, 6, 7);
+    assert_eq_m128i(r, e);
+}
 
 #[derive(PartialEq)]
 enum LoopState {

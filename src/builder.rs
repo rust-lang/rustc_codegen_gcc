@@ -227,19 +227,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 param_types
             };
 
-        fn extract_value_from_bitcast<'gcc>(value: RValue<'gcc>) -> i64 {
-            let string_value = format!("{:?}", value);
-            if !string_value.starts_with("bitcast") {
-                panic!("Value {:?} is not a bitcast", value);
-            }
-
-            let start_index = string_value.find(')').expect("parenthesis") + 1;
-            let end_index = string_value.find(',').expect("parenthesis");
-
-            let num = &string_value[start_index..end_index];
-            num.parse().expect("cannot parse value")
-        }
-
         let casted_args: Vec<_> = param_types
             .into_iter()
             .zip(args.iter())
@@ -248,15 +235,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let actual_ty = actual_val.get_type();
                 if expected_ty != actual_ty {
                     if actual_ty.is_integral() && actual_ty.get_size() != expected_ty.get_size() {
-                        if self.target_builtin_function_type.borrow().contains_key(func_name.as_str()) {
-                            // FIXME(antoyo): huge hack because gcc wants an immediate value for
-                            // some target builtins.
-                            let value = extract_value_from_bitcast(actual_val);
-                            self.context.new_rvalue_from_long(expected_ty, value)
-                        }
-                        else {
-                            self.context.new_cast(None, actual_val, expected_ty)
-                        }
+                        self.context.new_cast(None, actual_val, expected_ty)
                     }
                     else if on_stack_param_indices.contains(&index) {
                         actual_val.dereference(None).to_rvalue()
