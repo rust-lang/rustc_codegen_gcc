@@ -154,6 +154,22 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
         // not be an l-value.
         let func_name =
             match in_len {
+                2 => {
+                    if element_type == bx.i64_type {
+                        "__builtin_ia32_vec_set_v2di"
+                    }
+                    else {
+                        unimplemented!();
+                    }
+                },
+                4 => {
+                    if element_type == bx.i32_type {
+                        "__builtin_ia32_vec_set_v4si"
+                    }
+                    else {
+                        unimplemented!();
+                    }
+                },
                 8 => {
                     if element_type == bx.i16_type {
                         "__builtin_ia32_vec_set_v8hi"
@@ -162,7 +178,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
                         unimplemented!();
                     }
                 },
-                _ => unimplemented!(),
+                _ => unimplemented!("Len: {}", in_len),
             };
         let builtin = bx.context.get_target_builtin_function(func_name);
         let result = bx.context.new_call(None, builtin, &[vector, value, bx.context.new_cast(None, index, bx.int_type)]);

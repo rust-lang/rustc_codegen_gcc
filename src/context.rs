@@ -178,8 +178,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
         }
 
+        let char_ptr = context.new_c_type(CType::Char).make_pointer();
+        let void_type = context.new_type::<()>();
         let mut target_builtin_function_type = FxHashMap::default();
+        let v4du = context.new_vector_type(u64_type, 4);
+        let v8su = context.new_vector_type(u32_type, 8);
         let v8hu = context.new_vector_type(u16_type, 8);
+        let v16hu = context.new_vector_type(u16_type, 16);
         let v16qu = context.new_vector_type(u8_type, 16);
         let v32qu = context.new_vector_type(u8_type, 32);
         let v2df = context.new_vector_type(double_type, 2);
@@ -201,6 +206,50 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         });
         target_builtin_function_type.insert("__builtin_ia32_pmovsxbw128", FuncSig {
             params: vec![v16qu],
+            return_type: v8hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pshufb128", FuncSig {
+            params: vec![v16qu, v16qu],
+            return_type: v16qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pause", FuncSig {
+            params: vec![],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pshufb256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pslldi256", FuncSig {
+            params: vec![v8su, int_type],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrldi256", FuncSig {
+            params: vec![v8su, int_type],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_permti256", FuncSig {
+            params: vec![v4du, v4du, int_type],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_vzeroupper", FuncSig {
+            params: vec![],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_permti256", FuncSig {
+            params: vec![v4du, v4du, int_type],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlwi256", FuncSig {
+            params: vec![v16hu, int_type],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_storedqu", FuncSig {
+            params: vec![char_ptr, v16qu],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlwi128", FuncSig {
+            params: vec![v8hu, int_type],
             return_type: v8hu,
         });
 

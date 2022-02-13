@@ -599,7 +599,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let b_type = b.get_type();
         let a_native = self.is_native_int_type_or_bool(a_type);
         let b_native = self.is_native_int_type_or_bool(b_type);
-        if a_native && b_native {
+        if a_type.is_vector() && b_type.is_vector() {
+            self.context.new_binary_op(None, operation, a_type, a, b)
+        }
+        else if a_native && b_native {
             if a_type != b_type {
                 b = self.context.new_cast(None, b, a_type);
             }

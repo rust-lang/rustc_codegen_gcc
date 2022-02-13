@@ -1309,32 +1309,59 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         // FIXME: dyncast_vector() should not need unqualified().
         let vector_type = v1.get_type().unqualified().dyncast_vector().expect("vector type");
+        let element_type = vector_type.get_element_type();
         let vec_num_units = vector_type.get_num_units();
 
-        let num_units = struct_type.get_field_count();
+        let mask_num_units = struct_type.get_field_count();
         let mut vector_elements = vec![];
-        for i in 0..num_units {
+        let mask_element_type =
+            if element_type.is_integral() {
+                element_type
+            }
+            else {
+                self.int_type
+            };
+        for i in 0..mask_num_units {
             let field = struct_type.get_field(i as i32);
-            vector_elements.push(self.context.new_cast(None, mask.access_field(None, field).to_rvalue(), self.u8_type));
+            vector_elements.push(self.context.new_cast(None, mask.access_field(None, field).to_rvalue(), mask_element_type));
         }
 
         // NOTE: the mask needs to be the same length as the input vectors.
-        // TODO: support a mask bigger than the input type.
-        for _ in num_units..vec_num_units {
-            vector_elements.push(self.context.new_rvalue_zero(self.u8_type));
+        for _ in mask_num_units..vec_num_units {
+            vector_elements.push(self.context.new_rvalue_zero(mask_element_type));
         }
 
-        let element_type = vector_type.get_element_type();
-        let result_type = self.context.new_vector_type(element_type, num_units as u64);
-        let mask_type = self.context.new_vector_type(self.u8_type, vec_num_units as u64);
+        let array_type = self.context.new_array_type(None, element_type, vec_num_units as i32);
+        let result_type = self.context.new_vector_type(element_type, mask_num_units as u64);
+        let (v1, v2) =
+            if vec_num_units < mask_num_units {
+                let array = self.context.new_bitcast(None, v1, array_type);
+                let mut elements = vec![];
+                for i in 0..vec_num_units {
+                    elements.push(self.context.new_array_access(None, array, self.context.new_rvalue_from_int(self.int_type, i as i32)).to_rvalue());
+                }
+                let array = self.context.new_bitcast(None, v2, array_type);
+                for i in vec_num_units..mask_num_units {
+                    elements.push(self.context.new_array_access(None, array, self.context.new_rvalue_from_int(self.int_type, i as i32)).to_rvalue());
+                }
+                let v1 = self.context.new_rvalue_from_vector(None, result_type, &elements);
+                let zero = self.context.new_rvalue_zero(element_type);
+                let v2 = self.context.new_rvalue_from_vector(None, result_type, &vec![zero; mask_num_units]);
+                (v1, v2)
+            }
+            else {
+                (v1, v2)
+            };
+
+        let new_mask_num_units = std::cmp::max(mask_num_units, vec_num_units);
+        let mask_type = self.context.new_vector_type(mask_element_type, new_mask_num_units as u64);
         let mask = self.context.new_rvalue_from_vector(None, mask_type, &vector_elements);
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
 
-        if vec_num_units != num_units {
+        if vec_num_units != mask_num_units {
             let mut elements = vec![];
-            let array_type = self.context.new_array_type(None, element_type, vec_num_units as i32);
             let array = self.context.new_bitcast(None, result, array_type);
-            for i in 0..num_units {
+            for i in 0..mask_num_units {
                 elements.push(self.context.new_array_access(None, array, self.context.new_rvalue_from_int(self.int_type, i as i32)).to_rvalue());
             }
             self.context.new_rvalue_from_vector(None, result_type, &elements)
@@ -1342,7 +1369,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         else {
             result
         }
-        //self.context.new_bitcast(None, result, result_type)
     }
 }
 
