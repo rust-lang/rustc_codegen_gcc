@@ -180,7 +180,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         let char_ptr = context.new_c_type(CType::Char).make_pointer();
         let void_type = context.new_type::<()>();
+        let ulong_long_type = context.new_c_type(CType::ULongLong);
         let mut target_builtin_function_type = FxHashMap::default();
+        let v2di = context.new_vector_type(i64_type, 2);
         let v4du = context.new_vector_type(u64_type, 4);
         let v8su = context.new_vector_type(u32_type, 8);
         let v8hu = context.new_vector_type(u16_type, 8);
@@ -236,21 +238,38 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             params: vec![],
             return_type: void_type,
         });
-        target_builtin_function_type.insert("__builtin_ia32_permti256", FuncSig {
-            params: vec![v4du, v4du, int_type],
-            return_type: v4du,
-        });
         target_builtin_function_type.insert("__builtin_ia32_psrlwi256", FuncSig {
             params: vec![v16hu, int_type],
             return_type: v16hu,
         });
         target_builtin_function_type.insert("__builtin_ia32_storedqu", FuncSig {
-            params: vec![char_ptr, v16qu],
+            // NOTE: the last type is different from GCC's builtin because it's called with an argument with a different type.
+            params: vec![char_ptr, v2di],
             return_type: void_type,
         });
         target_builtin_function_type.insert("__builtin_ia32_psrlwi128", FuncSig {
             params: vec![v8hu, int_type],
             return_type: v8hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_xgetbv", FuncSig {
+            params: vec![int_type],
+            return_type: ulong_long_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pabsd256", FuncSig {
+            params: vec![v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlqi128", FuncSig {
+            params: vec![v2di, int_type],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pabsw256", FuncSig {
+            params: vec![v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pblendvb256", FuncSig {
+            params: vec![v32qu, v32qu, v32qu],
+            return_type: v32qu,
         });
 
         Self {

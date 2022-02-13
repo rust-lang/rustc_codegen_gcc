@@ -318,13 +318,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             result.to_rvalue()
         }
         else {
-            if gcc_func.get_param_count() == 0 {
-                // FIXME(antoyo): As a temporary workaround for unsupported LLVM intrinsics.
-                self.block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &[]));
-            }
-            else {
-                self.block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
-            }
+            self.block.add_eval(None, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             // Return dummy value when not having return value.
             let result = current_func.new_local(None, self.isize_type, "dummyValueThatShouldNeverBeUsed");
             self.block.add_assignment(None, result, self.context.new_rvalue_from_long(self.isize_type, 0));
@@ -1326,7 +1320,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             vector_elements.push(self.context.new_cast(None, mask.access_field(None, field).to_rvalue(), mask_element_type));
         }
 
-        // NOTE: the mask needs to be the same length as the input vectors.
+        // NOTE: the mask needs to be the same length as the input vectors, so add the missing
+        // elements in the mask if needed.
         for _ in mask_num_units..vec_num_units {
             vector_elements.push(self.context.new_rvalue_zero(mask_element_type));
         }
@@ -1335,6 +1330,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let result_type = self.context.new_vector_type(element_type, mask_num_units as u64);
         let (v1, v2) =
             if vec_num_units < mask_num_units {
+                // NOTE: the mask needs to be the same length as the input vectors, so join the 2
+                // vectors and create a dummy second vector.
                 let array = self.context.new_bitcast(None, v1, array_type);
                 let mut elements = vec![];
                 for i in 0..vec_num_units {
@@ -1359,6 +1356,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
 
         if vec_num_units != mask_num_units {
+            // TODO: explain what this does.
             let mut elements = vec![];
             let array = self.context.new_bitcast(None, result, array_type);
             for i in 0..mask_num_units {

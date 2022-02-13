@@ -5,12 +5,7 @@ use crate::context::CodegenCx;
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
     let gcc_name =
         match name {
-            "llvm.x86.xgetbv" => {
-                let gcc_name = "__builtin_trap";
-                let func = cx.context.get_builtin_function(gcc_name);
-                cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-                return func;
-            },
+            "llvm.x86.xgetbv" => "__builtin_ia32_xgetbv",
             // NOTE: this doc specifies the equivalent GCC builtins: http://huonw.github.io/llvmint/llvmint/x86/index.html
             "llvm.x86.sse2.pmovmskb.128" => "__builtin_ia32_pmovmskb128",
             "llvm.x86.avx2.pmovmskb" => "__builtin_ia32_pmovmskb256",
@@ -26,6 +21,10 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
             "llvm.x86.avx2.psrli.w" => "__builtin_ia32_psrlwi256",
             "llvm.x86.sse2.storeu.dq" => "__builtin_ia32_storedqu",
             "llvm.x86.sse2.psrli.w" => "__builtin_ia32_psrlwi128",
+            "llvm.x86.avx2.pabs.d" => "__builtin_ia32_pabsd256",
+            "llvm.x86.sse2.psrli.q" => "__builtin_ia32_psrlqi128",
+            "llvm.x86.avx2.pabs.w" => "__builtin_ia32_pabsw256",
+            "llvm.x86.avx2.pblendvb" => "__builtin_ia32_pblendvb256",
             _ => unimplemented!("***** unsupported LLVM intrinsic {}", name),
         };
 

@@ -1,0 +1,24 @@
+{
+  "arch": "mips",
+  "cpu": "m68k",
+  "crt-static-respected": true,
+  "data-layout": "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
+  "dynamic-linking": true,
+  "env": "gnu",
+  "executables": true,
+  "features": "+fpxx,+nooddspreg",
+  "has-elf-tls": true,
+  "has-rpath": true,
+  "is-builtin": false,
+  "llvm-target": "m68k-unknown-linux-gnu",
+  "max-atomic-width": 32,
+  "os": "linux",
+  "position-independent-executables": true,
+  "relro-level": "full",
+  "target-endian": "big",
+  "target-family": [
+    "unix"
+  ],
+  "target-mcount": "_mcount",
+  "target-pointer-width": "32"
+}
