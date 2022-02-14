@@ -251,6 +251,29 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             _ => (Style::Unsupported, 0),
         };
 
+        let extend = |in_type, out_type| {
+            let vector_type = bx.context.new_vector_type(out_type, 8);
+            let vector = args[0].immediate();
+            let array_type = bx.context.new_array_type(None, in_type, 8);
+            let array = bx.context.new_bitcast(None, vector, array_type);
+
+            let cast_vec_element = |index| {
+                let index = bx.context.new_rvalue_from_int(bx.int_type, index);
+                bx.context.new_cast(None, bx.context.new_array_access(None, array, index).to_rvalue(), out_type)
+            };
+
+            bx.context.new_rvalue_from_vector(None, vector_type, &[
+                cast_vec_element(0),
+                cast_vec_element(1),
+                cast_vec_element(2),
+                cast_vec_element(3),
+                cast_vec_element(4),
+                cast_vec_element(5),
+                cast_vec_element(6),
+                cast_vec_element(7),
+            ])
+        };
+
         match (in_style, out_style) {
             (Style::Int(in_is_signed), Style::Int(_)) => {
                 return Ok(match in_width.cmp(&out_width) {
@@ -259,37 +282,27 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
                     Ordering::Less => {
                         if in_is_signed {
                             match (in_width, out_width) {
-                                (8, 16) => {
-                                    // FIXME: the function _mm_cvtepi8_epi16 should directly
-                                    // call an intrinsic equivalent to __builtin_ia32_pmovsxbw128 so that
-                                    // we can generate a call to it.
-                                    let vector_type = bx.context.new_vector_type(bx.cx.i16_type, 8);
-                                    let vector = args[0].immediate();
-                                    let array_type = bx.context.new_array_type(None, bx.cx.i8_type, 8);
-                                    let array = bx.context.new_bitcast(None, vector, array_type);
-
-                                    fn cast_vec_element<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, array: RValue<'gcc>, index: i32) -> RValue<'gcc> {
-                                        let index = bx.context.new_rvalue_from_int(bx.int_type, index);
-                                        bx.context.new_cast(None, bx.context.new_array_access(None, array, index).to_rvalue(), bx.i16_type)
-                                    }
-
-                                    bx.context.new_rvalue_from_vector(None, vector_type, &[
-                                        cast_vec_element(bx, array, 0),
-                                        cast_vec_element(bx, array, 1),
-                                        cast_vec_element(bx, array, 2),
-                                        cast_vec_element(bx, array, 3),
-                                        cast_vec_element(bx, array, 4),
-                                        cast_vec_element(bx, array, 5),
-                                        cast_vec_element(bx, array, 6),
-                                        cast_vec_element(bx, array, 7),
-                                    ])
-                                },
+                                // FIXME: the function _mm_cvtepi8_epi16 should directly
+                                // call an intrinsic equivalent to __builtin_ia32_pmovsxbw128 so that
+                                // we can generate a call to it.
+                                (8, 16) => extend(bx.i8_type, bx.i16_type),
+                                (8, 32) => extend(bx.i8_type, bx.i32_type),
+                                (8, 64) => extend(bx.i8_type, bx.i64_type),
+                                (16, 32) => extend(bx.i16_type, bx.i32_type),
+                                (32, 64) => extend(bx.i32_type, bx.i64_type),
+                                (16, 64) => extend(bx.i16_type, bx.i64_type),
                                 _ => unimplemented!("in: {}, out: {}", in_width, out_width),
                             }
-                            //bx.sext(args[0].immediate(), llret_ty)
                         } else {
-                            unimplemented!();
-                            //bx.zext(args[0].immediate(), llret_ty)
+                            match (in_width, out_width) {
+                                (8, 16) => extend(bx.u8_type, bx.u16_type),
+                                (8, 32) => extend(bx.u8_type, bx.u32_type),
+                                (8, 64) => extend(bx.u8_type, bx.u64_type),
+                                (16, 32) => extend(bx.u16_type, bx.u32_type),
+                                (16, 64) => extend(bx.u16_type, bx.u64_type),
+                                (32, 64) => extend(bx.u32_type, bx.u64_type),
+                                _ => unimplemented!("in: {}, out: {}", in_width, out_width),
+                            }
                         }
                     }
                 });
@@ -478,6 +491,38 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
 
     arith_unary! {
         simd_neg: Int => neg, Float => fneg;
+    }
+
+    if name == sym::simd_saturating_add || name == sym::simd_saturating_sub {
+        let lhs = args[0].immediate();
+        let rhs = args[1].immediate();
+        let is_add = name == sym::simd_saturating_add;
+        let ptr_bits = bx.tcx().data_layout.pointer_size.bits() as _;
+        let (signed, elem_width, elem_ty) = match *in_elem.kind() {
+            ty::Int(i) => (true, i.bit_width().unwrap_or(ptr_bits), bx.cx.type_int_from_ty(i)),
+            ty::Uint(i) => (false, i.bit_width().unwrap_or(ptr_bits), bx.cx.type_uint_from_ty(i)),
+            _ => {
+                return_error!(
+                    "expected element type `{}` of vector type `{}` \
+                     to be a signed or unsigned integer type",
+                    arg_tys[0].simd_size_and_type(bx.tcx()).1,
+                    arg_tys[0]
+                );
+            }
+        };
+        let builtin_name =
+            match (signed, is_add, in_len, elem_width) {
+                (true, true, 32, 8) => "__builtin_ia32_paddsb256",
+                (false, true, 32, 8) => "__builtin_ia32_paddusb256",
+                (true, true, 16, 16) => "__builtin_ia32_paddsw256",
+                (false, true, 16, 16) => "__builtin_ia32_paddusw256",
+                _ => unimplemented!("signed: {}, is_add: {}, in_len: {}, elem_width: {}", signed, is_add, in_len, elem_width),
+            };
+        let vec_ty = bx.cx.type_vector(elem_ty, in_len as u64);
+
+        let func = bx.context.get_target_builtin_function(builtin_name);
+        let result = bx.context.new_call(None, func, &[lhs, rhs]);
+        return Ok(bx.context.new_bitcast(None, result, vec_ty));
     }
 
     unimplemented!("simd {}", name);
