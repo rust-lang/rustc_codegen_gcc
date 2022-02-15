@@ -184,15 +184,25 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let ulong_long_type = context.new_c_type(CType::ULongLong);
         let mut target_builtin_function_type = FxHashMap::default();
         let v2di = context.new_vector_type(i64_type, 2);
+        let pv2di = v2di.make_pointer();
+        let pcv2di = pv2di.make_const();
         let v4du = context.new_vector_type(u64_type, 4);
+        let pv4du = v4du.make_pointer();
+        let pcv4du = pv4du.make_const();
         let v4su = context.new_vector_type(u32_type, 4);
+        let pv4su = v4su.make_pointer();
+        let pcv4su = pv4su.make_const();
         let v4sf = context.new_vector_type(float_type, 4);
+        let v8sf = context.new_vector_type(float_type, 8);
         let v8su = context.new_vector_type(u32_type, 8);
+        let pv8su = v8su.make_pointer();
+        let pcv8su = pv8su.make_const();
         let v8hu = context.new_vector_type(u16_type, 8);
         let v16hu = context.new_vector_type(u16_type, 16);
         let v16qu = context.new_vector_type(u8_type, 16);
         let v32qu = context.new_vector_type(u8_type, 32);
         let v2df = context.new_vector_type(double_type, 2);
+        let v4df = context.new_vector_type(double_type, 4);
         target_builtin_function_type.insert("__builtin_ia32_pmovmskb128", FuncSig {
             params: vec![v16qu],
             return_type: int_type,
@@ -327,8 +337,300 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             return_type: v8su,
         });
         target_builtin_function_type.insert("__builtin_ia32_gatherd_ps", FuncSig {
-            params: vec![v4sf, void_ptr_type, v4sf, v4sf, i8_type],
+            params: vec![v4sf, void_ptr_type, v4su, v4sf, i8_type],
             return_type: v4sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherd_ps256", FuncSig {
+            params: vec![v8sf, void_ptr_type, v8su, v8sf, i8_type],
+            return_type: v8sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherd_q", FuncSig {
+            params: vec![v2di, void_ptr_type, v4su, v2di, i8_type],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherd_q256", FuncSig {
+            params: vec![v4du, void_ptr_type, v4su, v4du, i8_type],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherd_pd", FuncSig {
+            params: vec![v2df, void_ptr_type, v4su, v2df, i8_type],
+            return_type: v2df,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherd_pd256", FuncSig {
+            params: vec![v4df, void_ptr_type, v4su, v4df, i8_type],
+            return_type: v4df,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_d", FuncSig {
+            params: vec![v4su, void_ptr_type, v2di, v4su, i8_type],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_d256", FuncSig {
+            params: vec![v4su, void_ptr_type, v4du, v4su, i8_type],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_ps", FuncSig {
+            params: vec![v4sf, void_ptr_type, v2di, v4sf, i8_type],
+            return_type: v4sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_ps256", FuncSig {
+            params: vec![v4sf, void_ptr_type, v4du, v4sf, i8_type],
+            return_type: v4sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_q", FuncSig {
+            params: vec![v2di, void_ptr_type, v2di, v2di, i8_type],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_q256", FuncSig {
+            params: vec![v4du, void_ptr_type, v4du, v4du, i8_type],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_pd", FuncSig {
+            params: vec![v2df, void_ptr_type, v2di, v2df, i8_type],
+            return_type: v2df,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_gatherq_pd256", FuncSig {
+            params: vec![v4df, void_ptr_type, v4du, v4df, i8_type],
+            return_type: v4df,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaddwd256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaddubsw256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskloadd", FuncSig {
+            params: vec![pcv4su, v4su],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskloadd256", FuncSig {
+            params: vec![pcv8su, v4su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskloadq", FuncSig {
+            params: vec![pcv2di, v2di],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskloadq256", FuncSig {
+            params: vec![pcv4du, v4du],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskstored", FuncSig {
+            params: vec![pv4su, v4su, v4su],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskstored256", FuncSig {
+            params: vec![pv8su, v8su, v8su],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskstoreq", FuncSig {
+            params: vec![pv2di, v2di, v2di],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_maskstoreq256", FuncSig {
+            params: vec![pv4du, v4du, v4du],
+            return_type: void_type,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxsw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxsd256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxsb256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxuw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxud256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmaxub256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminsw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminsd256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminsb256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminuw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminud256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pminub256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_mpsadbw256", FuncSig {
+            params: vec![v32qu, v32qu, int_type],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmuldq256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmuludq256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmulhw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmulhuw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pmulhrsw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_packsswb256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_packssdw256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_packuswb256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_packusdw256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_permvarsi256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_permvarsf256", FuncSig {
+            params: vec![v8sf, v8sf],
+            return_type: v8sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psadbw256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psignw256", FuncSig {
+            params: vec![v16hu, v16hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psignd256", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psignb256", FuncSig {
+            params: vec![v32qu, v32qu],
+            return_type: v32qu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllw256", FuncSig {
+            params: vec![v16hu, v8hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_pslld256", FuncSig {
+            params: vec![v8su, v4su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllq256", FuncSig {
+            params: vec![v4du, v2di],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllwi256", FuncSig {
+            params: vec![v16hu, int_type],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllqi256", FuncSig {
+            params: vec![v4du, int_type],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllv4si", FuncSig {
+            params: vec![v4su, v4su],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllv8si", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllv2di", FuncSig {
+            params: vec![v2di, v2di],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psllv4di", FuncSig {
+            params: vec![v4du, v4du],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psraw256", FuncSig {
+            params: vec![v16hu, v8hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrad256", FuncSig {
+            params: vec![v8su, v4su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrawi256", FuncSig {
+            params: vec![v16hu, int_type],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psradi256", FuncSig {
+            params: vec![v8su, int_type],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrav4si", FuncSig {
+            params: vec![v4su, v4su],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrav8si", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlw256", FuncSig {
+            params: vec![v16hu, v8hu],
+            return_type: v16hu,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrld256", FuncSig {
+            params: vec![v8su, v4su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlq256", FuncSig {
+            params: vec![v4du, v2di],
+            return_type: v4du,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlv4si", FuncSig {
+            params: vec![v4su, v4su],
+            return_type: v4su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlv8si", FuncSig {
+            params: vec![v8su, v8su],
+            return_type: v8su,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlv2di", FuncSig {
+            params: vec![v2di, v2di],
+            return_type: v2di,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_psrlv4di", FuncSig {
+            params: vec![v4du, v4du],
+            return_type: v4du,
         });
 
         Self {

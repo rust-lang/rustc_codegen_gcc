@@ -234,7 +234,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .map(|(index, (expected_ty, &actual_val))| {
                 let actual_ty = actual_val.get_type();
                 if expected_ty != actual_ty {
-                    if actual_ty.is_integral() && actual_ty.get_size() != expected_ty.get_size() {
+                    if actual_ty.is_integral() && expected_ty.is_integral() && actual_ty.get_size() != expected_ty.get_size() {
                         self.context.new_cast(None, actual_val, expected_ty)
                     }
                     else if on_stack_param_indices.contains(&index) {
@@ -1353,6 +1353,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let new_mask_num_units = std::cmp::max(mask_num_units, vec_num_units);
         let mask_type = self.context.new_vector_type(mask_element_type, new_mask_num_units as u64);
         let mask = self.context.new_rvalue_from_vector(None, mask_type, &vector_elements);
+        // TODO: use __builtin_ia32_shufps and the like instead?
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
 
         if vec_num_units != mask_num_units {

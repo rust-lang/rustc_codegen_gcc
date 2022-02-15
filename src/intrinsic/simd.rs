@@ -512,10 +512,14 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
         };
         let builtin_name =
             match (signed, is_add, in_len, elem_width) {
-                (true, true, 32, 8) => "__builtin_ia32_paddsb256",
+                (true, true, 32, 8) => "__builtin_ia32_paddsb256", // TODO: cast arguments to unsigned.
                 (false, true, 32, 8) => "__builtin_ia32_paddusb256",
                 (true, true, 16, 16) => "__builtin_ia32_paddsw256",
                 (false, true, 16, 16) => "__builtin_ia32_paddusw256",
+                (true, false, 16, 16) => "__builtin_ia32_psubsw256",
+                (false, false, 16, 16) => "__builtin_ia32_psubusw256",
+                (true, false, 32, 8) => "__builtin_ia32_psubsb256",
+                (false, false, 32, 8) => "__builtin_ia32_psubusb256",
                 _ => unimplemented!("signed: {}, is_add: {}, in_len: {}, elem_width: {}", signed, is_add, in_len, elem_width),
             };
         let vec_ty = bx.cx.type_vector(elem_ty, in_len as u64);
