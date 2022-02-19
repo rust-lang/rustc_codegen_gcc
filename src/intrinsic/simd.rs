@@ -103,9 +103,27 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
     }
 
     if let Some(stripped) = name_str.strip_prefix("simd_shuffle") {
-        let n: u64 = stripped.parse().unwrap_or_else(|_| {
-            span_bug!(span, "bad `simd_shuffle` instruction only caught in codegen?")
-        });
+        let n: u64 =
+            if stripped.is_empty() {
+                // Make sure this is actually an array, since typeck only checks the length-suffixed
+                // version of this intrinsic.
+                match args[2].layout.ty.kind() {
+                    ty::Array(ty, len) if matches!(ty.kind(), ty::Uint(ty::UintTy::U32)) => {
+                        len.try_eval_usize(bx.cx.tcx, ty::ParamEnv::reveal_all()).unwrap_or_else(|| {
+                            span_bug!(span, "could not evaluate shuffle index array length")
+                        })
+                    }
+                    _ => return_error!(
+                        "simd_shuffle index must be an array of `u32`, got `{}`",
+                        args[2].layout.ty
+                    ),
+                }
+            }
+            else {
+                stripped.parse().unwrap_or_else(|_| {
+                    span_bug!(span, "bad `simd_shuffle` instruction only caught in codegen?")
+                })
+            };
 
         require_simd!(ret_ty, "return");
 
