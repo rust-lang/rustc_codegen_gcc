@@ -1301,6 +1301,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
 
+        // TODO: use __builtin_shufflevector (or its equivalent) instead of __builtin_shuffle.
+        // TODO: perhaps use __builtin_convertvector for vector casting. (This is elsewhere,
+        // though.)
+
         // FIXME: dyncast_vector() should not need unqualified().
         let vector_type = v1.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_type = vector_type.get_element_type();
