@@ -380,8 +380,8 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
 
     fn simd_simple_float_intrinsic<'gcc, 'tcx>(
         name: Symbol,
-        in_elem: &rustc_middle::ty::TyS<'_>,
-        in_ty: &rustc_middle::ty::TyS<'_>,
+        in_elem: Ty<'_>,
+        in_ty: Ty<'_>,
         in_len: u64,
         bx: &mut Builder<'_, 'gcc, 'tcx>,
         span: Span,
