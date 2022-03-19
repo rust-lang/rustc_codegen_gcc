@@ -632,6 +632,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             params: vec![v4du, v4du],
             return_type: v4du,
         });
+        target_builtin_function_type.insert("__builtin_ia32_sqrtss", FuncSig {
+            params: vec![v4sf],
+            return_type: v4sf,
+        });
+        target_builtin_function_type.insert("__builtin_ia32_sqrtpd", FuncSig {
+            params: vec![v2df],
+            return_type: v2df,
+        });
 
         Self {
             check_overflow,

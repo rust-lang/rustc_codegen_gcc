@@ -455,7 +455,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
         Ok(c)
     }
 
-    /*if std::matches!(
+    if std::matches!(
         name,
         sym::simd_ceil
             | sym::simd_fabs
@@ -475,7 +475,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             | sym::simd_trunc
     ) {
         return simd_simple_float_intrinsic(name, in_elem, in_ty, in_len, bx, span, args);
-    }*/
+    }
 
     arith_binary! {
         simd_add: Uint, Int => add, Float => fadd;

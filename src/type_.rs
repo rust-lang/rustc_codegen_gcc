@@ -179,10 +179,10 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn float_width(&self, typ: Type<'gcc>) -> usize {
         let f32 = self.context.new_type::<f32>();
         let f64 = self.context.new_type::<f64>();
-        if typ == f32 {
+        if typ.is_compatible_with(f32) {
             32
         }
-        else if typ == f64 {
+        else if typ.is_compatible_with(f64) {
             64
         }
         else {

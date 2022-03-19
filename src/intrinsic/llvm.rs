@@ -112,6 +112,9 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
             "llvm.x86.avx2.psrlv.d.256" => "__builtin_ia32_psrlv8si",
             "llvm.x86.avx2.psrlv.q" => "__builtin_ia32_psrlv2di",
             "llvm.x86.avx2.psrlv.q.256" => "__builtin_ia32_psrlv4di",
+            "llvm.x86.sse.sqrt.ss" => "__builtin_ia32_sqrtss",
+
+            "llvm.sqrt.v2f64" => "__builtin_ia32_sqrtpd",
             _ => unimplemented!("***** unsupported LLVM intrinsic {}", name),
         };
 
