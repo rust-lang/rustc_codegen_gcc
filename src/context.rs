@@ -256,8 +256,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             return_type: v16hu,
         });
         target_builtin_function_type.insert("__builtin_ia32_storedqu", FuncSig {
-            // NOTE: the last type is different from GCC's builtin because it's called with an argument with a different type.
-            params: vec![char_ptr, v2di],
+            params: vec![char_ptr, v16qu],
             return_type: void_type,
         });
         target_builtin_function_type.insert("__builtin_ia32_psrlwi128", FuncSig {

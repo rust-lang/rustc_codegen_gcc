@@ -239,7 +239,7 @@ EOF
 
     git checkout -- src/test/ui/issues/auxiliary/issue-3136-a.rs # contains //~ERROR, but shouldn't be removed
 
-    rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,simd*,borrowck/,test*,*lto*.rs} || true
+    rm -r src/test/ui/{abi*,extern/,panic-runtime/,panics/,unsized-locals/,proc-macro/,threads-sendsync/,thinlto/,borrowck/,test*,*lto*.rs} || true
     for test in $(rg --files-with-matches "catch_unwind|should_panic|thread|lto" src/test/ui); do
       rm $test
     done
@@ -287,7 +287,7 @@ case $1 in
         build_sysroot
         std_tests
         test_libcore
-        extended_sysroot_tests
+        #extended_sysroot_tests
         test_rustc
         ;;
 esac
