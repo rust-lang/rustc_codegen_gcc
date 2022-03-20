@@ -151,6 +151,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let long_type = context.new_c_type(CType::Long);
         let ulong_type = context.new_c_type(CType::ULong);
         let ulonglong_type = context.new_c_type(CType::ULongLong);
+        let longlong_type = context.new_c_type(CType::LongLong);
         let sizet_type = context.new_c_type(CType::SizeT);
 
         let isize_type = context.new_c_type(CType::LongLong);
@@ -178,7 +179,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
         }
 
-        let char_ptr = context.new_c_type(CType::Char).make_pointer();
+        let char_type = context.new_c_type(CType::Char);
+        let char_ptr = char_type.make_pointer();
         let void_type = context.new_type::<()>();
         let void_ptr_type = context.new_type::<*mut ()>();
         let ulong_long_type = context.new_c_type(CType::ULongLong);
@@ -186,6 +188,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let v2di = context.new_vector_type(i64_type, 2);
         let pv2di = v2di.make_pointer();
         let pcv2di = pv2di.make_const();
+        let v4di = context.new_vector_type(i64_type, 4);
+        let v4dl = context.new_vector_type(longlong_type, 4);
         let v4du = context.new_vector_type(u64_type, 4);
         let pv4du = v4du.make_pointer();
         let pcv4du = pv4du.make_const();
@@ -194,6 +198,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let pcv4su = pv4su.make_const();
         let v4sf = context.new_vector_type(float_type, 4);
         let v8sf = context.new_vector_type(float_type, 8);
+        let v8si = context.new_vector_type(i32_type, 8);
         let v8su = context.new_vector_type(u32_type, 8);
         let pv8su = v8su.make_pointer();
         let pcv8su = pv8su.make_const();
@@ -201,6 +206,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let v16hu = context.new_vector_type(u16_type, 16);
         let v16qu = context.new_vector_type(u8_type, 16);
         let v32qu = context.new_vector_type(u8_type, 32);
+        let v32qi = context.new_vector_type(char_type, 32);
         let v2df = context.new_vector_type(double_type, 2);
         let v4df = context.new_vector_type(double_type, 4);
         target_builtin_function_type.insert("__builtin_ia32_pmovmskb128", FuncSig {
@@ -233,19 +239,20 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         });
         target_builtin_function_type.insert("__builtin_ia32_pshufb256", FuncSig {
             params: vec![v32qu, v32qu],
-            return_type: v32qu,
+            return_type: v32qi,
         });
         target_builtin_function_type.insert("__builtin_ia32_pslldi256", FuncSig {
-            params: vec![v8su, int_type],
-            return_type: v8su,
+            params: vec![v8si, int_type],
+            return_type: v8si,
         });
         target_builtin_function_type.insert("__builtin_ia32_psrldi256", FuncSig {
-            params: vec![v8su, int_type],
-            return_type: v8su,
+            params: vec![v8si, int_type],
+            return_type: v8si,
         });
+        // TODO: maybe cache vector types?
         target_builtin_function_type.insert("__builtin_ia32_permti256", FuncSig {
-            params: vec![v4du, v4du, int_type],
-            return_type: v4du,
+            params: vec![v4di, v4di, int_type],
+            return_type: v4dl,
         });
         target_builtin_function_type.insert("__builtin_ia32_vzeroupper", FuncSig {
             params: vec![],

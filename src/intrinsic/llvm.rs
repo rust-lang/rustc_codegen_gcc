@@ -1,3 +1,5 @@
+// TODO: enable chacha simd.
+
 use gccjit::Function;
 
 use crate::context::CodegenCx;

@@ -287,7 +287,7 @@ case $1 in
         build_sysroot
         std_tests
         test_libcore
-        #extended_sysroot_tests
+        extended_sysroot_tests
         test_rustc
         ;;
 esac
