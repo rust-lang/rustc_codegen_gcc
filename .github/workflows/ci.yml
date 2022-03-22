@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        libgccjit_version: ["libgccjit.so", "libgccjit_without_int128.so"]
+        libgccjit_version: ["libgccjit_target_builtins.so"]
 
     steps:
     - uses: actions/checkout@v2
