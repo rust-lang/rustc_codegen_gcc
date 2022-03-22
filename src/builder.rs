@@ -539,12 +539,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn frem(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        if a.get_type() == self.cx.float_type {
+        if a.get_type().is_compatible_with(self.cx.float_type) {
             let fmodf = self.context.get_builtin_function("fmodf");
             // FIXME(antoyo): this seems to produce the wrong result.
             return self.context.new_call(None, fmodf, &[a, b]);
         }
-        assert_eq!(a.get_type(), self.cx.double_type);
+        assert_eq!(a.get_type().unqualified(), self.cx.double_type);
 
         let fmod = self.context.get_builtin_function("fmod");
         return self.context.new_call(None, fmod, &[a, b]);
@@ -667,7 +667,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // NOTE: instead of returning the dereference here, we have to assign it to a variable in
         // the current basic block. Otherwise, it could be used in another basic block, causing a
         // dereference after a drop, for instance.
-        // TODO(antoyo): handle align.
+        // TODO(antoyo): handle align of the load instruction.
         let deref = ptr.dereference(None).to_rvalue();
         let value_type = deref.get_type();
         unsafe { RETURN_VALUE_COUNT += 1 };
@@ -807,9 +807,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.store_with_flags(val, ptr, align, MemFlags::empty())
     }
 
-    fn store_with_flags(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, _align: Align, _flags: MemFlags) -> RValue<'gcc> {
+    fn store_with_flags(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align, _flags: MemFlags) -> RValue<'gcc> {
         let ptr = self.check_store(val, ptr);
-        self.llbb().add_assignment(None, ptr.dereference(None), val);
+        let destination = ptr.dereference(None);
+        // NOTE: libgccjit does not support specifying the alignment on the assignment, so we cast
+        // to type so it gets the proper alignment.
+        let destination_type = destination.to_rvalue().get_type().unqualified();
+        let aligned_type = destination_type.get_aligned(align.bytes()).make_pointer();
+        let aligned_destination = self.cx.context.new_bitcast(None, ptr, aligned_type);
+        let aligned_destination = aligned_destination.dereference(None);
+        self.llbb().add_assignment(None, aligned_destination, val);
         // TODO(antoyo): handle align and flags.
         // NOTE: dummy value here since it's never used. FIXME(antoyo): API should not return a value here?
         self.cx.context.new_rvalue_zero(self.type_i32())

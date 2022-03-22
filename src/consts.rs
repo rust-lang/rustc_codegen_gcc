@@ -178,8 +178,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 Some(kind) if !self.tcx.sess.fewer_names() => {
                     let name = self.generate_local_symbol_name(kind);
                     // TODO(antoyo): check if it's okay that no link_section is set.
-                    // TODO(antoyo): set alignment here as well.
-                    let global = self.declare_private_global(&name[..], self.val_ty(cv));
+
+                    let typ = self.val_ty(cv).get_aligned(align.bytes());
+                    let global = self.declare_private_global(&name[..], typ);
                     global
                 }
                 _ => {

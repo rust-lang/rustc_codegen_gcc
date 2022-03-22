@@ -204,7 +204,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let pcv8su = pv8su.make_const();
         let v8hu = context.new_vector_type(u16_type, 8);
         let v16hu = context.new_vector_type(u16_type, 16);
-        let v16qu = context.new_vector_type(u8_type, 16);
+        let v16qu = context.new_vector_type(char_type, 16);
         let v32qu = context.new_vector_type(u8_type, 32);
         let v32qi = context.new_vector_type(char_type, 32);
         let v2df = context.new_vector_type(double_type, 2);
@@ -740,11 +740,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn is_native_int_type_or_bool(&self, typ: Type<'gcc>) -> bool {
-        self.is_native_int_type(typ) || typ == self.bool_type
+        self.is_native_int_type(typ) || typ.is_compatible_with(self.bool_type)
     }
 
     pub fn is_int_type_or_bool(&self, typ: Type<'gcc>) -> bool {
-        self.is_native_int_type(typ) || self.is_non_native_int_type(typ) || typ == self.bool_type
+        self.is_native_int_type(typ) || self.is_non_native_int_type(typ) || typ.is_compatible_with(self.bool_type)
     }
 
     pub fn sess(&self) -> &Session {

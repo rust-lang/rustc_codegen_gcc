@@ -41,6 +41,7 @@ dependencies = [
 [[package]]
 name = "gccjit"
 version = "1.0.0"
+source = "git+https://github.com/antoyo/gccjit.rs?branch=feature/target-builtins#f809068c15c01f3b011b2e9da1abf47fa88c9003"
 dependencies = [
  "gccjit_sys",
 ]
@@ -48,6 +49,7 @@ dependencies = [
 [[package]]
 name = "gccjit_sys"
 version = "0.0.1"
+source = "git+https://github.com/antoyo/gccjit.rs?branch=feature/target-builtins#f809068c15c01f3b011b2e9da1abf47fa88c9003"
 dependencies = [
  "libc 0.1.12",
 ]

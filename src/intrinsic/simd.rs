@@ -211,12 +211,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
             ret_ty
         );
         let vector = args[0].immediate();
-        // FIXME: dyncast_vector() should not need unqualified().
-        let vector_type = vector.get_type().unqualified().dyncast_vector().expect("vector type");
-        let element_type = vector_type.get_element_type();
-        let array_type = bx.context.new_array_type(None, element_type, in_len as i32);
-        let array = bx.context.new_bitcast(None, vector, array_type);
-        return Ok(bx.context.new_array_access(None, array, args[1].immediate()).to_rvalue());
+        return Ok(bx.context.new_vector_access(None, vector, args[1].immediate()).to_rvalue());
     }
 
     if name == sym::simd_cast {

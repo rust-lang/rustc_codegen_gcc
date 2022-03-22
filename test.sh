@@ -164,27 +164,27 @@ function extended_sysroot_tests() {
     #echo "[BENCH COMPILE] ebobby/simple-raytracer"
     #hyperfine --runs "${RUN_RUNS:-10}" --warmup 1 --prepare "cargo clean" \
     #"RUSTC=rustc RUSTFLAGS='' cargo build" \
-    #"../build/cargo.sh build"
+    #"../cargo.sh build"
 
     #echo "[BENCH RUN] ebobby/simple-raytracer"
     #cp ./target/debug/main ./raytracer_cg_clif
     #hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_clif
     #popd
 
-    #pushd regex
-    #echo "[TEST] rust-lang/regex example shootout-regex-dna"
-    #cargo clean
-    #export RUSTFLAGS="$RUSTFLAGS --cap-lints warn" # newer aho_corasick versions throw a deprecation warning
-    ## Make sure `[codegen mono items] start` doesn't poison the diff
-    #../build/cargo.sh build --example shootout-regex-dna --target $TARGET_TRIPLE
-    #cat examples/regexdna-input.txt \
-        #| ../build/cargo.sh run --example shootout-regex-dna --target $TARGET_TRIPLE \
-        #| grep -v "Spawned thread" > res.txt
-    #diff -u res.txt examples/regexdna-output.txt
+    pushd regex
+    echo "[TEST] rust-lang/regex example shootout-regex-dna"
+    cargo clean
+    export CG_RUSTFLAGS="--cap-lints warn" # newer aho_corasick versions throw a deprecation warning
+    # Make sure `[codegen mono items] start` doesn't poison the diff
+    ../cargo.sh build --example shootout-regex-dna
+    cat examples/regexdna-input.txt \
+        | ../cargo.sh run --example shootout-regex-dna \
+        | grep -v "Spawned thread" > res.txt
+    diff -u res.txt examples/regexdna-output.txt
 
-    #echo "[TEST] rust-lang/regex tests"
-    #../build/cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options -q
-    #popd
+    echo "[TEST] rust-lang/regex tests"
+    ../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options -q
+    popd
 }
 
 function test_rustc() {
