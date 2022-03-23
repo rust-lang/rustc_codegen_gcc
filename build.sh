@@ -36,4 +36,9 @@ rm -r target/out || true
 mkdir -p target/out/gccjit
 
 echo "[BUILD] sysroot"
-time ./build_sysroot/build_sysroot.sh $CHANNEL
+if [[ "$CHANNEL" == "release" ]]; then
+    time ./build_sysroot/build_sysroot.sh --release
+else
+    time ./build_sysroot/build_sysroot.sh
+fi
+
