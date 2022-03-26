@@ -199,6 +199,14 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
                 _ => unimplemented!("Len: {}", in_len),
             };
         let builtin = bx.context.get_target_builtin_function(func_name);
+        let param1_type = builtin.get_param(0).to_rvalue().get_type();
+        let vector =
+            if vector.get_type() != param1_type {
+                bx.context.new_bitcast(None, vector, param1_type)
+            }
+            else {
+                vector
+            };
         let result = bx.context.new_call(None, builtin, &[vector, value, bx.context.new_cast(None, index, bx.int_type)]);
         return Ok(bx.context.new_bitcast(None, result, vector.get_type()));
     }

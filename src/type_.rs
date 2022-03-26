@@ -153,7 +153,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn type_ptr_to_ext(&self, ty: Type<'gcc>, _address_space: AddressSpace) -> Type<'gcc> {
-        // TODO(antoyo): use address_space
+        // TODO(antoyo): use address_space, perhaps with TYPE_ADDR_SPACE?
         ty.make_pointer()
     }
 

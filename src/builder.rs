@@ -199,7 +199,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let mut all_args_match = true;
         let mut param_types = vec![];
         let gcc_func = func_ptr.get_type().dyncast_function_ptr_type().expect("function ptr");
-        // FIXME: this is not working for target builtins.
         for (index, arg) in args.iter().enumerate().take(gcc_func.get_param_count()) {
             let param = gcc_func.get_param_type(index);
             if param != arg.get_type() {
@@ -213,15 +212,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             on_stack_param_indices = indices.clone();
         }
 
-        let func_name = format!("{:?}", func_ptr); // TODO(antoyo): implement better way to get function name.
         let param_types =
             if all_args_match {
-                if let Some(arg_types) = self.target_builtin_function_type.borrow().get(func_name.as_str()) {
-                    arg_types.params.clone()
-                }
-                else {
-                    return Cow::Borrowed(args);
-                }
+                return Cow::Borrowed(args);
             }
             else {
                 param_types
@@ -241,6 +234,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                         actual_val.dereference(None).to_rvalue()
                     }
                     else {
+                        assert!(!((actual_ty.is_vector() && !expected_ty.is_vector()) || (!actual_ty.is_vector() && expected_ty.is_vector())), "{:?} ({}) -> {:?} ({}), index: {:?}[{}]", actual_ty, actual_ty.is_vector(), expected_ty, expected_ty.is_vector(), func_ptr, index);
                         self.bitcast(actual_val, expected_ty)
                     }
                 }
@@ -299,21 +293,14 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local or call add_eval().
         let gcc_func = func_ptr.get_type().dyncast_function_ptr_type().expect("function ptr");
-        let mut return_type = gcc_func.get_return_type();
+        let return_type = gcc_func.get_return_type();
         let void_type = self.context.new_type::<()>();
         let current_func = self.block.get_function();
-
-        // FIXME(antoyo): As a temporary workaround for unsupported LLVM intrinsics.
-        if gcc_func.get_param_count() == 0 {
-            let func_name = format!("{:?}", func_ptr);
-            if let Some(func_sig) = self.target_builtin_function_type.borrow().get(func_name.as_str()) {
-                return_type = func_sig.return_type;
-            }
-        }
 
         if return_type != void_type {
             unsafe { RETURN_VALUE_COUNT += 1 };
             let result = current_func.new_local(None, return_type, &format!("ptrReturnValue{}", unsafe { RETURN_VALUE_COUNT }));
+            //println!("Assigning the result of {:?}", func_ptr);
             self.block.add_assignment(None, result, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             result.to_rvalue()
         }
@@ -1140,6 +1127,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn resume(&mut self, _exn: RValue<'gcc>) {
+        // TODO: perhaps we can just call __builtin_unwind_resume?
         // TODO(bjorn3): Properly implement unwinding.
         self.unreachable();
     }

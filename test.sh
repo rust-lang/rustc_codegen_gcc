@@ -97,25 +97,6 @@ function std_tests() {
 #echo "[BUILD] sysroot in release mode"
 #./build_sysroot/build_sysroot.sh --release
 
-# TODO(antoyo): uncomment when it works.
-#pushd simple-raytracer
-#if [[ "$HOST_TRIPLE" = "$TARGET_TRIPLE" ]]; then
-    #echo "[BENCH COMPILE] ebobby/simple-raytracer"
-    #hyperfine --runs ${RUN_RUNS:-10} --warmup 1 --prepare "rm -r target/*/debug || true" \
-    #"RUSTFLAGS='' cargo build --target $TARGET_TRIPLE" \
-    #"../cargo.sh build"
-
-    #echo "[BENCH RUN] ebobby/simple-raytracer"
-    #cp ./target/*/debug/main ./raytracer_cg_gccjit
-    #hyperfine --runs ${RUN_RUNS:-10} ./raytracer_cg_llvm ./raytracer_cg_gccjit
-#else
-    #echo "[BENCH COMPILE] ebobby/simple-raytracer (skipped)"
-    #echo "[COMPILE] ebobby/simple-raytracer"
-    #../cargo.sh build
-    #echo "[BENCH RUN] ebobby/simple-raytracer (skipped)"
-#fi
-#popd
-
 function test_libcore() {
     pushd build_sysroot/sysroot_src/library/core/tests
     echo "[TEST] libcore"
@@ -123,19 +104,6 @@ function test_libcore() {
     ../../../../../cargo.sh test
     popd
 }
-
-# TODO(antoyo): uncomment when it works.
-#pushd regex
-#echo "[TEST] rust-lang/regex example shootout-regex-dna"
-#../cargo.sh clean
-## Make sure `[codegen mono items] start` doesn't poison the diff
-#../cargo.sh build --example shootout-regex-dna
-#cat examples/regexdna-input.txt | ../cargo.sh run --example shootout-regex-dna | grep -v "Spawned thread" > res.txt
-#diff -u res.txt examples/regexdna-output.txt
-
-#echo "[TEST] rust-lang/regex tests"
-#../cargo.sh test --tests -- --exclude-should-panic --test-threads 1 -Zunstable-options
-#popd
 
 #echo
 #echo "[BENCH COMPILE] mod_bench"
@@ -160,16 +128,16 @@ function extended_sysroot_tests() {
     ../cargo.sh test --workspace
     popd
 
-    #pushd simple-raytracer
-    #echo "[BENCH COMPILE] ebobby/simple-raytracer"
-    #hyperfine --runs "${RUN_RUNS:-10}" --warmup 1 --prepare "cargo clean" \
-    #"RUSTC=rustc RUSTFLAGS='' cargo build" \
-    #"../cargo.sh build"
+    pushd simple-raytracer
+    echo "[BENCH COMPILE] ebobby/simple-raytracer"
+    hyperfine --runs "${RUN_RUNS:-10}" --warmup 1 --prepare "cargo clean" \
+    "RUSTC=rustc RUSTFLAGS='' cargo build" \
+    "../cargo.sh build"
 
-    #echo "[BENCH RUN] ebobby/simple-raytracer"
-    #cp ./target/debug/main ./raytracer_cg_clif
-    #hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_clif
-    #popd
+    echo "[BENCH RUN] ebobby/simple-raytracer"
+    cp ./target/debug/main ./raytracer_cg_gcc
+    hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_gcc
+    popd
 
     pushd regex
     echo "[TEST] rust-lang/regex example shootout-regex-dna"
