@@ -169,7 +169,8 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(bx: &mut Builder<'a, 'gcc, 'tcx>, 
         let vector_type = vector.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_type = vector_type.get_element_type();
         // NOTE: we cannot cast to an array and assign to its element here because the value might
-        // not be an l-value.
+        // not be an l-value. So, call a builtin to set the element.
+        // TODO: perhaps we could create a new vector or maybe there's a GIMPLE instruction for that?
         let func_name =
             match in_len {
                 2 => {

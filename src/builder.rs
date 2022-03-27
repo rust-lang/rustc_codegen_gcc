@@ -212,13 +212,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             on_stack_param_indices = indices.clone();
         }
 
-        let param_types =
-            if all_args_match {
-                return Cow::Borrowed(args);
-            }
-            else {
-                param_types
-            };
+        if all_args_match {
+            return Cow::Borrowed(args);
+        }
 
         let casted_args: Vec<_> = param_types
             .into_iter()
@@ -300,7 +296,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         if return_type != void_type {
             unsafe { RETURN_VALUE_COUNT += 1 };
             let result = current_func.new_local(None, return_type, &format!("ptrReturnValue{}", unsafe { RETURN_VALUE_COUNT }));
-            //println!("Assigning the result of {:?}", func_ptr);
             self.block.add_assignment(None, result, self.cx.context.new_call_through_ptr(None, func_ptr, &args));
             result.to_rvalue()
         }
@@ -883,8 +878,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn sext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check that it indeed sign extend the value.
-        // FIXME: only use dyncast_vector.
-        if dest_ty.dyncast_vector().is_some() || format!("{:?}", value.get_type()).contains("vector") {
+        if dest_ty.dyncast_vector().is_some() {
             // TODO(antoyo): nothing to do as it is only for LLVM?
             return value;
         }
@@ -1127,7 +1121,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn resume(&mut self, _exn: RValue<'gcc>) {
-        // TODO: perhaps we can just call __builtin_unwind_resume?
         // TODO(bjorn3): Properly implement unwinding.
         self.unreachable();
     }
@@ -1296,7 +1289,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
 
-        // TODO: use __builtin_shufflevector (or its equivalent) instead of __builtin_shuffle.
         // TODO: perhaps use __builtin_convertvector for vector casting. (This is elsewhere,
         // though.)
 
@@ -1352,11 +1344,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let new_mask_num_units = std::cmp::max(mask_num_units, vec_num_units);
         let mask_type = self.context.new_vector_type(mask_element_type, new_mask_num_units as u64);
         let mask = self.context.new_rvalue_from_vector(None, mask_type, &vector_elements);
-        // TODO: use __builtin_ia32_shufps and the like instead?
         let result = self.context.new_rvalue_vector_perm(None, v1, v2, mask);
 
         if vec_num_units != mask_num_units {
-            // TODO: explain what this does.
+            // NOTE: if padding was added, only select the number of elements of the masks to
+            // remove that padding in the result.
             let mut elements = vec![];
             let array = self.context.new_bitcast(None, result, array_type);
             for i in 0..mask_num_units {

@@ -128,16 +128,16 @@ function extended_sysroot_tests() {
     ../cargo.sh test --workspace
     popd
 
-    pushd simple-raytracer
-    echo "[BENCH COMPILE] ebobby/simple-raytracer"
-    hyperfine --runs "${RUN_RUNS:-10}" --warmup 1 --prepare "cargo clean" \
-    "RUSTC=rustc RUSTFLAGS='' cargo build" \
-    "../cargo.sh build"
+    #pushd simple-raytracer
+    #echo "[BENCH COMPILE] ebobby/simple-raytracer"
+    #hyperfine --runs "${RUN_RUNS:-10}" --warmup 1 --prepare "cargo clean" \
+    #"RUSTC=rustc RUSTFLAGS='' cargo build" \
+    #"../cargo.sh build"
 
-    echo "[BENCH RUN] ebobby/simple-raytracer"
-    cp ./target/debug/main ./raytracer_cg_gcc
-    hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_gcc
-    popd
+    #echo "[BENCH RUN] ebobby/simple-raytracer"
+    #cp ./target/debug/main ./raytracer_cg_gcc
+    #hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_gcc
+    #popd
 
     pushd regex
     echo "[TEST] rust-lang/regex example shootout-regex-dna"
@@ -167,23 +167,7 @@ function test_rustc() {
     git checkout $(rustc -V | cut -d' ' -f3 | tr -d '(')
     export RUSTFLAGS=
 
-    git apply - <<EOF
-diff --git a/src/tools/compiletest/src/header.rs b/src/tools/compiletest/src/header.rs
-index 887d27fd6dca4..2c2239f2b83d1 100644
---- a/src/tools/compiletest/src/header.rs
-+++ b/src/tools/compiletest/src/header.rs
-@@ -806,8 +806,8 @@ pub fn make_test_description<R: Read>(
-     cfg: Option<&str>,
- ) -> test::TestDesc {
-     let mut ignore = false;
-     #[cfg(not(bootstrap))]
--    let ignore_message: Option<String> = None;
-+    let ignore_message: Option<&str> = None;
-     let mut should_fail = false;
-
-     let rustc_has_profiler_support = env::var_os("RUSTC_PROFILER_SUPPORT").is_some();
-
-EOF
+    git apply ../rustc_patches/compile_test.patch || true
 
     rm config.toml || true
 
