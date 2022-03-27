@@ -135,7 +135,7 @@ function extended_sysroot_tests() {
     "../cargo.sh build"
 
     echo "[BENCH RUN] ebobby/simple-raytracer"
-    cp ./target/x86_64-unknown-linux-gnu/debug/main ./raytracer_cg_gcc
+    cp ./target/debug/main ./raytracer_cg_gcc
     hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_gcc
     popd
 
