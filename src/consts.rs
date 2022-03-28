@@ -82,7 +82,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
 
         let instance = Instance::mono(self.tcx, def_id);
         let ty = instance.ty(self.tcx, ty::ParamEnv::reveal_all());
-        let gcc_type = self.layout_of(ty).gcc_type(self, true);
+        let gcc_type = self.layout_of(ty).gcc_type(self);
 
         // TODO(antoyo): set alignment.
 
@@ -218,7 +218,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let global =
             if let Some(def_id) = def_id.as_local() {
                 let id = self.tcx.hir().local_def_id_to_hir_id(def_id);
-                let llty = self.layout_of(ty).gcc_type(self, true);
+                let llty = self.layout_of(ty).gcc_type(self);
                 // FIXME: refactor this to work without accessing the HIR
                 let global = match self.tcx.hir().get(id) {
                     Node::Item(&hir::Item { span, kind: hir::ItemKind::Static(..), .. }) => {
@@ -363,7 +363,7 @@ pub fn codegen_static_initializer<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, def_id
 
 fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &CodegenFnAttrs, ty: Ty<'tcx>, sym: &str, span: Span) -> LValue<'gcc> {
     let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
-    let llty = cx.layout_of(ty).gcc_type(cx, true);
+    let llty = cx.layout_of(ty).gcc_type(cx);
     if let Some(linkage) = attrs.linkage {
         // If this is a static with a linkage specified, then we need to handle
         // it a little specially. The typesystem prevents things like &T and
@@ -372,7 +372,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, attrs: &Codeg
         // that the static actually has a null value.
         let llty2 =
             if let ty::RawPtr(ref mt) = ty.kind() {
-                cx.layout_of(mt.ty).gcc_type(cx, true)
+                cx.layout_of(mt.ty).gcc_type(cx)
             }
             else {
                 cx.sess().span_fatal(

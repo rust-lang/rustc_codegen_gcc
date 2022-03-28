@@ -112,7 +112,7 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
                 },
             }
         }
-        FieldsShape::Array { count, .. } => cx.type_array(layout.field(cx, 0).gcc_type(cx, true), count),
+        FieldsShape::Array { count, .. } => cx.type_array(layout.field(cx, 0).gcc_type(cx), count),
         FieldsShape::Arbitrary { .. } =>
             match name {
                 None => {
@@ -131,7 +131,7 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
 pub trait LayoutGccExt<'tcx> {
     fn is_gcc_immediate(&self) -> bool;
     fn is_gcc_scalar_pair(&self) -> bool;
-    fn gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, set_fields: bool) -> Type<'gcc>;
+    fn gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc>;
     fn immediate_gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc>;
     fn scalar_gcc_type_at<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, scalar: &abi::Scalar, offset: Size) -> Type<'gcc>;
     fn scalar_pair_element_gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, index: usize, immediate: bool) -> Type<'gcc>;
@@ -166,8 +166,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
     /// with the inner-most trailing unsized field using the "minimal unit"
     /// of that field's type - this is useful for taking the address of
     /// that field and ensuring the struct has the right alignment.
-    //TODO(antoyo): do we still need the set_fields parameter?
-    fn gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, set_fields: bool) -> Type<'gcc> {
+    fn gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc> {
         if let Abi::Scalar(ref scalar) = self.abi {
             // Use a different cache for scalars because pointers to DSTs
             // can be either fat or thin (data pointers of fat pointers).
@@ -177,10 +176,10 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
             let ty =
                 match *self.ty.kind() {
                     ty::Ref(_, ty, _) | ty::RawPtr(ty::TypeAndMut { ty, .. }) => {
-                        cx.type_ptr_to(cx.layout_of(ty).gcc_type(cx, set_fields))
+                        cx.type_ptr_to(cx.layout_of(ty).gcc_type(cx))
                     }
                     ty::Adt(def, _) if def.is_box() => {
-                        cx.type_ptr_to(cx.layout_of(self.ty.boxed_ty()).gcc_type(cx, true))
+                        cx.type_ptr_to(cx.layout_of(self.ty.boxed_ty()).gcc_type(cx))
                     }
                     ty::FnPtr(sig) => cx.fn_ptr_backend_type(&cx.fn_abi_of_fn_ptr(sig, ty::List::empty())),
                     _ => self.scalar_gcc_type_at(cx, scalar, Size::ZERO),
@@ -220,7 +219,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 if let Some(v) = variant_index {
                     layout = layout.for_variant(cx, v);
                 }
-                layout.gcc_type(cx, true)
+                layout.gcc_type(cx)
             }
             else {
                 uncached_gcc_type(cx, *self, &mut defer)
@@ -242,7 +241,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 return cx.type_i1();
             }
         }
-        self.gcc_type(cx, true)
+        self.gcc_type(cx)
     }
 
     fn scalar_gcc_type_at<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, scalar: &abi::Scalar, offset: Size) -> Type<'gcc> {
@@ -271,7 +270,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         // pointee types, to avoid bitcasting every `OperandRef::deref`.
         match self.ty.kind() {
             ty::Ref(..) | ty::RawPtr(_) => {
-                return self.field(cx, index).gcc_type(cx, true);
+                return self.field(cx, index).gcc_type(cx);
             }
             // only wide pointer boxes are handled as pointers
             // thin pointer boxes with scalar allocators are handled by the general logic below
@@ -341,7 +340,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
 
 impl<'gcc, 'tcx> LayoutTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn backend_type(&self, layout: TyAndLayout<'tcx>) -> Type<'gcc> {
-        layout.gcc_type(self, true)
+        layout.gcc_type(self)
     }
 
     fn immediate_backend_type(&self, layout: TyAndLayout<'tcx>) -> Type<'gcc> {

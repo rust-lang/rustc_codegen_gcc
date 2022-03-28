@@ -713,7 +713,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             }
             else if let abi::Abi::ScalarPair(ref a, ref b) = place.layout.abi {
                 let b_offset = a.value.size(self).align_to(b.value.align(self).abi);
-                let pair_type = place.layout.gcc_type(self, false);
+                let pair_type = place.layout.gcc_type(self);
 
                 let mut load = |i, scalar: &abi::Scalar, align| {
                     let llptr = self.struct_gep(pair_type, place.llval, i as u64);
