@@ -9,9 +9,10 @@ use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_target::abi::{self, Abi, F32, F64, FieldsShape, Int, Integer, Pointer, PointeeInfo, Size, TyAbiInterface, Variants};
 use rustc_target::abi::call::{CastTarget, FnAbi, Reg};
 
+use smallvec::{SmallVec, smallvec};
+
 use crate::abi::{FnAbiGccExt, GccType};
-use crate::context::CodegenCx;
-use crate::type_::struct_fields;
+use crate::context::{CodegenCx, TypeLowering};
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     fn type_from_unsigned_integer(&self, i: Integer) -> Type<'gcc> {
@@ -48,7 +49,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 }
 
-pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLayout<'tcx>, defer: &mut Option<(Struct<'gcc>, TyAndLayout<'tcx>)>) -> Type<'gcc> {
+pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLayout<'tcx>, defer: &mut Option<(Struct<'gcc>, TyAndLayout<'tcx>)>, field_remapping: &mut Option<SmallVec<[u32; 4]>>) -> Type<'gcc> {
     match layout.abi {
         Abi::Scalar(_) => bug!("handled elsewhere"),
         Abi::Vector { ref element, count } => {
@@ -116,7 +117,8 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
         FieldsShape::Arbitrary { .. } =>
             match name {
                 None => {
-                    let (gcc_fields, packed) = struct_fields(cx, layout);
+                    let (gcc_fields, packed, new_field_remapping) = struct_fields(cx, layout);
+                    *field_remapping = new_field_remapping;
                     cx.type_struct(&gcc_fields, packed)
                 },
                 Some(ref name) => {
@@ -128,6 +130,49 @@ pub fn uncached_gcc_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLa
     }
 }
 
+fn struct_fields<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, layout: TyAndLayout<'tcx>) -> (Vec<Type<'gcc>>, bool, Option<SmallVec<[u32; 4]>>) {
+    let field_count = layout.fields.count();
+
+    let mut packed = false;
+    let mut offset = Size::ZERO;
+    let mut prev_effective_align = layout.align.abi;
+    let mut result: Vec<_> = Vec::with_capacity(1 + field_count * 2);
+    let mut field_remapping = smallvec![0; field_count];
+    for i in layout.fields.index_by_increasing_offset() {
+        let target_offset = layout.fields.offset(i as usize);
+        let field = layout.field(cx, i);
+        let effective_field_align =
+            layout.align.abi.min(field.align.abi).restrict_for_offset(target_offset);
+        packed |= effective_field_align < field.align.abi;
+
+        assert!(target_offset >= offset);
+        let padding = target_offset - offset;
+        if padding != Size::ZERO {
+            let padding_align = prev_effective_align.min(effective_field_align);
+            assert_eq!(offset.align_to(padding_align) + padding, target_offset);
+            result.push(cx.type_padding_filler(padding, padding_align));
+        }
+        field_remapping[i] = result.len() as u32;
+        result.push(field.gcc_type(cx));
+        offset = target_offset + field.size;
+        prev_effective_align = effective_field_align;
+    }
+    let padding_used = result.len() > field_count;
+    if !layout.is_unsized() && field_count > 0 {
+        if offset > layout.size {
+            bug!("layout: {:#?} stride: {:?} offset: {:?}", layout, layout.size, offset);
+        }
+        let padding = layout.size - offset;
+        if padding != Size::ZERO {
+            let padding_align = prev_effective_align;
+            assert_eq!(offset.align_to(padding_align) + padding, layout.size);
+            result.push(cx.type_padding_filler(padding, padding_align));
+        }
+    }
+    let field_remapping = if padding_used { Some(field_remapping) } else { None };
+    (result, packed, field_remapping)
+}
+
 pub trait LayoutGccExt<'tcx> {
     fn is_gcc_immediate(&self) -> bool;
     fn is_gcc_scalar_pair(&self) -> bool;
@@ -135,7 +180,7 @@ pub trait LayoutGccExt<'tcx> {
     fn immediate_gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>) -> Type<'gcc>;
     fn scalar_gcc_type_at<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, scalar: &abi::Scalar, offset: Size) -> Type<'gcc>;
     fn scalar_pair_element_gcc_type<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, index: usize, immediate: bool) -> Type<'gcc>;
-    fn gcc_field_index(&self, index: usize) -> u64;
+    fn gcc_field_index<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, index: usize) -> u64;
     fn pointee_info_at<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, offset: Size) -> Option<PointeeInfo>;
 }
 
@@ -194,25 +239,18 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 Variants::Single { index } => Some(index),
                 _ => None,
             };
-        let cached_type = cx.types.borrow().get(&(self.ty, variant_index)).cloned();
-        if let Some(ty) = cached_type {
-            let type_to_set_fields = cx.types_with_fields_to_set.borrow_mut().remove(&ty);
-            if let Some((struct_type, layout)) = type_to_set_fields {
-                // Since we might be trying to generate a type containing another type which is not
-                // completely generated yet, we deferred setting the fields until now.
-                let (fields, packed) = struct_fields(cx, layout);
-                cx.set_struct_body(struct_type, &fields, packed);
-            }
-            return ty;
+        if let Some(gcc_type) = cx.type_lowering.borrow().get(&(self.ty, variant_index)) {
+            return gcc_type.gcc_type;
         }
 
         assert!(!self.ty.has_escaping_bound_vars(), "{:?} has escaping bound vars", self.ty);
 
-        // Make sure lifetimes are erased, to avoid generating distinct LLVM
+        // Make sure lifetimes are erased, to avoid generating distinct GCC
         // types for Rust types that only differ in the choice of lifetimes.
         let normal_ty = cx.tcx.erase_regions(self.ty);
 
         let mut defer = None;
+        let mut field_remapping = None;
         let ty =
             if self.ty != normal_ty {
                 let mut layout = cx.layout_of(normal_ty);
@@ -222,14 +260,21 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 layout.gcc_type(cx)
             }
             else {
-                uncached_gcc_type(cx, *self, &mut defer)
+                uncached_gcc_type(cx, *self, &mut defer, &mut field_remapping)
             };
 
-        cx.types.borrow_mut().insert((self.ty, variant_index), ty);
+        cx.type_lowering
+            .borrow_mut()
+            .insert((self.ty, variant_index), TypeLowering { gcc_type: ty, field_remapping });
 
         if let Some((ty, layout)) = defer {
-            let (fields, packed) = struct_fields(cx, layout);
+            let (fields, packed, new_field_remapping) = struct_fields(cx, layout);
             cx.set_struct_body(ty, &fields, packed);
+            cx.type_lowering
+                .borrow_mut()
+                .get_mut(&(self.ty, variant_index))
+                .unwrap()
+                .field_remapping = new_field_remapping;
         }
 
         ty
@@ -308,7 +353,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         self.scalar_gcc_type_at(cx, scalar, offset)
     }
 
-    fn gcc_field_index(&self, index: usize) -> u64 {
+    fn gcc_field_index<'gcc>(&self, cx: &CodegenCx<'gcc, 'tcx>, index: usize) -> u64 {
         match self.abi {
             Abi::Scalar(_) | Abi::ScalarPair(..) => {
                 bug!("TyAndLayout::gcc_field_index({:?}): not applicable", self)
@@ -322,7 +367,25 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
 
             FieldsShape::Array { .. } => index as u64,
 
-            FieldsShape::Arbitrary { .. } => 1 + (self.fields.memory_index(index) as u64) * 2,
+            FieldsShape::Arbitrary { .. } => {
+                let variant_index = match self.variants {
+                    Variants::Single { index } => Some(index),
+                    _ => None,
+                };
+
+                // Look up gcc field if indexes do not match memory order due to padding. If
+                // `field_remapping` is `None` no padding was used and the gcc field index
+                // matches the memory index.
+                match cx.type_lowering.borrow().get(&(self.ty, variant_index)) {
+                    Some(TypeLowering { field_remapping: Some(ref remap), .. }) => {
+                        remap[index] as u64
+                    }
+                    Some(_) => self.fields.memory_index(index) as u64,
+                    None => {
+                        bug!("TyAndLayout::gcc_field_index({:?}): type info not found", self)
+                    }
+                }
+            }
         }
     }
 
@@ -356,7 +419,7 @@ impl<'gcc, 'tcx> LayoutTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn backend_field_index(&self, layout: TyAndLayout<'tcx>, index: usize) -> u64 {
-        layout.gcc_field_index(index)
+        layout.gcc_field_index(self, index)
     }
 
     fn scalar_pair_element_backend_type(&self, layout: TyAndLayout<'tcx>, index: usize, immediate: bool) -> Type<'gcc> {

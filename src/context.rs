@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 
-use gccjit::{Block, CType, Context, Function, FunctionPtrType, FunctionType, LValue, RValue, Struct, Type};
+use gccjit::{Block, CType, Context, Function, FunctionPtrType, FunctionType, LValue, RValue, Type};
 use rustc_codegen_ssa::base::wants_msvc_seh;
 use rustc_codegen_ssa::traits::{
     BackendTypes,
@@ -16,6 +16,8 @@ use rustc_session::Session;
 use rustc_span::{Span, Symbol};
 use rustc_target::abi::{call::FnAbi, HasDataLayout, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_target::spec::{HasTargetSpec, Target, TlsModel};
+
+use smallvec::SmallVec;
 
 use crate::callee::get_fn;
 
@@ -67,12 +69,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub linkage: Cell<FunctionType>,
     pub scalar_types: RefCell<FxHashMap<Ty<'tcx>, Type<'gcc>>>,
-    pub types: RefCell<FxHashMap<(Ty<'tcx>, Option<VariantIdx>), Type<'gcc>>>,
     pub tcx: TyCtxt<'tcx>,
 
     pub struct_types: RefCell<FxHashMap<Vec<Type<'gcc>>, Type<'gcc>>>,
-
-    pub types_with_fields_to_set: RefCell<FxHashMap<Type<'gcc>, (Struct<'gcc>, TyAndLayout<'tcx>)>>,
 
     /// Cache instances of monomorphic and polymorphic items
     pub instances: RefCell<FxHashMap<Instance<'tcx>, LValue<'gcc>>>,
@@ -89,6 +88,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     /// Cache of emitted const globals (value -> global)
     pub const_globals: RefCell<FxHashMap<RValue<'gcc>, RValue<'gcc>>>,
+
+    /// Mapping of non-scalar types to llvm types and field remapping if needed.
+    pub type_lowering: RefCell<FxHashMap<(Ty<'tcx>, Option<VariantIdx>), TypeLowering<'gcc>>>,
 
     /// Map from the address of a global variable (rvalue) to the global variable itself (lvalue).
     /// TODO(antoyo): remove when the rustc API is fixed.
@@ -113,6 +115,15 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// they can be deferenced later.
     /// FIXME(antoyo): fix the rustc API to avoid having this hack.
     pub structs_as_pointer: RefCell<FxHashSet<RValue<'gcc>>>,
+}
+
+pub struct TypeLowering<'gcc> {
+    /// Associated GCC type
+    pub gcc_type: Type<'gcc>,
+
+    /// If padding is used the slice maps fields from source order
+    /// to llvm order.
+    pub field_remapping: Option<SmallVec<[u32; 4]>>,
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -219,14 +230,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             on_stack_function_params: Default::default(),
             vtables: Default::default(),
             const_globals: Default::default(),
+            type_lowering: Default::default(),
             global_lvalues: Default::default(),
             const_str_cache: Default::default(),
             globals: Default::default(),
             scalar_types: Default::default(),
-            types: Default::default(),
             tcx,
             struct_types: Default::default(),
-            types_with_fields_to_set: Default::default(),
             local_gen_sym_counter: Cell::new(0),
             eh_personality: Cell::new(None),
             pointee_infos: Default::default(),

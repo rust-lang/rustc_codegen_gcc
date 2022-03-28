@@ -15,6 +15,7 @@ harness = false
 
 [dependencies]
 gccjit = { git = "https://github.com/antoyo/gccjit.rs", branch = "feature/target-builtins" }
+smallvec = { version = "1.6.1", features = ["union", "may_dangle"] }
 
 # Local copy.
 #gccjit = { path = "../gccjit.rs" }
