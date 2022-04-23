@@ -51,7 +51,7 @@ mod type_of;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-use gccjit::{Context, OptimizationLevel, CType};
+use gccjit::{Context, CType, FunctionType, OptimizationLevel};
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
@@ -304,7 +304,35 @@ pub fn target_features(sess: &Session) -> Vec<Symbol> {
             // Probably using the equivalent of __builtin_cpu_supports.
             #[cfg(feature="master")]
             {
-                _feature.contains("sse") || _feature.contains("avx")
+                let jit_context = Context::default();
+                jit_context.set_print_errors_to_stderr(false);
+                let int_type = jit_context.new_type::<i32>();
+
+                // TODO: does this make sense for cross-compilation?
+                // => I don't think so. The LLVM codegen seems to assume a generic CPU for the
+                // target and get the features from it.
+                let func_name = format!("cpu_supports_{}", _feature.replace(".", "_"));
+                let cpu_supports = jit_context.new_function(None, FunctionType::Exported, int_type, &[], &func_name, false);
+                let block = cpu_supports.new_block("init");
+                let builtin_cpu_supports = jit_context.get_target_builtin_function("__builtin_cpu_supports");
+                let call = jit_context.new_call(None, builtin_cpu_supports, &[jit_context.new_string_literal(_feature)]);
+                block.end_with_return(None, call);
+
+                let result = jit_context.compile();
+
+                let func = result.get_function(&func_name);
+                if func.is_null() {
+                    return false;
+                }
+
+                let cpu_supports: fn() -> i32 = unsafe { std::mem::transmute(func) };
+                let res = cpu_supports() != 0;
+
+                if res {
+                    println!("Feature {} enabled", _feature);
+                }
+
+                res
             }
             #[cfg(not(feature="master"))]
             {
