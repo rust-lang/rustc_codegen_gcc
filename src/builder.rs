@@ -1294,7 +1294,16 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let deref = ptr.dereference(None).to_rvalue();
         let value_type = deref.get_type();
 
-        // TODO: Volatile load
+        // If `is_volatile == true`, convert `ptr` to `volatile value_type *`
+        // and try dereference again. (libgccjit doesn't provide a way to get
+        // `value_type` directly, unfortunately.)
+        let deref = if is_volatile {
+            let new_ptr_type = value_type.make_volatile().make_pointer();
+            self.pointercast(ptr, new_ptr_type).dereference(None).to_rvalue()
+        }
+        else {
+            deref
+        };
 
         unsafe { RETURN_VALUE_COUNT += 1 };
         let loaded_value = function.new_local(None, value_type, &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }));
