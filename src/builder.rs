@@ -654,24 +654,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
         // TODO(antoyo): use ty.
-        let block = self.llbb();
-        let function = block.get_function();
-        // NOTE: instead of returning the dereference here, we have to assign it to a variable in
-        // the current basic block. Otherwise, it could be used in another basic block, causing a
-        // dereference after a drop, for instance.
-        // TODO(antoyo): handle align of the load instruction.
-        let deref = ptr.dereference(None).to_rvalue();
-        let value_type = deref.get_type();
-        unsafe { RETURN_VALUE_COUNT += 1 };
-        let loaded_value = function.new_local(None, value_type, &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }));
-        block.add_assignment(None, loaded_value, deref);
-        loaded_value.to_rvalue()
+        // TODO: handle non-natural alignments
+        self.load_inner(ptr, false)
     }
 
     fn volatile_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO(antoyo): use ty.
-        let ptr = self.context.new_cast(None, ptr, ptr.get_type().make_volatile());
-        ptr.dereference(None).to_rvalue()
+        self.load_inner(ptr, true)
     }
 
     fn atomic_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) -> RValue<'gcc> {
@@ -1296,6 +1284,24 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 }
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
+    fn load_inner(&mut self, ptr: RValue<'gcc>, is_volatile: bool) -> RValue<'gcc> {
+        let block = self.llbb();
+        let function = block.get_function();
+
+        // NOTE: instead of returning the dereference here, we have to assign it to a variable in
+        // the current basic block. Otherwise, it could be used in another basic block, causing a
+        // dereference after a drop, for instance.
+        let deref = ptr.dereference(None).to_rvalue();
+        let value_type = deref.get_type();
+
+        // TODO: Volatile load
+
+        unsafe { RETURN_VALUE_COUNT += 1 };
+        let loaded_value = function.new_local(None, value_type, &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }));
+        block.add_assignment(None, loaded_value, deref);
+        loaded_value.to_rvalue()
+    }
+
     #[cfg(feature="master")]
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
