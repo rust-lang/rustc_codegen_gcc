@@ -654,24 +654,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, _align: Align) -> RValue<'gcc> {
         // TODO(antoyo): use ty.
-        let block = self.llbb();
-        let function = block.get_function();
-        // NOTE: instead of returning the dereference here, we have to assign it to a variable in
-        // the current basic block. Otherwise, it could be used in another basic block, causing a
-        // dereference after a drop, for instance.
-        // TODO(antoyo): handle align of the load instruction.
-        let deref = ptr.dereference(None).to_rvalue();
-        let value_type = deref.get_type();
-        unsafe { RETURN_VALUE_COUNT += 1 };
-        let loaded_value = function.new_local(None, value_type, &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }));
-        block.add_assignment(None, loaded_value, deref);
-        loaded_value.to_rvalue()
+        // TODO: handle non-natural alignments
+        self.load_inner(ptr, false)
     }
 
     fn volatile_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>) -> RValue<'gcc> {
-        // TODO(antoyo): use ty.
-        let ptr = self.context.new_cast(None, ptr, ptr.get_type().make_volatile());
-        ptr.dereference(None).to_rvalue()
+        self.load_inner(ptr, true)
     }
 
     fn atomic_load(&mut self, _ty: Type<'gcc>, ptr: RValue<'gcc>, order: AtomicOrdering, size: Size) -> RValue<'gcc> {
@@ -799,17 +787,32 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.store_with_flags(val, ptr, align, MemFlags::empty())
     }
 
-    fn store_with_flags(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align, _flags: MemFlags) -> RValue<'gcc> {
+    fn store_with_flags(&mut self, mut val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align, flags: MemFlags) -> RValue<'gcc> {
         let ptr = self.check_store(val, ptr);
+
         let destination = ptr.dereference(None);
         // NOTE: libgccjit does not support specifying the alignment on the assignment, so we cast
         // to type so it gets the proper alignment.
         let destination_type = destination.to_rvalue().get_type().unqualified();
-        let aligned_type = destination_type.get_aligned(align.bytes()).make_pointer();
-        let aligned_destination = self.cx.context.new_bitcast(None, ptr, aligned_type);
-        let aligned_destination = aligned_destination.dereference(None);
-        self.llbb().add_assignment(None, aligned_destination, val);
-        // TODO(antoyo): handle align and flags.
+
+        let align = if flags.contains(MemFlags::UNALIGNED) { 1 } else { align.bytes() };
+        let mut modified_destination_type = destination_type.get_aligned(align);
+        if flags.contains(MemFlags::VOLATILE) {
+            modified_destination_type = modified_destination_type.make_volatile();
+        }
+
+        // FIXME: The type checking in `add_assignment` removes only one
+        // qualifier from each side. So the writes `int → volatile int` and
+        // `int → int __attribute__((aligned(1)))` are considered legal but
+        // `int → volatile int __attribute__((aligned(1)))` is not. This seems
+        // like a bug in libgccjit. The easiest way to work around this is to
+        // bitcast `val` to have the matching qualifiers.
+        val = self.cx.context.new_bitcast(None, val, modified_destination_type);
+
+        let modified_ptr = self.cx.context.new_bitcast(None, ptr, modified_destination_type.make_pointer());
+        let modified_destination = modified_ptr.dereference(None);
+        self.llbb().add_assignment(None, modified_destination, val);
+        // TODO: handle `MemFlags::NONTEMPORAL`.
         // NOTE: dummy value here since it's never used. FIXME(antoyo): API should not return a value here?
         self.cx.context.new_rvalue_zero(self.type_i32())
     }
@@ -1296,6 +1299,33 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 }
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
+    fn load_inner(&mut self, ptr: RValue<'gcc>, is_volatile: bool) -> RValue<'gcc> {
+        let block = self.llbb();
+        let function = block.get_function();
+
+        // NOTE: instead of returning the dereference here, we have to assign it to a variable in
+        // the current basic block. Otherwise, it could be used in another basic block, causing a
+        // dereference after a drop, for instance.
+        let deref = ptr.dereference(None).to_rvalue();
+        let value_type = deref.get_type();
+
+        // If `is_volatile == true`, convert `ptr` to `volatile value_type *`
+        // and try dereference again. (libgccjit doesn't provide a way to get
+        // `value_type` directly, unfortunately.)
+        let deref = if is_volatile {
+            let new_ptr_type = value_type.make_volatile().make_pointer();
+            self.pointercast(ptr, new_ptr_type).dereference(None).to_rvalue()
+        }
+        else {
+            deref
+        };
+
+        unsafe { RETURN_VALUE_COUNT += 1 };
+        let loaded_value = function.new_local(None, value_type, &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }));
+        block.add_assignment(None, loaded_value, deref);
+        loaded_value.to_rvalue()
+    }
+
     #[cfg(feature="master")]
     pub fn shuffle_vector(&mut self, v1: RValue<'gcc>, v2: RValue<'gcc>, mask: RValue<'gcc>) -> RValue<'gcc> {
         let struct_type = mask.get_type().is_struct().expect("mask of struct type");
