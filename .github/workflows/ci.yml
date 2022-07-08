@@ -26,8 +26,10 @@ jobs:
           "--extended-rand-tests",
           "--extended-regex-example-tests",
           "--extended-regex-tests",
-          "--test-successful-rustc --nb-parts 2 --current-part 0",
-          "--test-successful-rustc --nb-parts 2 --current-part 1",
+          "--test-successful-rustc --nb-parts 4 --current-part 0",
+          "--test-successful-rustc --nb-parts 4 --current-part 1",
+          "--test-successful-rustc --nb-parts 4 --current-part 2",
+          "--test-successful-rustc --nb-parts 4 --current-part 3",
           "--test-failing-rustc",
         ]
 
