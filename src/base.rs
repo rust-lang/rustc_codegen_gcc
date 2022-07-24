@@ -17,6 +17,7 @@ use rustc_codegen_ssa::mono_item::MonoItemExt;
 use rustc_codegen_ssa::traits::DebugInfoMethods;
 use rustc_session::config::DebugInfo;
 use rustc_span::Symbol;
+use rustc_target::spec::RelocModel;
 
 use crate::GccContext;
 use crate::builder::Builder;
@@ -90,7 +91,7 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol, supports_
         // TODO(antoyo): only set on x86 platforms.
         context.add_command_line_option("-masm=intel");
         // TODO(antoyo): only add the following cli argument if the feature is supported.
-        context.add_command_line_option("-msse2");
+        /*context.add_command_line_option("-msse2");
         context.add_command_line_option("-mavx2");
         // FIXME(antoyo): the following causes an illegal instruction on vmovdqu64 in std_example on my CPU.
         // Only add if the CPU supports it.
@@ -109,7 +110,7 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol, supports_
         context.add_command_line_option("-mrtm");
         context.add_command_line_option("-mvaes");
         context.add_command_line_option("-mvpclmulqdq");
-        context.add_command_line_option("-mavx");
+        context.add_command_line_option("-mavx");*/
 
         for arg in &tcx.sess.opts.cg.llvm_args {
             context.add_command_line_option(arg);
@@ -120,6 +121,11 @@ pub fn compile_codegen_unit<'tcx>(tcx: TyCtxt<'tcx>, cgu_name: Symbol, supports_
         context.add_command_line_option("-fno-semantic-interposition");
         // NOTE: Rust relies on LLVM not doing TBAA (https://github.com/rust-lang/unsafe-code-guidelines/issues/292).
         context.add_command_line_option("-fno-strict-aliasing");
+
+        if tcx.sess.opts.cg.relocation_model == Some(RelocModel::Static) {
+            context.add_command_line_option("-mcmodel=kernel");
+            context.add_command_line_option("-fno-pie");
+        }
 
         if tcx.sess.opts.unstable_opts.function_sections.unwrap_or(tcx.sess.target.function_sections) {
             context.add_command_line_option("-ffunction-sections");
