@@ -64,7 +64,7 @@ $ rustc +$(cat $cg_gccjit_dir/rust-toolchain) -Cpanic=abort -Zcodegen-backend=$c
     to make it possible to use incremental mode for all analyses performed by rustc without caching
     object files when their content should have been changed by a change to cg_gccjit.</dd>
     <dt>CG_GCCJIT_DISPLAY_CG_TIME</dt>
-    <dd>Display the time it took to perform codegen for a crate</dd>
+    <dd>Display the time it took to perform codegen for a crate. </dd>
 </dl>
 
 ## Debugging
