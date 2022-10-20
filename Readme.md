@@ -26,12 +26,13 @@ $ cd gcc
 $ sudo apt install flex libmpfr-dev libgmp-dev libmpc3 libmpc-dev
 $ ./configure \
    --enable-host-shared \
-   --enable-languages=jit \
+   --enable-languages=jit,c,c++ \
    --disable-bootstrap \
    --enable-checking=release \
    --prefix=$(pwd)/install \
-   --disable-multilib
-$ make -j4 # You can replace `4` with another number depending on how many cores you have.
+   --disable-multilib \
+   --disable-libsanitizer
+$ make -j4 # You can replace `4` with another number depending on how many cores you want to use.
 $ cd ..
 ```
 
