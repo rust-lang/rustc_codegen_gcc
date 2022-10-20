@@ -26,7 +26,7 @@ $ cd gcc
 $ sudo apt install flex libmpfr-dev libgmp-dev libmpc3 libmpc-dev
 $ ./configure \
    --enable-host-shared \
-   --enable-languages=jit,c,c++ \
+   --enable-languages=jit,c++ \
    --disable-bootstrap \
    --enable-checking=release \
    --prefix=$(pwd)/install \
