@@ -182,25 +182,35 @@ set substitute-path /usr/src/debug/gcc /path/to/gcc-repo/gcc
 
 TODO(antoyo): but that's not what I remember I was doing.
 
-### How to use a custom-build rustc
+### How to emit LLVM IR for a crate in the sysroot
+
+Compile with those flags:
+
+```
+cargo rustc -v --target x86_64-unknown-linux-gnu -Zbuild-std
+```
+
+Copy the `rustc` command and prefix it with `STD_ENV_ARCH="x86_64-unknown-linux-gnu"` and suffix it with `--emit=llvm-ir`.
+
+## How to use a custom-build rustc
 
  * Build the stage2 compiler (`rustup toolchain link debug-current build/x86_64-unknown-linux-gnu/stage2`).
  * Clean and rebuild the codegen with `debug-current` in the file `rust-toolchain`.
 
-### How to use [mem-trace](https://github.com/antoyo/mem-trace)
+## How to use [mem-trace](https://github.com/antoyo/mem-trace)
 
 `rustc` needs to be built without `jemalloc` so that `mem-trace` can overload `malloc` since `jemalloc` is linked statically, so a `LD_PRELOAD`-ed library won't a chance to intercept the calls to `malloc`.
 
-### How to build a cross-compiling libgccjit
+## How to build a cross-compiling libgccjit
 
-#### Building libgccjit
+### Building libgccjit
 
  * Follow these instructions: https://preshing.com/20141119/how-to-build-a-gcc-cross-compiler/ with the following changes:
  * Configure gcc with `../gcc/configure --enable-host-shared --disable-multilib --enable-languages=c,jit,c++ --disable-bootstrap --enable-checking=release --prefix=/opt/m68k-gcc/ --target=m68k-linux --without-headers`.
  * Some shells, like fish, don't define the environment variable `$MACHTYPE`.
  * Add `CFLAGS="-Wno-error=attributes -g -O2"` at the end of the configure command for building glibc (`CFLAGS="-Wno-error=attributes -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error=array-bounds -g -O2"` for glibc 2.31, which is useful for Debian).
 
-#### Configuring rustc_codegen_gcc
+### Configuring rustc_codegen_gcc
 
  * Set `TARGET_TRIPLE="m68k-unknown-linux-gnu"` in config.sh.
  * Since rustc doesn't support this architecture yet, set it back to `TARGET_TRIPLE="mips-unknown-linux-gnu"` (or another target having the same attributes). Alternatively, create a [target specification file](https://book.avr-rust.com/005.1-the-target-specification-json-file.html) (note that the `arch` specified in this file must be supported by the rust compiler).
