@@ -433,7 +433,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn br(&mut self, dest: Block<'gcc>) {
-        self.llbb().end_with_jump(None, dest)
+        // NOTE: GCC requires finally to fallthrough in order to prevent an optimization that will
+        // remove the cleanup landing pads.
+        // FIXME(antoyo): find a better way to do this, probably by changing the cg_ssa API.
+        if !self.cleanup_blocks.borrow().contains(&self.block) {
+            self.llbb().end_with_jump(None, dest)
+        }
     }
 
     fn cond_br(&mut self, cond: RValue<'gcc>, then_block: Block<'gcc>, else_block: Block<'gcc>) {
