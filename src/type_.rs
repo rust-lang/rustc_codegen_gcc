@@ -200,7 +200,8 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         value.get_type()
     }
 
-    fn type_array(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
+    #[cfg_attr(feature="master", allow(unused_mut))]
+    fn type_array(&self, ty: Type<'gcc>, mut len: u64) -> Type<'gcc> {
         // TODO: remove this as well?
         /*if let Some(struct_type) = ty.is_struct() {
             if struct_type.get_field_count() == 0 {
@@ -211,6 +212,12 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 len = 0;
             }
         }*/
+
+        // NOTE: see note above. Some other test uses usize::MAX.
+        #[cfg(not(feature="master"))]
+        if len == u64::MAX {
+            len = 0;
+        }
 
         self.context.new_array_type(None, ty, len)
     }
