@@ -20,7 +20,7 @@ index 0000000..46fd999
 +++ b/library/core/tests/Cargo.toml
 @@ -0,0 +1,12 @@
 +[package]
-+name = "core"
++name = "coretests"
 +version = "0.0.0"
 +edition = "2021"
 +
