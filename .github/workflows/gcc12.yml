@@ -1,4 +1,4 @@
-name: CI
+name: CI libgccjit 12
 
 on:
   - push
@@ -10,6 +10,7 @@ permissions:
 env:
   # Enable backtraces for easier debugging
   RUST_BACKTRACE: 1
+  TEST_FLAGS: "-Cpanic=abort -Zpanic-abort-tests"
 
 jobs:
   build:
@@ -18,9 +19,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        libgccjit_version:
-          - { gcc: "libgccjit.so", artifacts_branch: "master" }
-          - { gcc: "libgccjit_without_int128.so", artifacts_branch: "master-without-128bit-integers" }
         commands: [
           "--mini-tests",
           "--std-tests",
@@ -47,22 +45,11 @@ jobs:
       # `llvm-14-tools` is needed to install the `FileCheck` binary which is used for asm tests.
       run: sudo apt-get install ninja-build ripgrep llvm-14-tools
 
-    - name: Download artifact
-      uses: dawidd6/action-download-artifact@v2
-      with:
-          workflow: main.yml
-          name: ${{ matrix.libgccjit_version.gcc }}
-          path: gcc-build
-          repo: antoyo/gcc
-          branch: ${{ matrix.libgccjit_version.artifacts_branch }}
-          event: push
-          search_artifacts: true # Because, instead, the action only check the last job ran and that won't work since we want multiple artifacts.
+    - name: Install libgccjit12
+      run: sudo apt-get install libgccjit-12-dev
 
     - name: Setup path to libgccjit
-      run: |
-          echo $(readlink -f gcc-build) > gcc_path
-          # NOTE: the filename is still libgccjit.so even when the artifact name is different.
-          ln gcc-build/libgccjit.so gcc-build/libgccjit.so.0
+      run: echo /usr/lib/gcc/x86_64-linux-gnu/12 > gcc_path
 
     - name: Set env
       run: |
@@ -109,8 +96,8 @@ jobs:
     - name: Build
       run: |
         ./prepare_build.sh
-        ./build.sh
-        cargo test
+        ./build.sh --no-default-features
+        cargo test --no-default-features
         ./clean_all.sh
 
     - name: Prepare dependencies
@@ -126,9 +113,12 @@ jobs:
         command: build
         args: --release
 
+    - name: Add more failing tests for GCC 12
+      run: cat failing-ui-tests12.txt >> failing-ui-tests.txt
+
     - name: Run tests
       run: |
-        ./test.sh --release --clean --build-sysroot ${{ matrix.commands }}
+        ./test.sh --release --clean --build-sysroot ${{ matrix.commands }} --no-default-features
 
   duplicates:
     runs-on: ubuntu-latest
