@@ -215,7 +215,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
         // NOTE: see note above. Some other test uses usize::MAX.
         #[cfg(not(feature="master"))]
-        if len == u64::MAX {
+        if len >= i32::MAX as u64 {
             len = 0;
         }
 
