@@ -22,6 +22,7 @@ jobs:
           - { gcc: "libgccjit.so", extra: "", env_extra: "", artifacts_branch: "master" }
           - { gcc: "libgccjit_without_int128.so", extra: "", env_extra: "", artifacts_branch: "master-without-128bit-integers" }
           - { gcc: "libgccjit12.so", extra: "--no-default-features", env_extra: "TEST_FLAGS='-Cpanic=abort -Zpanic-abort-tests'", artifacts_branch: "gcc12" }
+          #- { gcc: "libgccjit12.so", extra: "--no-default-features", env_extra: "TEST_FLAGS='-Cpanic=abort -Zpanic-abort-tests' CG_RUSTFLAGS='-Clink-arg=-fno-use-linker-plugin'", artifacts_branch: "gcc12" }
         commands: [
           "--mini-tests",
           "--std-tests",
@@ -46,7 +47,9 @@ jobs:
 
     - name: Install packages
       # `llvm-14-tools` is needed to install the `FileCheck` binary which is used for asm tests.
-      run: sudo apt-get install ninja-build ripgrep llvm-14-tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install ninja-build ripgrep llvm-14-tools
 
     - name: Install libgccjit12
       if: matrix.libgccjit_version.gcc == 'libgccjit12.so'

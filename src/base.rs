@@ -6,8 +6,10 @@ use std::time::Instant;
 use gccjit::{
     Context,
     FunctionType,
-    GlobalKind, TargetInfo,
+    GlobalKind,
 };
+#[cfg(feature="master")]
+use gccjit::TargetInfo;
 use rustc_middle::dep_graph;
 use rustc_middle::ty::TyCtxt;
 #[cfg(feature="master")]
@@ -21,6 +23,8 @@ use rustc_session::config::DebugInfo;
 use rustc_span::Symbol;
 
 use crate::GccContext;
+#[cfg(not(feature="master"))]
+use crate::TargetInfo;
 use crate::builder::Builder;
 use crate::context::CodegenCx;
 
@@ -89,6 +93,8 @@ pub fn compile_codegen_unit(tcx: TyCtxt<'_>, cgu_name: Symbol, target_info: Arc<
         // Instantiate monomorphizations without filling out definitions yet...
         //let llvm_module = ModuleLlvm::new(tcx, &cgu_name.as_str());
         let context = Context::default();
+        //context.add_driver_option("-v");
+        //context.add_driver_option("-fno-use-linker-plugin");
 
         context.add_command_line_option("-fexceptions");
         context.add_driver_option("-fexceptions");

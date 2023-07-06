@@ -35,6 +35,7 @@ extern crate rustc_middle;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
+extern crate tempfile;
 
 // This prevents duplicating functions and statics that are already part of the host rustc process.
 #[allow(unused_extern_crates)]
@@ -66,7 +67,9 @@ use std::any::Any;
 use std::sync::Arc;
 
 use crate::errors::LTONotSupported;
-use gccjit::{Context, OptimizationLevel, TargetInfo};
+use gccjit::{Context, OptimizationLevel};
+#[cfg(feature="master")]
+use gccjit::TargetInfo;
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_codegen_ssa::base::codegen_crate;
@@ -259,17 +262,54 @@ impl WriteBackendMethods for GccCodegenBackend {
     }
 }
 
+#[cfg(not(feature="master"))]
+#[derive(Debug)]
+pub struct TargetInfo {
+    supports_128bit_integers: bool,
+}
+
+#[cfg(not(feature="master"))]
+impl TargetInfo {
+    fn cpu_supports(&self, _feature: &str) -> bool {
+        false
+    }
+
+    fn supports_128bit_int(&self) -> bool {
+        self.supports_128bit_integers
+    }
+}
+
 /// This is the entrypoint for a hot plugged rustc_codegen_gccjit
 #[no_mangle]
 pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
-    // Get the native arch and check whether the target supports 128-bit integers.
-    let context = Context::default();
-    let arch = context.get_target_info().arch().unwrap();
+    #[cfg(feature="master")]
+    let target_info = {
+        // Get the native arch and check whether the target supports 128-bit integers.
+        let context = Context::default();
+        let arch = context.get_target_info().arch().unwrap();
 
-    // Get the second TargetInfo with the correct CPU features by setting the arch.
-    let context = Context::default();
-    context.add_driver_option(&format!("-march={}", arch.to_str().unwrap()));
-    let target_info = Arc::new(context.get_target_info());
+        // Get the second TargetInfo with the correct CPU features by setting the arch.
+        let context = Context::default();
+        context.add_driver_option(&format!("-march={}", arch.to_str().unwrap()));
+        Arc::new(context.get_target_info())
+    };
+
+    #[cfg(not(feature="master"))]
+    let target_info = {
+        use gccjit::CType;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("cannot create temporary directory");
+        let temp_file = temp_dir.into_path().join("result.asm");
+        let check_context = Context::default();
+        check_context.set_print_errors_to_stderr(false);
+        let _int128_ty = check_context.new_c_type(CType::UInt128t);
+        // NOTE: we cannot just call compile() as this would require other files than libgccjit.so.
+        check_context.compile_to_file(gccjit::OutputKind::Assembler, temp_file.to_str().expect("path to str"));
+        Arc::new(TargetInfo {
+            supports_128bit_integers: check_context.get_last_error() == Ok(None),
+        })
+    };
 
     Box::new(GccCodegenBackend {
         target_info,
@@ -314,15 +354,8 @@ pub fn target_features(sess: &Session, allow_unstable: bool, target_info: &Arc<T
                 if sess.is_nightly_build() || allow_unstable || gate.is_none() { Some(feature) } else { None }
             },
         )
-        .filter(|_feature| {
-            #[cfg(feature="master")]
-            {
-                target_info.cpu_supports(_feature)
-            }
-            #[cfg(not(feature="master"))]
-            {
-                false
-            }
+        .filter(|feature| {
+            target_info.cpu_supports(feature)
             /*
                adx, aes, avx, avx2, avx512bf16, avx512bitalg, avx512bw, avx512cd, avx512dq, avx512er, avx512f, avx512ifma,
                avx512pf, avx512vbmi, avx512vbmi2, avx512vl, avx512vnni, avx512vp2intersect, avx512vpopcntdq,
