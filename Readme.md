@@ -20,18 +20,19 @@ You need to use my [fork of gcc](https://github.com/antoyo/gcc) which already in
 To build it (most of these instructions come from [here](https://gcc.gnu.org/onlinedocs/jit/internals/index.html), so don't hesitate to take a look there if you encounter an issue):
 
 ```bash
-$ git clone https://github.com/antoyo/gcc
-$ sudo apt install flex libmpfr-dev libgmp-dev libmpc3 libmpc-dev
-$ mkdir gcc-build gcc-install
-$ cd gcc-build
-$ ../gcc/configure \
+git clone https://github.com/antoyo/gcc --single-branch --depth 1
+sudo apt install flex libmpfr-dev libgmp-dev libmpc3 libmpc-dev
+mkdir gcc-build gcc-install
+cd gcc-build
+# --enable-checking=release enables extra checks which allow to find bugs
+../gcc/configure \
     --enable-host-shared \
     --enable-languages=jit \
-    --enable-checking=release \ # it enables extra checks which allow to find bugs
+    --enable-checking=release \
     --disable-bootstrap \
     --disable-multilib \
     --prefix=$(pwd)/../gcc-install
-$ make -j4 # You can replace `4` with another number depending on how many cores you have.
+make -j4 # You can replace `4` with another number depending on how many cores you have.
 ```
 
 If you want to run libgccjit tests, you will need to also enable the C++ language in the `configure`:
@@ -43,29 +44,29 @@ If you want to run libgccjit tests, you will need to also enable the C++ languag
 Then to run libgccjit tests:
 
 ```bash
-$ cd gcc # from the `gcc-build` folder
-$ make check-jit
+cd gcc # from the `gcc-build` folder
+make check-jit
 # To run one specific test:
-$ make check-jit RUNTESTFLAGS="-v -v -v jit.exp=jit.dg/test-asm.cc"
+make check-jit RUNTESTFLAGS="-v -v -v jit.exp=jit.dg/test-asm.cc"
 ```
 
 **Put the path to your custom build of libgccjit in the file `gcc_path`.**
 
 ```bash
-$ dirname $(readlink -f `find . -name libgccjit.so`) > gcc_path
+dirname $(readlink -f `find . -name libgccjit.so`) > gcc_path
 ```
 
 Then you can run commands like this:
 
 ```bash
-$ ./y.sh prepare # download and patch sysroot src and install hyperfine for benchmarking
-$ LIBRARY_PATH=$(cat gcc_path) LD_LIBRARY_PATH=$(cat gcc_path) ./y.sh build --release
+./y.sh prepare # download and patch sysroot src and install hyperfine for benchmarking
+LIBRARY_PATH=$(cat gcc_path) LD_LIBRARY_PATH=$(cat gcc_path) ./y.sh build --release
 ```
 
 To run the tests:
 
 ```bash
-$ ./test.sh --release
+./test.sh --release
 ```
 
 ## Usage
@@ -79,7 +80,7 @@ export CG_GCCJIT_DIR=[the full path to rustc_codegen_gcc]
 ### Cargo
 
 ```bash
-$ CHANNEL="release" $CG_GCCJIT_DIR/cargo.sh run
+CHANNEL="release" $CG_GCCJIT_DIR/cargo.sh run
 ```
 
 If you compiled cg_gccjit in debug mode (aka you didn't pass `--release` to `./test.sh`) you should use `CHANNEL="debug"` instead or omit `CHANNEL="release"` completely.
@@ -100,7 +101,7 @@ error: failed to copy bitcode to object file: No such file or directory (os erro
 > You should prefer using the Cargo method.
 
 ```bash
-$ LIBRARY_PATH=$(cat gcc_path) LD_LIBRARY_PATH=$(cat gcc_path) rustc +$(cat $CG_GCCJIT_DIR/rust-toolchain | grep 'channel' | cut -d '=' -f 2 | sed 's/"//g' | sed 's/ //g') -Cpanic=abort -Zcodegen-backend=$CG_GCCJIT_DIR/target/release/librustc_codegen_gcc.so --sysroot $CG_GCCJIT_DIR/build_sysroot/sysroot my_crate.rs
+LIBRARY_PATH=$(cat gcc_path) LD_LIBRARY_PATH=$(cat gcc_path) rustc +$(cat $CG_GCCJIT_DIR/rust-toolchain | grep 'channel' | cut -d '=' -f 2 | sed 's/"//g' | sed 's/ //g') -Cpanic=abort -Zcodegen-backend=$CG_GCCJIT_DIR/target/release/librustc_codegen_gcc.so --sysroot $CG_GCCJIT_DIR/build_sysroot/sysroot my_crate.rs
 ```
 
 ## Env vars
