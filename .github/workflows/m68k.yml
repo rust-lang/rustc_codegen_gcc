@@ -26,7 +26,7 @@ jobs:
           "--mini-tests",
           "--std-tests",
           # TODO(antoyo): fix those on m68k.
-          #"--test-libcore",
+          "--test-libcore",
           #"--extended-rand-tests",
           #"--extended-regex-example-tests",
           #"--extended-regex-tests",

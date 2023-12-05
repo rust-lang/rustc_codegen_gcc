@@ -1,7 +1,7 @@
 use gccjit::{RValue, Struct, Type};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods, TypeMembershipMethods};
 use rustc_codegen_ssa::common::TypeKind;
-use rustc_middle::{bug, ty};
+use rustc_middle::{bug, ty::{self, ParamEnv, Ty}};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_target::abi::{AddressSpace, Align, Integer, Size};
 
@@ -55,12 +55,21 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn type_ptr_to(&self, ty: Type<'gcc>) -> Type<'gcc> {
-        ty.make_pointer()
+        /*let rust_type = self.tcx.types.usize;
+        let rust_type = Ty::new_imm_ptr(self.tcx, rust_type);
+        let layout = self.tcx.layout_of(ParamEnv::reveal_all().and(rust_type)).unwrap();
+        let align = layout.align.abi.bytes();
+        println!("Align: {}", align);*/
+        ty.make_pointer()//.get_aligned(4)
     }
 
     pub fn type_ptr_to_ext(&self, ty: Type<'gcc>, _address_space: AddressSpace) -> Type<'gcc> {
         // TODO(antoyo): use address_space, perhaps with TYPE_ADDR_SPACE?
-        ty.make_pointer()
+        /*let rust_type = self.tcx.types.usize; // TODO: use pointer type.
+        let rust_type = Ty::new_imm_ptr(self.tcx, rust_type);
+        let layout = self.tcx.layout_of(ParamEnv::reveal_all().and(rust_type)).unwrap();
+        let align = layout.align.abi.bytes();*/
+        ty.make_pointer()//.get_aligned(4)
     }
 
     pub fn type_i8p(&self) -> Type<'gcc> {

@@ -301,10 +301,11 @@ function asm_tests() {
 #./build_sysroot/build_sysroot.sh --release
 
 function test_libcore() {
+    dir=$(pwd)
     pushd build_sysroot/sysroot_src/library/core/tests
     echo "[TEST] libcore"
     rm -r ./target || true
-    ../../../../../cargo.sh test
+    CARGO_TARGET_M68K_UNKNOWN_LINUX_GNU_RUNNER="CG_GCC_VM_DIR=$dir bash $dir/run_in_vm.sh" ../../../../../cargo.sh test --target m68k-unknown-linux-gnu -- --skip mem::align_of_32 --skip mem::align_of_basic --skip mem::align_of_val_basic --skip mem::offset_of --skip num::dec2flt::fast_path_correct --skip num::dec2flt::float::test_f32_integer_decode --skip num::dec2flt::float::test_f64_integer_decode --skip num::dec2flt::special_code_paths --skip ptr::nonnull_tagged_pointer_with_provenance
     popd
 }
 
