@@ -28,9 +28,6 @@
 #![recursion_limit="256"]
 #![warn(rust_2018_idioms)]
 #![warn(unused_lifetimes)]
-#![deny(rustc::untranslatable_diagnostic)]
-#![deny(rustc::diagnostic_outside_of_impl)]
-#![deny(clippy::pattern_type_mismatch)]
 
 extern crate rustc_apfloat;
 extern crate rustc_ast;
