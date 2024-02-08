@@ -12,8 +12,6 @@ permissions:
 env:
   # Enable backtraces for easier debugging
   RUST_BACKTRACE: 1
-  # TODO: remove when confish.sh is removed.
-  OVERWRITE_TARGET_TRIPLE: m68k-unknown-linux-gnu
 
 jobs:
   build:
