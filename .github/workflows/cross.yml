@@ -1,6 +1,6 @@
 # TODO: check if qemu-user-static-binfmt is needed (perhaps to run some tests since it probably calls exec).
 
-name: m68k CI
+name: Cross-compilation CI
 
 on:
   - push
@@ -12,8 +12,6 @@ permissions:
 env:
   # Enable backtraces for easier debugging
   RUST_BACKTRACE: 1
-  # TODO: remove when confish.sh is removed.
-  OVERWRITE_TARGET_TRIPLE: m68k-unknown-linux-gnu
 
 jobs:
   build:
@@ -22,6 +20,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [
+          "m68k",
+          "arm",
+        ]
         commands: [
           "--mini-tests",
           "--std-tests",
@@ -51,20 +53,20 @@ jobs:
         sudo apt-get install qemu qemu-user-static
 
     - name: Download artifact
-      run: curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-m68k-13.deb
+      run: curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-${{ matrix.arch }}-13.deb
 
     - name: Download VM artifact
       uses: dawidd6/action-download-artifact@v2
       with:
-          workflow: m68k.yml
-          name: debian-m68k
+          workflow: ${{ matrix.arch }}.yml
+          name: debian-${{ matrix.arch }}
           repo: cross-cg-gcc-tools/vms
           branch: master
           event: push
 
     - name: Setup path to libgccjit
       run: |
-          sudo dpkg -i gcc-m68k-13.deb
+          sudo dpkg -i gcc-${{ matrix.arch }}-13.deb
           echo /usr/lib/ > gcc_path
 
     - name: Set env
@@ -85,16 +87,16 @@ jobs:
     - name: Prepare VM
       run: |
         mkdir vm
-        sudo mount debian-m68k.img vm
-        sudo cp $(which qemu-m68k-static) vm/usr/bin/
+        sudo mount debian-${{ matrix.arch }}.img vm
+        sudo cp $(which qemu-${{ matrix.arch }}-static) vm/usr/bin/
 
     - name: Build
       run: |
         ./y.sh prepare --only-libcore --cross
         # TODO: remove --features master when it is back to the default.
-        ./y.sh build --target-triple m68k-unknown-linux-gnu --features master
+        ./y.sh build --target-triple ${{ matrix.arch }}-unknown-linux-gnu --features master
         # TODO: remove --features master when it is back to the default.
-        CG_GCC_TEST_TARGET=m68k-unknown-linux-gnu cargo test --features master
+        CG_GCC_TEST_TARGET=${{ matrix.arch }}-unknown-linux-gnu cargo test --features master
         ./y.sh clean all
 
     - name: Prepare dependencies
