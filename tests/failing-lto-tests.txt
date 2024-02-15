@@ -1,6 +1,5 @@
 tests/ui/lint/unsafe_code/forge_unsafe_block.rs
 tests/ui/lint/unused-qualification-in-derive-expansion.rs
-tests/ui/macro-quote-test.rs
 tests/ui/macros/proc_macro.rs
 tests/ui/panic-runtime/lto-unwind.rs
 tests/ui/resolve/derive-macro-1.rs
