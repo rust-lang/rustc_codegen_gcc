@@ -49,13 +49,6 @@ fn get_runners() -> Runners {
         ("Run extended rand tests", extended_rand_tests),
     );
     runners.insert(
-        "--extended-regex-example-tests",
-        (
-            "Run extended regex example tests",
-            extended_regex_example_tests,
-        ),
-    );
-    runners.insert(
         "--extended-regex-tests",
         ("Run extended regex tests", extended_regex_tests),
     );
@@ -787,61 +780,6 @@ fn extended_rand_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     Ok(())
 }
 
-fn extended_regex_example_tests(env: &Env, args: &TestArg) -> Result<(), String> {
-    if !args.is_using_gcc_master_branch() {
-        println!("Not using GCC master branch. Skipping `extended_regex_example_tests`.");
-        return Ok(());
-    }
-    let path = Path::new(crate::BUILD_DIR).join("regex");
-    run_cargo_command(&[&"clean"], Some(&path), env, args)?;
-    // FIXME: create a function "display_if_not_quiet" or something along the line.
-    println!("[TEST] rust-lang/regex example shootout-regex-dna");
-    let mut env = env.clone();
-    // newer aho_corasick versions throw a deprecation warning
-    let rustflags = format!(
-        "{} --cap-lints warn",
-        env.get("RUSTFLAGS").cloned().unwrap_or_default()
-    );
-    env.insert("RUSTFLAGS".to_string(), rustflags);
-    // Make sure `[codegen mono items] start` doesn't poison the diff
-    run_cargo_command(
-        &[&"build", &"--example", &"shootout-regex-dna"],
-        Some(&path),
-        &env,
-        args,
-    )?;
-
-    run_cargo_command_with_callback(
-        &[&"run", &"--example", &"shootout-regex-dna"],
-        Some(&path),
-        &env,
-        args,
-        |cargo_command, cwd, env| {
-            // FIXME: rewrite this with `child.stdin.write_all()` because
-            // `examples/regexdna-input.txt` is very small.
-            let mut command: Vec<&dyn AsRef<OsStr>> = vec![&"bash", &"-c"];
-            let cargo_args = cargo_command
-                .iter()
-                .map(|s| s.as_ref().to_str().unwrap())
-                .collect::<Vec<_>>();
-            let bash_command = format!(
-                "cat examples/regexdna-input.txt | {} | grep -v 'Spawned thread' > res.txt",
-                cargo_args.join(" "),
-            );
-            command.push(&bash_command);
-            run_command_with_output_and_env(&command, cwd, Some(env))?;
-            run_command_with_output_and_env(
-                &[&"diff", &"-u", &"res.txt", &"examples/regexdna-output.txt"],
-                cwd,
-                Some(env),
-            )?;
-            Ok(())
-        },
-    )?;
-
-    Ok(())
-}
-
 fn extended_regex_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     if !args.is_using_gcc_master_branch() {
         println!("Not using GCC master branch. Skipping `extended_regex_tests`.");
@@ -857,6 +795,22 @@ fn extended_regex_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     );
     env.insert("RUSTFLAGS".to_string(), rustflags);
     let path = Path::new(crate::BUILD_DIR).join("regex");
+
+    run_cargo_command(
+        &[
+            &"build",
+            &"-p",
+            &"regex",
+            &"-p",
+            &"regex-syntax",
+            &"--release",
+            &"--all-targets",
+        ],
+        Some(&path),
+        &env,
+        args,
+    )?;
+
     run_cargo_command(
         &[
             &"test",
@@ -867,12 +821,27 @@ fn extended_regex_tests(env: &Env, args: &TestArg) -> Result<(), String> {
             &"--test-threads",
             &"1",
             &"-Zunstable-options",
-            &"-q",
         ],
         Some(&path),
         &env,
         args,
     )?;
+
+    // Don't run integration tests for regex-autonata. they take like 2min each without
+    // much extra coverage of simd usage.
+    run_cargo_command(
+        &[
+            &"build",
+            &"-p",
+            &"regex-automata",
+            &"--release",
+            &"--lib",
+        ],
+        Some(&path),
+        &env,
+        args,
+    )?;
+
     Ok(())
 }
 
@@ -888,7 +857,6 @@ fn extended_sysroot_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     // hyperfine --runs "${RUN_RUNS:-10}" ./raytracer_cg_llvm ./raytracer_cg_gcc
     // popd
     extended_rand_tests(env, args)?;
-    extended_regex_example_tests(env, args)?;
     extended_regex_tests(env, args)?;
 
     Ok(())
