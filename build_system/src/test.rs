@@ -714,12 +714,19 @@ fn test_projects(env: &Env, args: &TestArg) -> Result<(), String> {
         //"https://github.com/rust-lang/cargo", // TODO: very slow, only run on master?
     ];
 
+    let mut env = env.clone();
+    let rustflags = env.get("RUSTFLAGS").cloned().unwrap_or_default();
+    env.insert(
+        "RUSTFLAGS".to_string(),
+        format!("{} --cap-lints allow", rustflags),
+    );
+
     let run_tests = |projects_path, iter: &mut dyn Iterator<Item = &&str>| -> Result<(), String> {
         for project in iter {
             let clone_result = git_clone(project, Some(projects_path), true)?;
             let repo_path = Path::new(&clone_result.repo_dir);
-            run_cargo_command(&[&"build", &"--release"], Some(repo_path), env, args)?;
-            run_cargo_command(&[&"test"], Some(repo_path), env, args)?;
+            run_cargo_command(&[&"build", &"--release"], Some(repo_path), &env, args)?;
+            run_cargo_command(&[&"test"], Some(repo_path), &env, args)?;
         }
 
         Ok(())
@@ -830,13 +837,7 @@ fn extended_regex_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     // Don't run integration tests for regex-autonata. they take like 2min each without
     // much extra coverage of simd usage.
     run_cargo_command(
-        &[
-            &"build",
-            &"-p",
-            &"regex-automata",
-            &"--release",
-            &"--lib",
-        ],
+        &[&"build", &"-p", &"regex-automata", &"--release", &"--lib"],
         Some(&path),
         &env,
         args,
