@@ -238,12 +238,12 @@ pub fn run() -> Result<(), String> {
         let to_clone = &[
             (
                 "https://github.com/rust-random/rand.git",
-                "0f933f9c7176e53b2a3c7952ded484e1783f0bf1",
+                "1f4507a8e1cf8050e4ceef95eeda8f64645b6719",
                 None,
             ),
             (
                 "https://github.com/rust-lang/regex.git",
-                "341f207c1071f7290e3f228c710817c280c8dca1",
+                "061ee815ef2c44101dba7b0b124600fcb03c1912",
                 None,
             ),
             (

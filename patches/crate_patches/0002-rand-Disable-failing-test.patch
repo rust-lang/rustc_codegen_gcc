@@ -11,22 +11,9 @@ diff --git a/src/distributions/uniform.rs b/src/distributions/uniform.rs
 index 480b859..c80bb6f 100644
 --- a/src/distributions/uniform.rs
 +++ b/src/distributions/uniform.rs
-@@ -1085,7 +1085,7 @@ mod tests {
-             _ => panic!("`UniformDurationMode` was not serialized/deserialized correctly")
-         }
-     }
--    
-+
-     #[test]
-     #[cfg(feature = "serde1")]
-     fn test_uniform_serialization() {
-@@ -1314,6 +1314,7 @@ mod tests {
-         not(target_arch = "wasm32"),
-         not(target_arch = "asmjs")
-     ))]
+@@ -1314,4 +1314,5 @@ mod tests {
+     #[cfg(all(feature = "std", panic = "unwind"))]
 +    #[ignore] // FIXME
      fn test_float_assertions() {
          use super::SampleUniform;
          use std::panic::catch_unwind;
--- 
-2.20.1
