@@ -168,10 +168,24 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     return;
                 }
                 sym::prefetch_read_data
-                    | sym::prefetch_write_data
-                    | sym::prefetch_read_instruction
+                    | sym::prefetch_write_data => {
+                        let a = args[0].immediate();
+                        let void_ptr_type = self.context.new_type::<*const ()>();
+                        let a_ptr = self.bitcast(a, void_ptr_type);
+
+                        let b = match name {
+                            sym::prefetch_read_data => self.const_i32(0),
+                            sym::prefetch_write_data => self.const_i32(1),
+                            _ => bug!(),
+                        };
+
+                        let builtin = self.context.get_builtin_function("__builtin_prefetch");
+                        self.context.new_call(None, builtin, &[a_ptr, b]);
+                        return;
+                    }
+                sym::prefetch_read_instruction
                     | sym::prefetch_write_instruction => {
-                        unimplemented!();
+                        return;
                     }
                 sym::ctlz
                     | sym::ctlz_nonzero
