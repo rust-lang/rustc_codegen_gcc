@@ -171,14 +171,16 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
 fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     let mut env = HashMap::new();
 
-    env.insert(
-        "LD_LIBRARY_PATH".to_string(),
-        args.config_info.gcc_path.clone(),
-    );
-    env.insert(
-        "LIBRARY_PATH".to_string(),
-        args.config_info.gcc_path.clone(),
-    );
+    if !args.config_info.use_system_gcc {
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            args.config_info.gcc_path.clone(),
+        );
+        env.insert(
+            "LIBRARY_PATH".to_string(),
+            args.config_info.gcc_path.clone(),
+        );
+    }
 
     if args.config_info.no_default_features {
         env.insert(
@@ -204,7 +206,7 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     }
     run_command_with_output_and_env(&command, None, Some(&env))?;
 
-    args.config_info.setup(&mut env, false)?;
+    args.config_info.setup(&mut env)?;
 
     // We voluntarily ignore the error.
     let _ = fs::remove_dir_all("target/out");

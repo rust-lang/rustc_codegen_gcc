@@ -91,7 +91,6 @@ fn show_usage() {
     --release              : Build codegen in release mode
     --sysroot-panic-abort  : Build the sysroot without unwinding support.
     --features [arg]       : Add a new feature [arg]
-    --use-system-gcc       : Use system installed libgccjit
     --build-only           : Only build rustc_codegen_gcc then exits
     --use-backend          : Useful only for rustc testsuite
     --nb-parts             : Used to split rustc_tests (for CI needs)
@@ -110,7 +109,6 @@ fn show_usage() {
 #[derive(Default, Debug)]
 struct TestArg {
     build_only: bool,
-    use_system_gcc: bool,
     runners: BTreeSet<String>,
     flags: Vec<String>,
     backend: Option<String>,
@@ -140,10 +138,6 @@ impl TestArg {
                         return Err("Expected an argument after `--features`, found nothing".into())
                     }
                 },
-                "--use-system-gcc" => {
-                    println!("Using system GCC");
-                    test_arg.use_system_gcc = true;
-                }
                 "--build-only" => test_arg.build_only = true,
                 "--use-backend" => match args.next() {
                     Some(backend) if !backend.is_empty() => test_arg.backend = Some(backend),
@@ -1184,7 +1178,7 @@ pub fn run() -> Result<(), String> {
     };
     let mut env: HashMap<String, String> = std::env::vars().collect();
 
-    if !args.use_system_gcc {
+    if !args.config_info.use_system_gcc {
         args.config_info.setup_gcc_path()?;
         env.insert(
             "LIBRARY_PATH".to_string(),
@@ -1202,7 +1196,7 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
 
-    args.config_info.setup(&mut env, args.use_system_gcc)?;
+    args.config_info.setup(&mut env)?;
 
     if args.runners.is_empty() {
         run_all(&env, &args)?;

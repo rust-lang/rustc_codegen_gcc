@@ -128,6 +128,7 @@ pub struct ConfigInfo {
     // just to set the `gcc_path` field to display it.
     pub no_download: bool,
     pub no_default_features: bool,
+    pub use_system_gcc: bool,
 }
 
 impl ConfigInfo {
@@ -179,6 +180,10 @@ impl ConfigInfo {
                 }
             },
             "--no-default-features" => self.no_default_features = true,
+            "--use-system-gcc" => {
+                println!("Using system GCC");
+                self.use_system_gcc = true;
+            }
             _ => return Ok(false),
         }
         Ok(true)
@@ -305,14 +310,10 @@ impl ConfigInfo {
         Ok(())
     }
 
-    pub fn setup(
-        &mut self,
-        env: &mut HashMap<String, String>,
-        use_system_gcc: bool,
-    ) -> Result<(), String> {
+    pub fn setup(&mut self, env: &mut HashMap<String, String>) -> Result<(), String> {
         env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
 
-        if self.gcc_path.is_empty() && !use_system_gcc {
+        if self.gcc_path.is_empty() && !self.use_system_gcc {
             self.setup_gcc_path()?;
         }
         env.insert("GCC_PATH".to_string(), self.gcc_path.clone());
@@ -447,17 +448,19 @@ impl ConfigInfo {
             "build_sysroot/sysroot/lib/rustlib/{}/lib",
             self.target_triple,
         ));
-        let ld_library_path = format!(
-            "{target}:{sysroot}:{gcc_path}",
-            // FIXME: It's possible to pick another out directory. Would be nice to have a command
-            // line option to change it.
-            target = current_dir.join("target/out").display(),
-            sysroot = sysroot.display(),
-            gcc_path = self.gcc_path,
-        );
-        env.insert("LIBRARY_PATH".to_string(), ld_library_path.clone());
-        env.insert("LD_LIBRARY_PATH".to_string(), ld_library_path.clone());
-        env.insert("DYLD_LIBRARY_PATH".to_string(), ld_library_path);
+        if !self.use_system_gcc {
+            let ld_library_path = format!(
+                "{target}:{sysroot}:{gcc_path}",
+                // FIXME: It's possible to pick another out directory. Would be nice to have a command
+                // line option to change it.
+                target = current_dir.join("target/out").display(),
+                sysroot = sysroot.display(),
+                gcc_path = self.gcc_path,
+            );
+            env.insert("LIBRARY_PATH".to_string(), ld_library_path.clone());
+            env.insert("LD_LIBRARY_PATH".to_string(), ld_library_path.clone());
+            env.insert("DYLD_LIBRARY_PATH".to_string(), ld_library_path);
+        }
 
         // NOTE: To avoid the -fno-inline errors, use /opt/gcc/bin/gcc instead of cc.
         // To do so, add a symlink for cc to /opt/gcc/bin/gcc in our PATH.
@@ -499,7 +502,8 @@ impl ConfigInfo {
     --config-file          : Location of the config file to be used
     --cg_gcc-path          : Location of the rustc_codegen_gcc root folder (used
                              when ran from another directory)
-    --no-default-features  : Add `--no-default-features` flag to cargo commands"
+    --no-default-features  : Add `--no-default-features` flag to cargo commands
+    --use-system-gcc       : Use system installed libgccjit"
         );
     }
 }
