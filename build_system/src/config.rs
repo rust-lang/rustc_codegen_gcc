@@ -129,6 +129,7 @@ pub struct ConfigInfo {
     pub no_download: bool,
     pub no_default_features: bool,
     pub use_system_gcc: bool,
+    pub backend: Option<String>,
 }
 
 impl ConfigInfo {
@@ -184,6 +185,10 @@ impl ConfigInfo {
                 println!("Using system GCC");
                 self.use_system_gcc = true;
             }
+            "--use-backend" => match args.next() {
+                Some(backend) if !backend.is_empty() => self.backend = Some(backend),
+                _ => return Err("Expected an argument after `--use-backend`, found nothing".into()),
+            },
             _ => return Ok(false),
         }
         Ok(true)
@@ -376,7 +381,7 @@ impl ConfigInfo {
         let has_builtin_backend = env
             .get("BUILTIN_BACKEND")
             .map(|backend| !backend.is_empty())
-            .unwrap_or(false);
+            .unwrap_or(self.backend.is_some());
 
         let mut rustflags = Vec::new();
         if has_builtin_backend {
@@ -503,7 +508,8 @@ impl ConfigInfo {
     --cg_gcc-path          : Location of the rustc_codegen_gcc root folder (used
                              when ran from another directory)
     --no-default-features  : Add `--no-default-features` flag to cargo commands
-    --use-system-gcc       : Use system installed libgccjit"
+    --use-system-gcc       : Use system installed libgccjit
+    --use-backend          : Useful only for rustc testsuite"
         );
     }
 }

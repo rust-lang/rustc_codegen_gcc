@@ -92,7 +92,6 @@ fn show_usage() {
     --sysroot-panic-abort  : Build the sysroot without unwinding support.
     --features [arg]       : Add a new feature [arg]
     --build-only           : Only build rustc_codegen_gcc then exits
-    --use-backend          : Useful only for rustc testsuite
     --nb-parts             : Used to split rustc_tests (for CI needs)
     --current-part         : Used with `--nb-parts`, allows you to specify which parts to test"#
     );
@@ -111,7 +110,6 @@ struct TestArg {
     build_only: bool,
     runners: BTreeSet<String>,
     flags: Vec<String>,
-    backend: Option<String>,
     nb_parts: Option<usize>,
     current_part: Option<usize>,
     sysroot_panic_abort: bool,
@@ -139,14 +137,6 @@ impl TestArg {
                     }
                 },
                 "--build-only" => test_arg.build_only = true,
-                "--use-backend" => match args.next() {
-                    Some(backend) if !backend.is_empty() => test_arg.backend = Some(backend),
-                    _ => {
-                        return Err(
-                            "Expected an argument after `--use-backend`, found nothing".into()
-                        )
-                    }
-                },
                 "--nb-parts" => {
                     test_arg.nb_parts = Some(get_number_after_arg(&mut args, "--nb-parts")?);
                 }
@@ -193,7 +183,7 @@ impl TestArg {
 }
 
 fn build_if_no_backend(env: &Env, args: &TestArg) -> Result<(), String> {
-    if args.backend.is_some() {
+    if args.config_info.backend.is_some() {
         return Ok(());
     }
     let mut command: Vec<&dyn AsRef<OsStr>> = vec![&"cargo", &"rustc"];
