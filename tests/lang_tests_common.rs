@@ -12,6 +12,7 @@ use boml::Toml;
 /// Controls the compile options (e.g., optimization level) used to compile
 /// test code.
 #[allow(dead_code)] // Each test crate picks one variant
+#[derive(Clone, Copy)]
 pub enum Profile {
     Debug,
     Release,
@@ -19,8 +20,8 @@ pub enum Profile {
 
 pub fn main_inner(profile: Profile) {
     let tempdir = TempDir::new().expect("temp dir");
-    let current_dir = current_dir().expect("current dir");
-    let current_dir = current_dir.to_str().expect("current dir").to_string();
+    let tempdir2 = TempDir::new().expect("temp dir");
+
     let toml = Toml::parse(include_str!("../config.toml"))
         .expect("Failed to parse `config.toml`");
     let gcc_path = if let Ok(gcc_path) = toml.get_string("gcc-path") {
@@ -71,6 +72,9 @@ pub fn main_inner(profile: Profile) {
             Some(lines)
         })
         .test_cmds(move |path| {
+            let current_dir = current_dir().expect("current dir");
+            let current_dir = current_dir.to_str().expect("current dir").to_string();
+
             // Test command 1: Compile `x.rs` into `tempdir/x`.
             let mut exe = PathBuf::new();
             exe.push(&tempdir);
@@ -79,6 +83,7 @@ pub fn main_inner(profile: Profile) {
             compiler.args(&[
                 &format!("-Zcodegen-backend={}/target/debug/librustc_codegen_gcc.so", current_dir),
                 "--sysroot", &format!("{}/build_sysroot/sysroot/", current_dir),
+                "--edition", "2021",
                 "-Zno-parallel-llvm",
                 "-C", "link-arg=-lc",
                 "-o", exe.to_str().expect("to_str"),
@@ -143,6 +148,60 @@ pub fn main_inner(profile: Profile) {
                     ("Run-time", runtime),
                 ]
             }
+        })
+        .run();
+
+    LangTester::new()
+        .test_dir("tests/lib")
+        .test_file_filter(filter)
+        .test_extract(|source| {
+            let lines =
+                source.lines()
+                    .skip_while(|l| !l.starts_with("//"))
+                    .take_while(|l| l.starts_with("//"))
+                    .map(|l| &l[2..])
+                    .collect::<Vec<_>>()
+                    .join("\n");
+            Some(lines)
+        })
+        .test_cmds(move |path| {
+            let current_dir = current_dir().expect("current dir");
+            let current_dir = current_dir.to_str().expect("current dir").to_string();
+
+            // Test command 1: Compile `x.rs` into `tempdir2/x`.
+            let mut exe = PathBuf::new();
+            exe.push(&tempdir2);
+            exe.push(path.file_stem().expect("file_stem"));
+            let mut compiler = Command::new("rustc");
+            compiler.args(&[
+                &format!("-Zcodegen-backend={}/target/debug/librustc_codegen_gcc.so", current_dir),
+                "--sysroot", &format!("{}/build_sysroot/sysroot/", current_dir),
+                "--edition", "2021",
+                "--crate-type", "lib",
+                "-Zno-parallel-llvm",
+                "-C", "link-arg=-lc",
+                "-o", exe.to_str().expect("to_str"),
+                path.to_str().expect("to_str"),
+            ]);
+
+            if let Some(flags) = option_env!("TEST_FLAGS") {
+                for flag in flags.split_whitespace() {
+                    compiler.arg(&flag);
+                }
+            }
+            match profile {
+                Profile::Debug => {}
+                Profile::Release => {
+                    compiler.args(&[
+                        "-C", "opt-level=3",
+                        "-C", "lto=no",
+                    ]);
+                }
+            }
+
+            vec![
+                ("Compiler", compiler),
+            ]
         })
         .run();
 }
