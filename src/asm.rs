@@ -107,7 +107,16 @@ enum ConstraintOrRegister {
 }
 
 impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
-    fn codegen_inline_asm(&mut self, template: &[InlineAsmTemplatePiece], rust_operands: &[InlineAsmOperandRef<'tcx, Self>], options: InlineAsmOptions, span: &[Span], instance: Instance<'_>, dest: Option<Self::BasicBlock>, _catch_funclet: Option<(Self::BasicBlock, Option<&Self::Funclet>)>) {
+    fn codegen_inline_asm(
+        &mut self,
+        template: &[InlineAsmTemplatePiece],
+        rust_operands: &[InlineAsmOperandRef<'tcx, Self>],
+        options: InlineAsmOptions,
+        span: &[Span],
+        instance: Instance<'_>,
+        dest: Option<Self::BasicBlock>,
+        _catch_funclet: Option<(Self::BasicBlock, Option<&Self::Funclet>)>,
+    ) {
         if options.contains(InlineAsmOptions::MAY_UNWIND) {
             self.sess().dcx().create_err(UnwindingInlineAsm { span: span[0] }).emit();
             return;
@@ -476,9 +485,8 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         }
 
                         InlineAsmOperandRef::Label { label } => {
-                            let label_gcc_index = labels.iter()
-                                .position(|&l| l == label)
-                                .expect("wrong rust index");
+                            let label_gcc_index =
+                                labels.iter().position(|&l| l == label).expect("wrong rust index");
                             let gcc_index = label_gcc_index + outputs.len() + inputs.len();
                             push_to_template(Some('l'), gcc_index);
                         }
