@@ -154,7 +154,6 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             .collect();
         let typ = self.context.new_struct_type(None, "struct", &fields).as_type();
         if packed {
-            #[cfg(feature = "master")]
             typ.set_packed();
         }
         self.struct_types.borrow_mut().insert(types, typ);
@@ -221,18 +220,7 @@ impl<'gcc, 'tcx> BaseTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         value.get_type()
     }
 
-    #[cfg_attr(feature = "master", allow(unused_mut))]
-    fn type_array(&self, ty: Type<'gcc>, mut len: u64) -> Type<'gcc> {
-        #[cfg(not(feature = "master"))]
-        if let Some(struct_type) = ty.is_struct() {
-            if struct_type.get_field_count() == 0 {
-                // NOTE: since gccjit only supports i32 for the array size and libcore's tests uses a
-                // size of usize::MAX in test_binary_search, we workaround this by setting the size to
-                // zero for ZSTs.
-                len = 0;
-            }
-        }
-
+    fn type_array(&self, ty: Type<'gcc>, len: u64) -> Type<'gcc> {
         self.context.new_array_type(None, ty, len)
     }
 }
@@ -254,7 +242,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             .collect();
         typ.set_fields(None, &fields);
         if packed {
-            #[cfg(feature = "master")]
             typ.as_type().set_packed();
         }
     }

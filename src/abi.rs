@@ -1,11 +1,9 @@
-#[cfg(feature = "master")]
 use gccjit::FnAttribute;
 use gccjit::{ToLValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::{AbiBuilderMethods, BaseTypeMethods};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::bug;
 use rustc_middle::ty::Ty;
-#[cfg(feature = "master")]
 use rustc_session::config;
 use rustc_target::abi::call::{ArgAttributes, CastTarget, FnAbi, PassMode, Reg, RegKind};
 
@@ -99,7 +97,6 @@ pub struct FnAbiGcc<'gcc> {
     pub arguments_type: Vec<Type<'gcc>>,
     pub is_c_variadic: bool,
     pub on_stack_param_indices: FxHashSet<usize>,
-    #[cfg(feature = "master")]
     pub fn_attributes: Vec<FnAttribute<'gcc>>,
 }
 
@@ -127,10 +124,8 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                 cx.type_void()
             }
         };
-        #[cfg(feature = "master")]
         let mut non_null_args = Vec::new();
 
-        #[cfg(feature = "master")]
         let mut apply_attrs = |mut ty: Type<'gcc>, attrs: &ArgAttributes, arg_index: usize| {
             if cx.sess().opts.optimize == config::OptLevel::No {
                 return ty;
@@ -143,8 +138,6 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             }
             ty
         };
-        #[cfg(not(feature = "master"))]
-        let apply_attrs = |ty: Type<'gcc>, _attrs: &ArgAttributes, _arg_index: usize| ty;
 
         for arg in self.args.iter() {
             let arg_ty = match arg.mode {
@@ -192,7 +185,6 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             argument_tys.push(arg_ty);
         }
 
-        #[cfg(feature = "master")]
         let fn_attrs = if non_null_args.is_empty() {
             Vec::new()
         } else {
@@ -204,7 +196,6 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             arguments_type: argument_tys,
             is_c_variadic: self.c_variadic,
             on_stack_param_indices,
-            #[cfg(feature = "master")]
             fn_attributes: fn_attrs,
         }
     }

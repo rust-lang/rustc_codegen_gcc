@@ -1,4 +1,3 @@
-#[cfg(feature = "master")]
 use gccjit::FnAttribute;
 use gccjit::{Context, FunctionType, GlobalKind, ToRValue, Type};
 use rustc_ast::expand::allocator::{
@@ -105,7 +104,6 @@ fn create_wrapper_function(
     );
 
     if tcx.sess.default_hidden_visibility() {
-        #[cfg(feature = "master")]
         func.add_attribute(FnAttribute::Visibility(gccjit::Visibility::Hidden));
     }
     if tcx.sess.must_emit_unwind_tables() {
@@ -125,7 +123,6 @@ fn create_wrapper_function(
         to_name,
         false,
     );
-    #[cfg(feature = "master")]
     callee.add_attribute(FnAttribute::Visibility(gccjit::Visibility::Hidden));
 
     let block = func.new_block("entry");

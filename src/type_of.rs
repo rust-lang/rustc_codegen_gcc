@@ -28,7 +28,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    #[cfg(feature = "master")]
     pub fn type_int_from_ty(&self, t: ty::IntTy) -> Type<'gcc> {
         match t {
             ty::IntTy::Isize => self.type_isize(),
@@ -40,7 +39,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
     }
 
-    #[cfg(feature = "master")]
     pub fn type_uint_from_ty(&self, t: ty::UintTy) -> Type<'gcc> {
         match t {
             ty::UintTy::Usize => self.type_isize(),

@@ -1,10 +1,7 @@
-#[cfg(feature = "master")]
 use gccjit::FnAttribute;
 use gccjit::Function;
-#[cfg(feature = "master")]
 use rustc_attr::InlineAttr;
 use rustc_attr::InstructionSetAttr;
-#[cfg(feature = "master")]
 use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 use rustc_middle::ty;
 use rustc_span::symbol::sym;
@@ -13,7 +10,6 @@ use crate::gcc_util::{check_tied_features, to_gcc_features};
 use crate::{context::CodegenCx, errors::TiedTargetFeatures};
 
 /// Get GCC attribute for the provided inline heuristic.
-#[cfg(feature = "master")]
 #[inline]
 fn inline_attr<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
@@ -37,38 +33,33 @@ fn inline_attr<'gcc, 'tcx>(
 /// attributes.
 pub fn from_fn_attrs<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
-    #[cfg_attr(not(feature = "master"), allow(unused_variables))] func: Function<'gcc>,
+    func: Function<'gcc>,
     instance: ty::Instance<'tcx>,
 ) {
     let codegen_fn_attrs = cx.tcx.codegen_fn_attrs(instance.def_id());
 
-    #[cfg(feature = "master")]
-    {
-        let inline = if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::NAKED) {
-            InlineAttr::Never
-        } else if codegen_fn_attrs.inline == InlineAttr::None
-            && instance.def.requires_inline(cx.tcx)
-        {
-            InlineAttr::Hint
-        } else {
-            codegen_fn_attrs.inline
-        };
-        if let Some(attr) = inline_attr(cx, inline) {
-            if let FnAttribute::AlwaysInline = attr {
-                func.add_attribute(FnAttribute::Inline);
-            }
-            func.add_attribute(attr);
+    let inline = if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::NAKED) {
+        InlineAttr::Never
+    } else if codegen_fn_attrs.inline == InlineAttr::None && instance.def.requires_inline(cx.tcx) {
+        InlineAttr::Hint
+    } else {
+        codegen_fn_attrs.inline
+    };
+    if let Some(attr) = inline_attr(cx, inline) {
+        if let FnAttribute::AlwaysInline = attr {
+            func.add_attribute(FnAttribute::Inline);
         }
+        func.add_attribute(attr);
+    }
 
-        if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::COLD) {
-            func.add_attribute(FnAttribute::Cold);
-        }
-        if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::FFI_PURE) {
-            func.add_attribute(FnAttribute::Pure);
-        }
-        if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::FFI_CONST) {
-            func.add_attribute(FnAttribute::Const);
-        }
+    if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::COLD) {
+        func.add_attribute(FnAttribute::Cold);
+    }
+    if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::FFI_PURE) {
+        func.add_attribute(FnAttribute::Pure);
+    }
+    if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::FFI_CONST) {
+        func.add_attribute(FnAttribute::Const);
     }
 
     let function_features = codegen_fn_attrs
@@ -127,7 +118,6 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
         .collect::<Vec<_>>()
         .join(",");
     if !target_features.is_empty() {
-        #[cfg(feature = "master")]
         func.add_attribute(FnAttribute::Target(&target_features));
     }
 }

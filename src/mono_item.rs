@@ -1,4 +1,3 @@
-#[cfg(feature = "master")]
 use gccjit::{FnAttribute, VarAttribute};
 use rustc_codegen_ssa::traits::PreDefineMethods;
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
@@ -13,7 +12,6 @@ use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
-    #[cfg_attr(not(feature = "master"), allow(unused_variables))]
     fn predefine_static(
         &self,
         def_id: DefId,
@@ -28,14 +26,12 @@ impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
         let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
         let global = self.define_global(symbol_name, gcc_type, is_tls, attrs.link_section);
-        #[cfg(feature = "master")]
         global.add_string_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
 
         // TODO(antoyo): set linkage.
         self.instances.borrow_mut().insert(instance, global);
     }
 
-    #[cfg_attr(not(feature = "master"), allow(unused_variables))]
     fn predefine_fn(
         &self,
         instance: Instance<'tcx>,
@@ -60,10 +56,8 @@ impl<'gcc, 'tcx> PreDefineMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             && linkage != Linkage::Private
             && self.tcx.is_compiler_builtins(LOCAL_CRATE)
         {
-            #[cfg(feature = "master")]
             decl.add_attribute(FnAttribute::Visibility(gccjit::Visibility::Hidden));
         } else {
-            #[cfg(feature = "master")]
             decl.add_attribute(FnAttribute::Visibility(base::visibility_to_gcc(visibility)));
         }
 

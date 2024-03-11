@@ -1,4 +1,3 @@
-#[cfg(feature = "master")]
 use gccjit::{FnAttribute, ToRValue};
 use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeMethods;
@@ -120,7 +119,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             arguments_type,
             is_c_variadic,
             on_stack_param_indices,
-            #[cfg(feature = "master")]
             fn_attributes,
         } = fn_abi.gcc_type(self);
         let func = declare_raw_fn(
@@ -132,7 +130,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             is_c_variadic,
         );
         self.on_stack_function_params.borrow_mut().insert(func, on_stack_param_indices);
-        #[cfg(feature = "master")]
         for fn_attr in fn_attributes {
             func.add_attribute(fn_attr);
         }
@@ -182,13 +179,10 @@ fn declare_raw_fn<'gcc>(
                 cx.context.new_parameter(None, *param, &format!("param{}", index))
             }) // TODO(antoyo): set name.
             .collect();
-        #[cfg(not(feature = "master"))]
-        let name = mangle_name(name);
         let func =
             cx.context.new_function(None, cx.linkage.get(), return_type, &params, &name, variadic);
         cx.functions.borrow_mut().insert(name.to_string(), func);
 
-        #[cfg(feature = "master")]
         if name == "rust_eh_personality" {
             // NOTE: GCC will sometimes change the personality function set on a function from
             // rust_eh_personality to __gcc_personality_v0 as an optimization.
@@ -246,27 +240,4 @@ fn declare_raw_fn<'gcc>(
 
     // FIXME(antoyo): invalid cast.
     func
-}
-
-// FIXME(antoyo): this is a hack because libgccjit currently only supports alpha, num and _.
-// Unsupported characters: `$`, `.` and `*`.
-// FIXME(antoyo): `*` might not be expected: https://github.com/rust-lang/rust/issues/116979#issuecomment-1840926865
-#[cfg(not(feature = "master"))]
-fn mangle_name(name: &str) -> String {
-    name.replace(
-        |char: char| {
-            if !char.is_alphanumeric() && char != '_' {
-                debug_assert!(
-                    "$.*".contains(char),
-                    "Unsupported char in function name {}: {}",
-                    name,
-                    char
-                );
-                true
-            } else {
-                false
-            }
-        },
-        "_",
-    )
 }

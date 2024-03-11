@@ -388,20 +388,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.block.add_assignment(self.location, result, return_value);
             result.to_rvalue()
         } else {
-            #[cfg(not(feature = "master"))]
-            if gcc_func.get_param_count() == 0 {
-                // FIXME(antoyo): As a temporary workaround for unsupported LLVM intrinsics.
-                self.block.add_eval(
-                    self.location,
-                    self.cx.context.new_call_through_ptr(self.location, func_ptr, &[]),
-                );
-            } else {
-                self.block.add_eval(
-                    self.location,
-                    self.cx.context.new_call_through_ptr(self.location, func_ptr, &args),
-                );
-            }
-            #[cfg(feature = "master")]
             self.block.add_eval(
                 self.location,
                 self.cx.context.new_call_through_ptr(self.location, func_ptr, &args),
@@ -511,7 +497,6 @@ fn set_rvalue_location<'a, 'gcc, 'tcx>(
     rvalue: RValue<'gcc>,
 ) -> RValue<'gcc> {
     if bx.location.is_some() {
-        #[cfg(feature = "master")]
         rvalue.set_location(bx.location.unwrap());
     }
     rvalue
@@ -581,7 +566,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.block.end_with_switch(self.location, value, default_block, &gcc_cases);
     }
 
-    #[cfg(feature = "master")]
     fn invoke(
         &mut self,
         typ: Type<'gcc>,
@@ -616,27 +600,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.block.end_with_jump(self.location, then);
 
         return_value.to_rvalue()
-    }
-
-    #[cfg(not(feature = "master"))]
-    fn invoke(
-        &mut self,
-        typ: Type<'gcc>,
-        fn_attrs: Option<&CodegenFnAttrs>,
-        fn_abi: Option<&FnAbi<'tcx, Ty<'tcx>>>,
-        func: RValue<'gcc>,
-        args: &[RValue<'gcc>],
-        then: Block<'gcc>,
-        catch: Block<'gcc>,
-        _funclet: Option<&Funclet>,
-    ) -> RValue<'gcc> {
-        let call_site = self.call(typ, fn_attrs, None, func, args, None);
-        let condition = self.context.new_rvalue_from_int(self.bool_type, 1);
-        self.llbb().end_with_conditional(self.location, condition, then, catch);
-        if let Some(_fn_abi) = fn_abi {
-            // TODO(bjorn3): Apply function attributes
-        }
-        call_site
     }
 
     fn unreachable(&mut self) {
@@ -1154,14 +1117,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // require dereferencing the pointer.
         for index in indices {
             pointee_type = pointee_type.get_pointee().expect("pointee type");
-            #[cfg(feature = "master")]
-            let pointee_size = {
-                let size = self.cx.context.new_sizeof(pointee_type);
-                self.context.new_cast(self.location, size, index.get_type())
-            };
-            #[cfg(not(feature = "master"))]
-            let pointee_size =
-                self.context.new_rvalue_from_int(index.get_type(), pointee_type.get_size() as i32);
+            let size = self.cx.context.new_sizeof(pointee_type);
+            let pointee_size = self.context.new_cast(self.location, size, index.get_type());
             result = result + self.gcc_int_cast(*index * pointee_size, self.sizet_type);
         }
         self.context.new_bitcast(self.location, result, ptr_type)
@@ -1385,24 +1342,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         unimplemented!();
     }
 
-    #[cfg(feature = "master")]
     fn extract_element(&mut self, vec: RValue<'gcc>, idx: RValue<'gcc>) -> RValue<'gcc> {
         self.context.new_vector_access(self.location, vec, idx).to_rvalue()
-    }
-
-    #[cfg(not(feature = "master"))]
-    fn extract_element(&mut self, vec: RValue<'gcc>, idx: RValue<'gcc>) -> RValue<'gcc> {
-        let vector_type = vec
-            .get_type()
-            .unqualified()
-            .dyncast_vector()
-            .expect("Called extract_element on a non-vector type");
-        let element_type = vector_type.get_element_type();
-        let vec_num_units = vector_type.get_num_units();
-        let array_type =
-            self.context.new_array_type(self.location, element_type, vec_num_units as u64);
-        let array = self.context.new_bitcast(self.location, vec, array_type).to_rvalue();
-        self.context.new_array_access(self.location, array, idx).to_rvalue()
     }
 
     fn vector_splat(&mut self, _num_elts: usize, _elt: RValue<'gcc>) -> RValue<'gcc> {
@@ -1486,14 +1427,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn set_personality_fn(&mut self, _personality: RValue<'gcc>) {
-        #[cfg(feature = "master")]
-        {
-            let personality = self.rvalue_as_function(_personality);
-            self.current_func().set_personality_function(personality);
-        }
+        let personality = self.rvalue_as_function(_personality);
+        self.current_func().set_personality_function(personality);
     }
 
-    #[cfg(feature = "master")]
     fn cleanup_landing_pad(&mut self, pers_fn: RValue<'gcc>) -> (RValue<'gcc>, RValue<'gcc>) {
         self.set_personality_fn(pers_fn);
 
@@ -1514,34 +1451,17 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         (value1, value2)
     }
 
-    #[cfg(not(feature = "master"))]
-    fn cleanup_landing_pad(&mut self, _pers_fn: RValue<'gcc>) -> (RValue<'gcc>, RValue<'gcc>) {
-        let value1 = self
-            .current_func()
-            .new_local(self.location, self.u8_type.make_pointer(), "landing_pad0")
-            .to_rvalue();
-        let value2 =
-            self.current_func().new_local(self.location, self.i32_type, "landing_pad1").to_rvalue();
-        (value1, value2)
-    }
-
     fn filter_landing_pad(&mut self, pers_fn: RValue<'gcc>) -> (RValue<'gcc>, RValue<'gcc>) {
         // TODO(antoyo): generate the correct landing pad
         self.cleanup_landing_pad(pers_fn)
     }
 
-    #[cfg(feature = "master")]
     fn resume(&mut self, exn0: RValue<'gcc>, _exn1: RValue<'gcc>) {
         let exn_type = exn0.get_type();
         let exn = self.context.new_cast(self.location, exn0, exn_type);
         let unwind_resume = self.context.get_target_builtin_function("__builtin_unwind_resume");
         self.llbb()
             .add_eval(self.location, self.context.new_call(self.location, unwind_resume, &[exn]));
-        self.unreachable();
-    }
-
-    #[cfg(not(feature = "master"))]
-    fn resume(&mut self, _exn0: RValue<'gcc>, _exn1: RValue<'gcc>) {
         self.unreachable();
     }
 
@@ -1911,7 +1831,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    #[cfg(feature = "master")]
     pub fn shuffle_vector(
         &mut self,
         v1: RValue<'gcc>,
@@ -1930,12 +1849,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let mask_element_type = if element_type.is_integral() {
             element_type
         } else {
-            #[cfg(feature = "master")]
-            {
-                self.cx.type_ix(element_type.get_size() as u64 * 8)
-            }
-            #[cfg(not(feature = "master"))]
-            self.int_type
+            self.cx.type_ix(element_type.get_size() as u64 * 8)
         };
         for i in 0..mask_num_units {
             let field = struct_type.get_field(i as i32);
@@ -2017,17 +1931,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         }
     }
 
-    #[cfg(not(feature = "master"))]
-    pub fn shuffle_vector(
-        &mut self,
-        _v1: RValue<'gcc>,
-        _v2: RValue<'gcc>,
-        _mask: RValue<'gcc>,
-    ) -> RValue<'gcc> {
-        unimplemented!();
-    }
-
-    #[cfg(feature = "master")]
     pub fn vector_reduce<F>(&mut self, src: RValue<'gcc>, op: F) -> RValue<'gcc>
     where
         F: Fn(RValue<'gcc>, RValue<'gcc>, &'gcc Context<'gcc>) -> RValue<'gcc>,
@@ -2064,14 +1967,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .to_rvalue()
     }
 
-    #[cfg(not(feature = "master"))]
-    pub fn vector_reduce<F>(&mut self, _src: RValue<'gcc>, _op: F) -> RValue<'gcc>
-    where
-        F: Fn(RValue<'gcc>, RValue<'gcc>, &'gcc Context<'gcc>) -> RValue<'gcc>,
-    {
-        unimplemented!();
-    }
-
     pub fn vector_reduce_op(&mut self, src: RValue<'gcc>, op: BinaryOp) -> RValue<'gcc> {
         let loc = self.location.clone();
         self.vector_reduce(src, |a, b, context| context.new_binary_op(loc, op, a.get_type(), a, b))
@@ -2085,7 +1980,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         unimplemented!();
     }
 
-    #[cfg(feature = "master")]
     pub fn vector_reduce_fadd(&mut self, acc: RValue<'gcc>, src: RValue<'gcc>) -> RValue<'gcc> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
@@ -2103,11 +1997,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .fold(acc, |x, i| x + i)
     }
 
-    #[cfg(not(feature = "master"))]
-    pub fn vector_reduce_fadd(&mut self, _acc: RValue<'gcc>, _src: RValue<'gcc>) -> RValue<'gcc> {
-        unimplemented!();
-    }
-
     pub fn vector_reduce_fmul_reassoc(
         &mut self,
         _acc: RValue<'gcc>,
@@ -2116,7 +2005,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         unimplemented!();
     }
 
-    #[cfg(feature = "master")]
     pub fn vector_reduce_fmul(&mut self, acc: RValue<'gcc>, src: RValue<'gcc>) -> RValue<'gcc> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
@@ -2132,11 +2020,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     .to_rvalue()
             })
             .fold(acc, |x, i| x * i)
-    }
-
-    #[cfg(not(feature = "master"))]
-    pub fn vector_reduce_fmul(&mut self, _acc: RValue<'gcc>, _src: RValue<'gcc>) -> RValue<'gcc> {
-        unimplemented!()
     }
 
     // Inspired by Hacker's Delight min implementation.
@@ -2192,7 +2075,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.vector_extremum(a, b, ExtremumOperation::Min)
     }
 
-    #[cfg(feature = "master")]
     pub fn vector_reduce_fmin(&mut self, src: RValue<'gcc>) -> RValue<'gcc> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
@@ -2215,16 +2097,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         acc
     }
 
-    #[cfg(not(feature = "master"))]
-    pub fn vector_reduce_fmin(&mut self, _src: RValue<'gcc>) -> RValue<'gcc> {
-        unimplemented!();
-    }
-
     pub fn vector_fmax(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         self.vector_extremum(a, b, ExtremumOperation::Max)
     }
 
-    #[cfg(feature = "master")]
     pub fn vector_reduce_fmax(&mut self, src: RValue<'gcc>) -> RValue<'gcc> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
@@ -2248,11 +2124,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         acc
     }
 
-    #[cfg(not(feature = "master"))]
-    pub fn vector_reduce_fmax(&mut self, _src: RValue<'gcc>) -> RValue<'gcc> {
-        unimplemented!();
-    }
-
     pub fn vector_select(
         &mut self,
         cond: RValue<'gcc>,
@@ -2264,7 +2135,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let num_units = vector_type.get_num_units();
         let element_type = vector_type.get_element_type();
 
-        #[cfg(feature = "master")]
         let (cond, element_type) = {
             // TODO(antoyo): dyncast_vector should not require a call to unqualified.
             let then_val_vector_type =

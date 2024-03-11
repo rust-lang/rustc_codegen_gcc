@@ -1,4 +1,3 @@
-#[cfg(feature = "master")]
 use gccjit::{FnAttribute, Visibility};
 use gccjit::{Function, FunctionType};
 use rustc_middle::ty::layout::{FnAbiOf, HasTyCtxt};
@@ -117,7 +116,6 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
                     if cx.tcx.is_unreachable_local_definition(instance_def_id)
                         || !cx.tcx.local_crate_exports_generics()
                     {
-                        #[cfg(feature = "master")]
                         func.add_attribute(FnAttribute::Visibility(Visibility::Hidden));
                     }
                 } else {
@@ -132,7 +130,6 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
                         // (because it is a C library or an executable), it
                         // will have been declared `hidden`.
                         if !cx.tcx.local_crate_exports_generics() {
-                            #[cfg(feature = "master")]
                             func.add_attribute(FnAttribute::Visibility(Visibility::Hidden));
                         }
                     }
@@ -140,7 +137,6 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
             } else {
                 // When not sharing generics, all instances are in the same
                 // crate and have hidden visibility
-                #[cfg(feature = "master")]
                 func.add_attribute(FnAttribute::Visibility(Visibility::Hidden));
             }
         } else {
@@ -152,13 +148,11 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
                     // This is function that is defined in the local crate.
                     // If it is not reachable, it is hidden.
                     if !cx.tcx.is_reachable_non_generic(instance_def_id) {
-                        #[cfg(feature = "master")]
                         func.add_attribute(FnAttribute::Visibility(Visibility::Hidden));
                     }
                 } else {
                     // This is a function from an upstream crate that has
                     // been instantiated here. These are always hidden.
-                    #[cfg(feature = "master")]
                     func.add_attribute(FnAttribute::Visibility(Visibility::Hidden));
                 }
             }

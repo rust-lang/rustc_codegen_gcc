@@ -177,14 +177,7 @@ impl TestArg {
                 );
             }
         }
-        if test_arg.config_info.no_default_features {
-            test_arg.flags.push("--no-default-features".into());
-        }
         Ok(Some(test_arg))
-    }
-
-    pub fn is_using_gcc_master_branch(&self) -> bool {
-        !self.config_info.no_default_features
     }
 }
 
@@ -347,9 +340,6 @@ fn std_tests(env: &Env, args: &TestArg) -> Result<(), String> {
         &"--target",
         &args.config_info.target_triple,
     ]);
-    if args.is_using_gcc_master_branch() {
-        command.extend_from_slice(&[&"--cfg", &"feature=\"master\""]);
-    }
     run_command_with_env(&command, None, Some(env))?;
 
     // FIXME: doesn't work on m68k.
@@ -394,9 +384,6 @@ fn std_tests(env: &Env, args: &TestArg) -> Result<(), String> {
         &"--target",
         &args.config_info.target_triple,
     ]);
-    if args.is_using_gcc_master_branch() {
-        command.extend_from_slice(&[&"--cfg", &"feature=\"master\""]);
-    }
     run_command_with_env(&command, None, Some(env))?;
     maybe_run_command_in_vm(
         &[
@@ -591,22 +578,15 @@ fn asm_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 
     env.insert("COMPILETEST_FORCE_STAGE0".to_string(), "1".to_string());
 
-    let extra = if args.is_using_gcc_master_branch() {
-        ""
-    } else {
-        " -Csymbol-mangling-version=v0"
-    };
-
     let rustc_args = &format!(
         r#"-Zpanic-abort-tests \
             -Zcodegen-backend="{pwd}/target/{channel}/librustc_codegen_gcc.{dylib_ext}" \
-            --sysroot "{pwd}/build_sysroot/sysroot" -Cpanic=abort{extra}"#,
+            --sysroot "{pwd}/build_sysroot/sysroot" -Cpanic=abort"#,
         pwd = std::env::current_dir()
             .map_err(|error| format!("`current_dir` failed: {:?}", error))?
             .display(),
         channel = args.config_info.channel.as_str(),
         dylib_ext = args.config_info.dylib_ext,
-        extra = extra,
     );
 
     run_command_with_env(
@@ -757,10 +737,6 @@ fn test_libcore(env: &Env, args: &TestArg) -> Result<(), String> {
 // hyperfine --runs ${RUN_RUNS:-10} $cargo_target_dir/mod_bench{,_inline} $cargo_target_dir/mod_bench_llvm_*
 
 fn extended_rand_tests(env: &Env, args: &TestArg) -> Result<(), String> {
-    if !args.is_using_gcc_master_branch() {
-        println!("Not using GCC master branch. Skipping `extended_rand_tests`.");
-        return Ok(());
-    }
     let mut env = env.clone();
     // newer aho_corasick versions throw a deprecation warning
     let rustflags = format!(
@@ -778,10 +754,6 @@ fn extended_rand_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 }
 
 fn extended_regex_example_tests(env: &Env, args: &TestArg) -> Result<(), String> {
-    if !args.is_using_gcc_master_branch() {
-        println!("Not using GCC master branch. Skipping `extended_regex_example_tests`.");
-        return Ok(());
-    }
     let path = Path::new(crate::BUILD_DIR).join("regex");
     run_cargo_command(&[&"clean"], Some(&path), env, args)?;
     // FIXME: create a function "display_if_not_quiet" or something along the line.
@@ -833,10 +805,6 @@ fn extended_regex_example_tests(env: &Env, args: &TestArg) -> Result<(), String>
 }
 
 fn extended_regex_tests(env: &Env, args: &TestArg) -> Result<(), String> {
-    if !args.is_using_gcc_master_branch() {
-        println!("Not using GCC master branch. Skipping `extended_regex_tests`.");
-        return Ok(());
-    }
     // FIXME: create a function "display_if_not_quiet" or something along the line.
     println!("[TEST] rust-lang/regex tests");
     let mut env = env.clone();
@@ -1062,18 +1030,11 @@ where
     println!("[TEST] rustc test suite");
     env.insert("COMPILETEST_FORCE_STAGE0".to_string(), "1".to_string());
 
-    let extra = if args.is_using_gcc_master_branch() {
-        ""
-    } else {
-        " -Csymbol-mangling-version=v0"
-    };
-
     let rustc_args = format!(
-        "{} -Zcodegen-backend={} --sysroot {}{}",
+        "{} -Zcodegen-backend={} --sysroot {}",
         env.get("TEST_FLAGS").unwrap_or(&String::new()),
         args.config_info.cg_backend_path,
         args.config_info.sysroot_path,
-        extra,
     );
 
     env.get_mut("RUSTFLAGS").unwrap().clear();

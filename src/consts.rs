@@ -1,4 +1,3 @@
-#[cfg(feature = "master")]
 use gccjit::{FnAttribute, VarAttribute, Visibility};
 use gccjit::{Function, GlobalKind, LValue, RValue, ToRValue};
 use rustc_codegen_ssa::traits::{BaseTypeMethods, ConstMethods, DerivedTypeMethods, StaticMethods};
@@ -53,7 +52,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
             }
         }
         let global_value = self.static_addr_of_mut(cv, align, kind);
-        #[cfg(feature = "master")]
         self.global_lvalues
             .borrow()
             .get(&global_value)
@@ -93,7 +91,6 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         // As an optimization, all shared statics which do not have interior
         // mutability are placed into read-only memory.
         if !is_mutable && self.type_is_freeze(ty) {
-            #[cfg(feature = "master")]
             global.global_set_readonly();
         }
 
@@ -169,9 +166,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
 }
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
-    #[cfg_attr(not(feature = "master"), allow(unused_variables))]
     pub fn add_used_function(&self, function: Function<'gcc>) {
-        #[cfg(feature = "master")]
         function.add_attribute(FnAttribute::Used);
     }
 
@@ -240,7 +235,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             );
 
             if !self.tcx.is_reachable_non_generic(def_id) {
-                #[cfg(feature = "master")]
                 global.add_string_attribute(VarAttribute::Visibility(Visibility::Hidden));
             }
 

@@ -127,7 +127,6 @@ pub struct ConfigInfo {
     // Needed for the `info` command which doesn't want to actually download the lib if needed,
     // just to set the `gcc_path` field to display it.
     pub no_download: bool,
-    pub no_default_features: bool,
     pub backend: Option<String>,
 }
 
@@ -187,7 +186,6 @@ impl ConfigInfo {
                     )
                 }
             },
-            "--no-default-features" => self.no_default_features = true,
             _ => return Ok(false),
         }
         Ok(true)
@@ -420,10 +418,6 @@ impl ConfigInfo {
             rustflags.push(linker.to_string());
         }
 
-        if self.no_default_features {
-            rustflags.push("-Csymbol-mangling-version=v0".to_string());
-        }
-
         rustflags.push("-Cdebuginfo=2".to_string());
 
         // Since we don't support ThinLTO, disable LTO completely when not trying to do LTO.
@@ -496,7 +490,6 @@ impl ConfigInfo {
     --config-file          : Location of the config file to be used
     --cg_gcc-path          : Location of the rustc_codegen_gcc root folder (used
                              when ran from another directory)
-    --no-default-features  : Add `--no-default-features` flag to cargo commands
     --use-backend          : Useful only for rustc testsuite"
         );
     }

@@ -40,7 +40,6 @@ extern crate rustc_fluent_macro;
 extern crate rustc_fs_util;
 extern crate rustc_hir;
 extern crate rustc_index;
-#[cfg(feature = "master")]
 extern crate rustc_interface;
 extern crate rustc_macros;
 extern crate rustc_metadata;
@@ -80,18 +79,11 @@ mod type_of;
 
 use std::any::Any;
 use std::fmt::Debug;
-#[cfg(not(feature = "master"))]
-use std::sync::atomic::AtomicBool;
-#[cfg(not(feature = "master"))]
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Mutex;
 
 use errors::LTONotSupported;
-#[cfg(not(feature = "master"))]
-use gccjit::CType;
 use gccjit::{Context, OptimizationLevel};
-#[cfg(feature = "master")]
 use gccjit::{TargetInfo, Version};
 use rustc_ast::expand::allocator::AllocatorKind;
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule};
@@ -131,23 +123,6 @@ impl<F: Fn() -> String> Drop for PrintOnPanic<F> {
     }
 }
 
-#[cfg(not(feature = "master"))]
-#[derive(Debug)]
-pub struct TargetInfo {
-    supports_128bit_integers: AtomicBool,
-}
-
-#[cfg(not(feature = "master"))]
-impl TargetInfo {
-    fn cpu_supports(&self, _feature: &str) -> bool {
-        false
-    }
-
-    fn supports_128bit_int(&self) -> bool {
-        self.supports_128bit_integers.load(Ordering::SeqCst)
-    }
-}
-
 #[derive(Clone)]
 pub struct LockedTargetInfo {
     info: Arc<Mutex<IntoDynSyncSend<TargetInfo>>>,
@@ -180,43 +155,19 @@ impl CodegenBackend for GccCodegenBackend {
     }
 
     fn init(&self, sess: &Session) {
-        #[cfg(feature = "master")]
-        {
-            let target_cpu = target_cpu(sess);
+        let target_cpu = target_cpu(sess);
 
-            // Get the second TargetInfo with the correct CPU features by setting the arch.
-            let context = Context::default();
-            if target_cpu != "generic" {
-                context.add_command_line_option(format!("-march={}", target_cpu));
-            }
-
-            **self.target_info.info.lock().expect("lock") = context.get_target_info();
+        // Get the second TargetInfo with the correct CPU features by setting the arch.
+        let context = Context::default();
+        if target_cpu != "generic" {
+            context.add_command_line_option(format!("-march={}", target_cpu));
         }
 
-        #[cfg(feature = "master")]
+        **self.target_info.info.lock().expect("lock") = context.get_target_info();
+
         gccjit::set_global_personality_function_name(b"rust_eh_personality\0");
         if sess.lto() == Lto::Thin {
             sess.dcx().emit_warn(LTONotSupported {});
-        }
-
-        #[cfg(not(feature = "master"))]
-        {
-            let temp_dir = TempDir::new().expect("cannot create temporary directory");
-            let temp_file = temp_dir.into_path().join("result.asm");
-            let check_context = Context::default();
-            check_context.set_print_errors_to_stderr(false);
-            let _int128_ty = check_context.new_c_type(CType::UInt128t);
-            // NOTE: we cannot just call compile() as this would require other files than libgccjit.so.
-            check_context.compile_to_file(
-                gccjit::OutputKind::Assembler,
-                temp_file.to_str().expect("path to str"),
-            );
-            self.target_info
-                .info
-                .lock()
-                .expect("lock")
-                .supports_128bit_integers
-                .store(check_context.get_last_error() == Ok(None), Ordering::SeqCst);
         }
     }
 
@@ -275,17 +226,14 @@ fn new_context<'gcc, 'tcx>(tcx: TyCtxt<'tcx>) -> Context<'gcc> {
     if tcx.sess.target.arch == "x86" || tcx.sess.target.arch == "x86_64" {
         context.add_command_line_option("-masm=intel");
     }
-    #[cfg(feature = "master")]
-    {
-        context.set_special_chars_allowed_in_func_names("$.*");
-        let version = Version::get();
-        let version = format!("{}.{}.{}", version.major, version.minor, version.patch);
-        context.set_output_ident(&format!(
-            "rustc version {} with libgccjit {}",
-            rustc_interface::util::rustc_version_str().unwrap_or("unknown version"),
-            version,
-        ));
-    }
+    context.set_special_chars_allowed_in_func_names("$.*");
+    let version = Version::get();
+    let version = format!("{}.{}.{}", version.major, version.minor, version.patch);
+    context.set_output_ident(&format!(
+        "rustc version {} with libgccjit {}",
+        rustc_interface::util::rustc_version_str().unwrap_or("unknown version"),
+        version,
+    ));
     // TODO(antoyo): check if this should only be added when using -Cforce-unwind-tables=n.
     context.add_command_line_option("-fno-asynchronous-unwind-tables");
     context
@@ -435,17 +383,9 @@ impl WriteBackendMethods for GccCodegenBackend {
 /// This is the entrypoint for a hot plugged rustc_codegen_gccjit
 #[no_mangle]
 pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
-    #[cfg(feature = "master")]
-    let info = {
-        // Check whether the target supports 128-bit integers.
-        let context = Context::default();
-        Arc::new(Mutex::new(IntoDynSyncSend(context.get_target_info())))
-    };
-    #[cfg(not(feature = "master"))]
-    let info = Arc::new(Mutex::new(IntoDynSyncSend(TargetInfo {
-        supports_128bit_integers: AtomicBool::new(false),
-    })));
-
+    // Check whether the target supports 128-bit integers.
+    let context = Context::default();
+    let info = Arc::new(Mutex::new(IntoDynSyncSend(context.get_target_info())));
     Box::new(GccCodegenBackend { target_info: LockedTargetInfo { info } })
 }
 

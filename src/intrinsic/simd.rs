@@ -2,12 +2,10 @@ use std::iter::FromIterator;
 
 use gccjit::ToRValue;
 use gccjit::{BinaryOp, RValue, Type};
-#[cfg(feature = "master")]
 use gccjit::{ComparisonOp, UnaryOp};
 
 use rustc_codegen_ssa::base::compare_simd_types;
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
-#[cfg(feature = "master")]
 use rustc_codegen_ssa::errors::ExpectedPointerMutability;
 use rustc_codegen_ssa::errors::InvalidMonomorphization;
 use rustc_codegen_ssa::mir::operand::OperandRef;
@@ -21,9 +19,6 @@ use rustc_span::{sym, Span, Symbol};
 use rustc_target::abi::Align;
 
 use crate::builder::Builder;
-#[cfg(not(feature = "master"))]
-use crate::common::SignType;
-#[cfg(feature = "master")]
 use crate::context::CodegenCx;
 
 pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
@@ -174,30 +169,14 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         let byte_vector_type = bx.context.new_vector_type(bx.type_u8(), type_size_bytes);
         let byte_vector = bx.context.new_bitcast(None, args[0].immediate(), byte_vector_type);
 
-        #[cfg(not(feature = "master"))]
-        let shuffled = {
-            let new_elements: Vec<_> = shuffle_indices
-                .chunks_exact(elem_size_bytes as _)
-                .flat_map(|x| x.iter().rev())
-                .map(|&i| {
-                    let index = bx.context.new_rvalue_from_long(bx.u64_type, i as _);
-                    bx.extract_element(byte_vector, index)
-                })
-                .collect();
+        let indices: Vec<_> = shuffle_indices
+            .chunks_exact(elem_size_bytes as _)
+            .flat_map(|x| x.iter().rev())
+            .map(|&i| bx.context.new_rvalue_from_int(bx.u8_type, i as _))
+            .collect();
 
-            bx.context.new_rvalue_from_vector(None, byte_vector_type, &new_elements)
-        };
-        #[cfg(feature = "master")]
-        let shuffled = {
-            let indices: Vec<_> = shuffle_indices
-                .chunks_exact(elem_size_bytes as _)
-                .flat_map(|x| x.iter().rev())
-                .map(|&i| bx.context.new_rvalue_from_int(bx.u8_type, i as _))
-                .collect();
-
-            let mask = bx.context.new_rvalue_from_vector(None, byte_vector_type, &indices);
-            bx.context.new_rvalue_vector_perm(None, byte_vector, byte_vector, mask)
-        };
+        let mask = bx.context.new_rvalue_from_vector(None, byte_vector_type, &indices);
+        let shuffled = bx.context.new_rvalue_vector_perm(None, byte_vector, byte_vector, mask);
         bx.context.new_bitcast(None, shuffled, v_type)
     };
 
@@ -219,7 +198,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
     // 3. Mask off the low and high nibbles of each byte in the byte-swapped input.
     // 4. Shuffle the pre-reversed low and high-nibbles using the masked nibbles as a shuffle mask.
     // 5. Combine the results of the shuffle back together and cast back to the original type.
-    #[cfg(feature = "master")]
     if name == sym::simd_bitreverse {
         let vector = args[0].immediate();
         let v_type = vector.get_type();
@@ -313,27 +291,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             return Ok(bx.context.new_bitcast(None, result, v_type));
         }
     }
-    // since gcc doesn't have vector shuffle methods available in non-patched builds, fallback to
-    // component-wise bitreverses if they're not available.
-    #[cfg(not(feature = "master"))]
-    if name == sym::simd_bitreverse {
-        let vector = args[0].immediate();
-        let vector_ty = vector.get_type();
-        let vector_type = vector_ty.unqualified().dyncast_vector().expect("vector type");
-        let num_elements = vector_type.get_num_units();
-
-        let elem_type = vector_type.get_element_type();
-        let elem_size_bytes = elem_type.get_size();
-        let num_type = elem_type.to_unsigned(bx.cx);
-        let new_elements: Vec<_> = (0..num_elements)
-            .map(|idx| {
-                let index = bx.context.new_rvalue_from_long(num_type, idx as _);
-                let extracted_value = bx.extract_element(vector, index).to_rvalue();
-                bx.bit_reverse(elem_size_bytes as u64 * 8, extracted_value)
-            })
-            .collect();
-        return Ok(bx.context.new_rvalue_from_vector(None, vector_ty, &new_elements));
-    }
 
     if name == sym::simd_ctlz || name == sym::simd_cttz {
         let vector = args[0].immediate();
@@ -383,7 +340,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(bx.shuffle_vector(args[0].immediate(), args[1].immediate(), vector));
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_insert {
         require!(
             in_elem == arg_tys[2],
@@ -406,7 +362,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(variable.to_rvalue());
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_extract {
         require!(
             ret_ty == in_elem,
@@ -435,7 +390,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(bx.vector_select(args[0].immediate(), args[1].immediate(), args[2].immediate()));
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_cast || name == sym::simd_as {
         require_simd!(ret_ty, InvalidMonomorphization::SimdReturn { span, name, ty: ret_ty });
         let (out_len, out_elem) = ret_ty.simd_size_and_type(bx.tcx());
@@ -678,7 +632,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return simd_simple_float_intrinsic(name, in_elem, in_ty, in_len, bx, span, args);
     }
 
-    #[cfg(feature = "master")]
     fn vector_ty<'gcc, 'tcx>(
         cx: &CodegenCx<'gcc, 'tcx>,
         elem_ty: Ty<'tcx>,
@@ -694,7 +647,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         cx.type_vector(elem_ty, vec_len)
     }
 
-    #[cfg(feature = "master")]
     fn gather<'a, 'gcc, 'tcx>(
         default: RValue<'gcc>,
         pointers: RValue<'gcc>,
@@ -742,7 +694,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         }
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_gather {
         // simd_gather(values: <N x T>, pointers: <N x *_ T>,
         //             mask: <N x i{M}>) -> <N x T>
@@ -863,7 +814,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         ));
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_scatter {
         // simd_scatter(values: <N x T>, pointers: <N x *mut T>,
         //             mask: <N x i{M}>) -> ()
@@ -1027,7 +977,6 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         simd_neg: Int => neg, Float => fneg;
     }
 
-    #[cfg(feature = "master")]
     if name == sym::simd_saturating_add || name == sym::simd_saturating_sub {
         let lhs = args[0].immediate();
         let rhs = args[1].immediate();

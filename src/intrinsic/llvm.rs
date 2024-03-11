@@ -489,12 +489,8 @@ pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
 ) -> RValue<'gcc> {
     match func_name {
         "__builtin_ia32_vfmaddss3_round" | "__builtin_ia32_vfmaddsd3_round" => {
-            #[cfg(feature = "master")]
-            {
-                let zero = builder.context.new_rvalue_zero(builder.int_type);
-                return_value =
-                    builder.context.new_vector_access(None, return_value, zero).to_rvalue();
-            }
+            let zero = builder.context.new_rvalue_zero(builder.int_type);
+            return_value = builder.context.new_vector_access(None, return_value, zero).to_rvalue();
         }
         "__builtin_ia32_addcarryx_u64"
         | "__builtin_ia32_sbb_u64"
@@ -611,23 +607,6 @@ pub fn ignore_arg_cast(func_name: &str, index: usize, args_len: usize) -> bool {
     false
 }
 
-#[cfg(not(feature = "master"))]
-pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
-    let gcc_name = match name {
-        "llvm.x86.sse2.pause" => {
-            // NOTE: pause is only a hint, so we use a dummy built-in because target built-ins
-            // are not supported in libgccjit 12.
-            "__builtin_inff"
-        }
-        "llvm.x86.xgetbv" => "__builtin_trap",
-        _ => unimplemented!("unsupported LLVM intrinsic {}", name),
-    };
-    let func = cx.context.get_builtin_function(gcc_name);
-    cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-    return func;
-}
-
-#[cfg(feature = "master")]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
     match name {
         "llvm.prefetch" => {

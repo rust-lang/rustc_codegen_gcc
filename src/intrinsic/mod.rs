@@ -1,10 +1,8 @@
 pub mod llvm;
 mod simd;
 
-#[cfg(feature = "master")]
 use std::iter;
 
-#[cfg(feature = "master")]
 use gccjit::FunctionType;
 use gccjit::{ComparisonOp, Function, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -15,22 +13,18 @@ use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{
     ArgAbiMethods, BuilderMethods, ConstMethods, IntrinsicCallMethods,
 };
-#[cfg(feature = "master")]
 use rustc_codegen_ssa::traits::{BaseTypeMethods, MiscMethods};
 use rustc_codegen_ssa::MemFlags;
 use rustc_middle::bug;
 use rustc_middle::ty::layout::LayoutOf;
-#[cfg(feature = "master")]
 use rustc_middle::ty::layout::{FnAbiOf, HasTyCtxt};
 use rustc_middle::ty::{self, Instance, Ty};
 use rustc_span::{sym, Span, Symbol};
 use rustc_target::abi::call::{ArgAbi, FnAbi, PassMode};
 use rustc_target::abi::HasDataLayout;
-#[cfg(feature = "master")]
 use rustc_target::spec::abi::Abi;
 use rustc_target::spec::PanicStrategy;
 
-#[cfg(feature = "master")]
 use crate::abi::FnAbiGccExt;
 use crate::abi::GccType;
 use crate::builder::Builder;
@@ -1112,10 +1106,7 @@ fn try_intrinsic<'a, 'b, 'gcc, 'tcx>(
         if wants_msvc_seh(bx.sess()) {
             unimplemented!();
         }
-        #[cfg(feature = "master")]
         codegen_gnu_try(bx, try_func, data, _catch_func, dest);
-        #[cfg(not(feature = "master"))]
-        unimplemented!();
     }
 }
 
@@ -1130,7 +1121,6 @@ fn try_intrinsic<'a, 'b, 'gcc, 'tcx>(
 // function calling it, and that function may already have other personality
 // functions in play. By calling a shim we're guaranteed that our shim will have
 // the right personality function.
-#[cfg(feature = "master")]
 fn codegen_gnu_try<'gcc>(
     bx: &mut Builder<'_, 'gcc, '_>,
     try_func: RValue<'gcc>,
@@ -1200,7 +1190,6 @@ fn codegen_gnu_try<'gcc>(
 // catch exceptions.
 //
 // This function is only generated once and is then cached.
-#[cfg(feature = "master")]
 fn get_rust_try_fn<'a, 'gcc, 'tcx>(
     cx: &'a CodegenCx<'gcc, 'tcx>,
     codegen: &mut dyn FnMut(Builder<'a, 'gcc, 'tcx>),
@@ -1249,7 +1238,6 @@ fn get_rust_try_fn<'a, 'gcc, 'tcx>(
 
 // Helper function to give a Block to a closure to codegen a shim function.
 // This is currently primarily used for the `try` intrinsic functions above.
-#[cfg(feature = "master")]
 fn gen_fn<'a, 'gcc, 'tcx>(
     cx: &'a CodegenCx<'gcc, 'tcx>,
     name: &str,

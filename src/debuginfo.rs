@@ -32,7 +32,6 @@ impl<'a, 'gcc, 'tcx> DebugInfoBuilderMethods for Builder<'a, 'gcc, 'tcx> {
         _fragment: Option<Range<Size>>,
     ) {
         // FIXME(tempdragon): Not sure if this is correct, probably wrong but still keep it here.
-        #[cfg(feature = "master")]
         _variable_alloca.set_location(_dbg_loc);
     }
 

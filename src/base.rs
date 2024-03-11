@@ -9,7 +9,6 @@ use rustc_codegen_ssa::traits::DebugInfoMethods;
 use rustc_codegen_ssa::{ModuleCodegen, ModuleKind};
 use rustc_middle::dep_graph;
 use rustc_middle::mir::mono::Linkage;
-#[cfg(feature = "master")]
 use rustc_middle::mir::mono::Visibility;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::DebugInfo;
@@ -21,7 +20,6 @@ use crate::context::CodegenCx;
 use crate::GccContext;
 use crate::{gcc_util, new_context, LockedTargetInfo};
 
-#[cfg(feature = "master")]
 pub fn visibility_to_gcc(linkage: Visibility) -> gccjit::Visibility {
     match linkage {
         Visibility::Default => gccjit::Visibility::Default,

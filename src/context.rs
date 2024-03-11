@@ -136,20 +136,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let create_type = |ctype, rust_type| {
             let layout = tcx.layout_of(ParamEnv::reveal_all().and(rust_type)).unwrap();
             let align = layout.align.abi.bytes();
-            #[cfg(feature = "master")]
-            {
-                context.new_c_type(ctype).get_aligned(align)
-            }
-            #[cfg(not(feature = "master"))]
-            {
-                // Since libgccjit 12 doesn't contain the fix to compare aligned integer types,
-                // only align u128 and i128.
-                if layout.ty.int_size_and_signed(tcx).0.bytes() == 16 {
-                    context.new_c_type(ctype).get_aligned(align)
-                } else {
-                    context.new_c_type(ctype)
-                }
-            }
+            context.new_c_type(ctype).get_aligned(align)
         };
 
         let i8_type = create_type(CType::Int8t, tcx.types.i8);
