@@ -7,6 +7,7 @@ use rustc_attr::InstructionSetAttr;
 #[cfg(feature = "master")]
 use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 use rustc_middle::ty;
+use rustc_session::config::DebugInfo;
 use rustc_span::symbol::sym;
 
 use crate::gcc_util::{check_tied_features, to_gcc_features};
@@ -40,7 +41,8 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
     #[cfg_attr(not(feature = "master"), allow(unused_variables))] func: Function<'gcc>,
     instance: ty::Instance<'tcx>,
 ) {
-    let codegen_fn_attrs = cx.tcx.codegen_fn_attrs(instance.def_id());
+    let def_id = instance.def_id();
+    let codegen_fn_attrs = cx.tcx.codegen_fn_attrs(def_id);
 
     #[cfg(feature = "master")]
     {
@@ -68,6 +70,20 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
         }
         if codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::FFI_CONST) {
             func.add_attribute(FnAttribute::Const);
+        }
+        if cx.sess().opts.debuginfo != DebugInfo::None
+            && !codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::NO_MANGLE)
+            && codegen_fn_attrs.export_name.is_none()
+        {
+            let signature = cx
+                .tcx
+                .def_path_str(instance.def_id())
+                .split("::")
+                .last()
+                .map(|name| name.to_string());
+            if let Some(signature) = signature {
+                func.add_attribute(FnAttribute::JITDwarfShortName(signature));
+            }
         }
     }
 

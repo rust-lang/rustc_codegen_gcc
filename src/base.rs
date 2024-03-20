@@ -183,6 +183,11 @@ pub fn compile_codegen_unit(
         {
             let cx = CodegenCx::new(&context, cgu, tcx, target_info.supports_128bit_int());
 
+            // This should be set before the code is generated.
+            if cx.sess().opts.debuginfo != DebugInfo::None {
+                context.set_mangled_function_name(true);
+            }
+
             let mono_items = cgu.items_in_deterministic_order(tcx);
             for &(mono_item, data) in &mono_items {
                 mono_item.predefine::<Builder<'_, '_, '_>>(&cx, data.linkage, data.visibility);
