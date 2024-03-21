@@ -5,6 +5,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
+/// Represents build arguments.
 #[derive(Default)]
 struct BuildArg {
     flags: Vec<String>,
@@ -12,9 +13,10 @@ struct BuildArg {
 }
 
 impl BuildArg {
+    /// Creates a new `BuildArg` instance by parsing command-line arguments.
     fn new() -> Result<Option<Self>, String> {
         let mut build_arg = Self::default();
-        // We skip binary name and the `build` command.
+        // Skip binary name and the `build` command.
         let mut args = std::env::args().skip(2);
 
         while let Some(arg) = args.next() {
@@ -24,9 +26,7 @@ impl BuildArg {
                         build_arg.flags.push("--features".to_string());
                         build_arg.flags.push(arg.as_str().into());
                     } else {
-                        return Err(
-                            "Expected a value after `--features`, found nothing".to_string()
-                        );
+                        return Err("Expected a value after `--features`, found nothing".to_string());
                     }
                 }
                 "--help" => {
@@ -43,6 +43,7 @@ impl BuildArg {
         Ok(Some(build_arg))
     }
 
+    /// Displays usage information for the build command.
     fn usage() {
         println!(
             r#"
@@ -55,8 +56,9 @@ impl BuildArg {
     }
 }
 
+/// Builds the sysroot for the specified environment and configuration.
 pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Result<(), String> {
-    let start_dir = Path::new("build_sysroot");
+let start_dir = Path::new("build_sysroot");
     // Cleanup for previous run
     // Clean target dir except for build scripts and incremental cache
     let _ = walk_dir(
@@ -171,8 +173,9 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
     Ok(())
 }
 
+/// Builds the codegen for the specified arguments.
 fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
-    let mut env = HashMap::new();
+        let mut env = HashMap::new();
 
     env.insert(
         "LD_LIBRARY_PATH".to_string(),
@@ -224,6 +227,7 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     Ok(())
 }
 
+/// Executes the build process.
 pub fn run() -> Result<(), String> {
     let mut args = match BuildArg::new()? {
         Some(args) => args,
