@@ -30,7 +30,7 @@ rustc_codegen_gcc build system
 
 Usage: build_system [command] [options]
 
-    Available commands for build_system:
+Commands:
 
         cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
         clean     : Cleans the build directory, removing all compiled files and artifacts.
