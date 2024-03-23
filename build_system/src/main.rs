@@ -44,13 +44,11 @@ Commands:
 Options:
         -h, --help    : Displays this help message.
 
-        Examples:
-        build_system build
-        build_system test --release
-        build_system info
-        build_system clone-gcc --source=https://example.com/gcc.tar.gz
-
-        Note: Replace 'build_system' with the actual name of your build script executable if different.
+Examples:
+        ./y.sh build
+        ./y.sh test --release
+        ./y.sh info
+        ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
         "
     );
 }
