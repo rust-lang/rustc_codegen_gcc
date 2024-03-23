@@ -28,7 +28,7 @@ fn usage() {
         "\
         Usage: build_system [command] [options]
 
-    Available commands for build_system:
+    Commands:
 
         cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
         clean     : Cleans the build directory, removing all compiled files and artifacts.
@@ -42,11 +42,10 @@ fn usage() {
         Options:
         -h, --help    : Displays this help message.
 
-        Examples:
-        build_system build
-        build_system test --release
-        build_system info
-        build_system clone-gcc --source=https://example.com/gcc.tar.gz
+        ./y.sh build
+        ./y.sh test --release
+        ./y.sh info
+        ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
 
         Note: Replace 'build_system' with the actual name of your build script executable if different.
         "
