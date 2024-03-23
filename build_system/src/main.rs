@@ -41,7 +41,7 @@ Usage: build_system [command] [options]
         clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
         --help    : Shows a help message.
 
-        Options:
+Options:
         -h, --help    : Displays this help message.
 
         Examples:
