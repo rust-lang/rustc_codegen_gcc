@@ -26,9 +26,11 @@ macro_rules! arg_error {
 fn usage() {
     println!(
         "\
-        Usage: build_system [command] [options]
+rustc_codegen_gcc build system
 
-    Commands:
+Usage: build_system [command] [options]
+
+Commands:
 
         cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
         clean     : Cleans the build directory, removing all compiled files and artifacts.
@@ -39,15 +41,14 @@ fn usage() {
         clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
         --help    : Shows a help message.
 
-        Options:
+Options:
         -h, --help    : Displays this help message.
 
+Examples:
         ./y.sh build
         ./y.sh test --release
         ./y.sh info
         ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
-
-        Note: Replace 'build_system' with the actual name of your build script executable if different.
         "
     );
 }
