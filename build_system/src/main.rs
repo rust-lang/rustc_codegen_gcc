@@ -26,7 +26,9 @@ macro_rules! arg_error {
 fn usage() {
     println!(
         "\
-        Usage: build_system [command] [options]
+rustc_codegen_gcc build system
+
+Usage: build_system [command] [options]
 
     Available commands for build_system:
 
