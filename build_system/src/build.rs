@@ -12,9 +12,10 @@ struct BuildArg {
 }
 
 impl BuildArg {
+    /// Creates a new `BuildArg` instance by parsing command-line arguments.
     fn new() -> Result<Option<Self>, String> {
         let mut build_arg = Self::default();
-        // We skip binary name and the `build` command.
+        // Skip binary name and the `build` command.
         let mut args = std::env::args().skip(2);
 
         while let Some(arg) = args.next() {
@@ -24,9 +25,7 @@ impl BuildArg {
                         build_arg.flags.push("--features".to_string());
                         build_arg.flags.push(arg.as_str().into());
                     } else {
-                        return Err(
-                            "Expected a value after `--features`, found nothing".to_string()
-                        );
+                        return Err("Expected a value after `--features`, found nothing".to_string());
                     }
                 }
                 "--help" => {
@@ -224,6 +223,7 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     Ok(())
 }
 
+/// Executes the build process.
 pub fn run() -> Result<(), String> {
     let mut args = match BuildArg::new()? {
         Some(args) => args,
