@@ -30,6 +30,9 @@ rustc_codegen_gcc build system
 
 Usage: build_system [command] [options]
 
+Options:
+        -h, --help    : Displays this help message.
+
 Commands:
 
         cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
@@ -39,10 +42,6 @@ Commands:
         test      : Runs tests for the project. Use 'test --help' for test options.
         info      : Displays information about the build environment and project configuration.
         clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
-        --help    : Shows a help message.
-
-Options:
-        -h, --help    : Displays this help message.
 
 Examples:
         ./y.sh build

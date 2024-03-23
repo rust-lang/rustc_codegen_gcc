@@ -5,7 +5,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
-/// Represents build arguments.
 #[derive(Default)]
 struct BuildArg {
     flags: Vec<String>,
@@ -43,7 +42,6 @@ impl BuildArg {
         Ok(Some(build_arg))
     }
 
-    /// Displays usage information for the build command.
     fn usage() {
         println!(
             r#"
@@ -56,9 +54,8 @@ impl BuildArg {
     }
 }
 
-/// Builds the sysroot for the specified environment and configuration.
 pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Result<(), String> {
-let start_dir = Path::new("build_sysroot");
+    let start_dir = Path::new("build_sysroot");
     // Cleanup for previous run
     // Clean target dir except for build scripts and incremental cache
     let _ = walk_dir(
@@ -173,9 +170,8 @@ let start_dir = Path::new("build_sysroot");
     Ok(())
 }
 
-/// Builds the codegen for the specified arguments.
 fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
-        let mut env = HashMap::new();
+    let mut env = HashMap::new();
 
     env.insert(
         "LD_LIBRARY_PATH".to_string(),
