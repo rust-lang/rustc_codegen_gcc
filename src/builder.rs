@@ -25,7 +25,7 @@ use rustc_middle::ty::layout::{
     FnAbiError, FnAbiOfHelpers, FnAbiRequest, HasParamEnv, HasTyCtxt, LayoutError, LayoutOfHelpers,
     TyAndLayout,
 };
-use rustc_middle::ty::{ParamEnv, Ty, TyCtxt, Instance};
+use rustc_middle::ty::{Instance, ParamEnv, Ty, TyCtxt};
 use rustc_span::def_id::DefId;
 use rustc_span::Span;
 use rustc_target::abi::{
