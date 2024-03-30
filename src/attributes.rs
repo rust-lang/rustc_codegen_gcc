@@ -75,15 +75,8 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
             && !codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::NO_MANGLE)
             && codegen_fn_attrs.export_name.is_none()
         {
-            let signature = cx
-                .tcx
-                .def_path_str(instance.def_id())
-                .split("::")
-                .last()
-                .map(|name| name.to_string());
-            if let Some(signature) = signature {
-                func.add_attribute(FnAttribute::JITDwarfShortName(signature));
-            }
+            let signature = cx.tcx.def_path_str(instance.def_id());
+            func.add_attribute(FnAttribute::JITDwarfShortName(signature));
         }
     }
 
