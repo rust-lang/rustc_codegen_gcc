@@ -77,4 +77,14 @@ tests/ui/consts/issue-73976-monomorphic.rs
 tests/ui/consts/issue-94675.rs
 tests/ui/rfcs/rfc-2632-const-trait-impl/const-drop-fail.rs
 tests/ui/rfcs/rfc-2632-const-trait-impl/const-drop.rs
-
+tests/ui/consts/const-mut-refs-crate.rs
+tests/ui/consts/const-vec-of-fns.rs
+tests/ui/consts/promotion-mutable-ref.rs
+tests/ui/consts/static-mut-refs.rs
+tests/ui/consts/static-raw-pointer-interning2.rs
+tests/ui/debuginfo/backtrace-dylib-dep.rs
+tests/ui/sanitizer/cfi-closure-fn-ptr-cast.rs
+tests/ui/sanitizer/cfi-complex-receiver.rs
+tests/ui/sanitizer/cfi-self-ref.rs
+tests/ui/sanitizer/cfi-virtual-auto.rs
+tests/ui/runtime/rt-explody-panic-payloads.rs
