@@ -2,12 +2,12 @@ use std::env;
 use std::process;
 
 mod build;
-mod cargo;
 mod clean;
 mod clone_gcc;
 mod config;
 mod info;
 mod prepare;
+mod rust_tools;
 mod rustc_info;
 mod test;
 mod utils;
@@ -58,6 +58,7 @@ pub enum Command {
     CloneGcc,
     Prepare,
     Build,
+    Rustc,
     Test,
     Info,
 }
@@ -69,6 +70,7 @@ fn main() {
 
     let command = match env::args().nth(1).as_deref() {
         Some("cargo") => Command::Cargo,
+        Some("rustc") => Command::Rustc,
         Some("clean") => Command::Clean,
         Some("prepare") => Command::Prepare,
         Some("build") => Command::Build,
@@ -88,7 +90,8 @@ fn main() {
     };
 
     if let Err(e) = match command {
-        Command::Cargo => cargo::run(),
+        Command::Cargo => rust_tools::run_cargo(),
+        Command::Rustc => rust_tools::run_rustc(),
         Command::Clean => clean::run(),
         Command::Prepare => prepare::run(),
         Command::Build => build::run(),
