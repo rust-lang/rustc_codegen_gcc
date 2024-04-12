@@ -35,13 +35,13 @@ Options:
 
 Commands:
 
-        cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
+        cargo     : Executes a cargo command. 
         clean     : Cleans the build directory, removing all compiled files and artifacts.
         prepare   : Prepares the environment for building, including fetching dependencies and setting up configurations.
-        build     : Compiles the project. Use 'build --help' for build options.
-        test      : Runs tests for the project. Use 'test --help' for test options.
+        build     : Compiles the project. 
+        test      : Runs tests for the project.
         info      : Displays information about the build environment and project configuration.
-        clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
+        clone-gcc : Clones the GCC compiler from a specified source.
         "
     );
 }
