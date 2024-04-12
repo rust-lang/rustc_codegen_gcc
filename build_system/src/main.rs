@@ -2,12 +2,12 @@ use std::env;
 use std::process;
 
 mod build;
-mod cargo;
 mod clean;
 mod clone_gcc;
 mod config;
 mod info;
 mod prepare;
+mod rust_tools;
 mod rustc_info;
 mod test;
 mod utils;
@@ -30,26 +30,18 @@ rustc_codegen_gcc build system
 
 Usage: build_system [command] [options]
 
-    Commands:
+Options:
+        --help    : Displays this help message.
 
-        cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
+Commands:
+
+        cargo     : Executes a cargo command. 
         clean     : Cleans the build directory, removing all compiled files and artifacts.
         prepare   : Prepares the environment for building, including fetching dependencies and setting up configurations.
-        build     : Compiles the project. Use 'build --help' for build options.
-        test      : Runs tests for the project. Use 'test --help' for test options.
+        build     : Compiles the project. 
+        test      : Runs tests for the project.
         info      : Displays information about the build environment and project configuration.
-        clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
-        --help    : Shows a help message.
-
-Options:
-        -h, --help    : Displays this help message.
-
-        ./y.sh build
-        ./y.sh test --release
-        ./y.sh info
-        ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
-
-        Note: Replace 'build_system' with the actual name of your build script executable if different.
+        clone-gcc : Clones the GCC compiler from a specified source.
         "
     );
 }
@@ -60,6 +52,7 @@ pub enum Command {
     CloneGcc,
     Prepare,
     Build,
+    Rustc,
     Test,
     Info,
 }
@@ -71,6 +64,7 @@ fn main() {
 
     let command = match env::args().nth(1).as_deref() {
         Some("cargo") => Command::Cargo,
+        Some("rustc") => Command::Rustc,
         Some("clean") => Command::Clean,
         Some("prepare") => Command::Prepare,
         Some("build") => Command::Build,
@@ -90,7 +84,8 @@ fn main() {
     };
 
     if let Err(e) = match command {
-        Command::Cargo => cargo::run(),
+        Command::Cargo => rust_tools::run_cargo(),
+        Command::Rustc => rust_tools::run_rustc(),
         Command::Clean => clean::run(),
         Command::Prepare => prepare::run(),
         Command::Build => build::run(),
