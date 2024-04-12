@@ -31,7 +31,7 @@ rustc_codegen_gcc build system
 Usage: build_system [command] [options]
 
 Options:
-        -h, --help    : Displays this help message.
+        --help    : Displays this help message.
 
 Commands:
 
@@ -42,12 +42,6 @@ Commands:
         test      : Runs tests for the project. Use 'test --help' for test options.
         info      : Displays information about the build environment and project configuration.
         clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
-
-Examples:
-        ./y.sh build
-        ./y.sh test --release
-        ./y.sh info
-        ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
         "
     );
 }

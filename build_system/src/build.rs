@@ -27,7 +27,9 @@ impl BuildArg {
                         build_arg.flags.push("--features".to_string());
                         build_arg.flags.push(arg.as_str().into());
                     } else {
-                        return Err("Expected a value after `--features`, found nothing".to_string());
+                        return Err(
+                            "Expected a value after `--features`, found nothing".to_string()
+                        );
                     }
                 }
                 "--help" => {
