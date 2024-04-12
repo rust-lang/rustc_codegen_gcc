@@ -7,7 +7,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
-/// Represents build arguments.
 #[derive(Default)]
 struct BuildArg {
     flags: Vec<String>,
@@ -28,7 +27,9 @@ impl BuildArg {
                         build_arg.flags.push("--features".to_string());
                         build_arg.flags.push(arg.as_str().into());
                     } else {
-                        return Err("Expected a value after `--features`, found nothing".to_string());
+                        return Err(
+                            "Expected a value after `--features`, found nothing".to_string()
+                        );
                     }
                 }
                 "--help" => {
@@ -45,7 +46,6 @@ impl BuildArg {
         Ok(Some(build_arg))
     }
 
-    /// Displays usage information for the build command.
     fn usage() {
         println!(
             r#"
@@ -173,9 +173,8 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
     Ok(())
 }
 
-/// Builds the codegen for the specified arguments.
 fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
-        let mut env = HashMap::new();
+    let mut env = HashMap::new();
 
     env.insert("LD_LIBRARY_PATH".to_string(), args.config_info.gcc_path.clone());
     env.insert("LIBRARY_PATH".to_string(), args.config_info.gcc_path.clone());
