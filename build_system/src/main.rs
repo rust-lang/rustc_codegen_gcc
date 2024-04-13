@@ -30,26 +30,18 @@ rustc_codegen_gcc build system
 
 Usage: build_system [command] [options]
 
-    Commands:
+Options:
+        --help    : Displays this help message.
 
-        cargo     : Executes a cargo command. Use 'cargo --help' for a list of cargo commands.
+Commands:
+
+        cargo     : Executes a cargo command. 
         clean     : Cleans the build directory, removing all compiled files and artifacts.
         prepare   : Prepares the environment for building, including fetching dependencies and setting up configurations.
-        build     : Compiles the project. Use 'build --help' for build options.
-        test      : Runs tests for the project. Use 'test --help' for test options.
+        build     : Compiles the project. 
+        test      : Runs tests for the project.
         info      : Displays information about the build environment and project configuration.
-        clone-gcc : Clones the GCC compiler from a specified source. Use 'clone-gcc --help' for options.
-        --help    : Shows a help message.
-
-Options:
-        -h, --help    : Displays this help message.
-
-        ./y.sh build
-        ./y.sh test --release
-        ./y.sh info
-        ./y.sh clone-gcc --source=https://example.com/gcc.tar.gz
-
-        Note: Replace 'build_system' with the actual name of your build script executable if different.
+        clone-gcc : Clones the GCC compiler from a specified source.
         "
     );
 }
