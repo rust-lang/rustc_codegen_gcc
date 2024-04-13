@@ -66,7 +66,7 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
     fn codegen_static(&self, def_id: DefId, is_mutable: bool) {
         let attrs = self.tcx.codegen_fn_attrs(def_id);
 
-        let value = match codegen_static_initializer(&self, def_id) {
+        let value = match codegen_static_initializer(self, def_id) {
             Ok((value, _)) => value,
             // Error has already been reported
             Err(_) => return,
@@ -77,10 +77,8 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
         // boolean SSA values are i1, but they have to be stored in i8 slots,
         // otherwise some LLVM optimization passes don't work as expected
         let val_llty = self.val_ty(value);
-        let value = if val_llty == self.type_i1() {
+        if val_llty == self.type_i1() {
             unimplemented!();
-        } else {
-            value
         };
 
         let instance = Instance::mono(self.tcx, def_id);
@@ -94,11 +92,9 @@ impl<'gcc, 'tcx> StaticMethods for CodegenCx<'gcc, 'tcx> {
 
         // As an optimization, all shared statics which do not have interior
         // mutability are placed into read-only memory.
-        if !is_mutable {
-            if self.type_is_freeze(ty) {
-                #[cfg(feature = "master")]
-                global.global_set_readonly();
-            }
+        if !is_mutable && self.type_is_freeze(ty) {
+            #[cfg(feature = "master")]
+            global.global_set_readonly();
         }
 
         if attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL) {
@@ -235,13 +231,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             }
 
             let is_tls = fn_attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
-            let global = self.declare_global(
-                &sym,
-                llty,
-                GlobalKind::Exported,
-                is_tls,
-                fn_attrs.link_section,
-            );
+            let global =
+                self.declare_global(sym, llty, GlobalKind::Exported, is_tls, fn_attrs.link_section);
 
             if !self.tcx.is_reachable_non_generic(def_id) {
                 #[cfg(feature = "master")]
@@ -250,7 +241,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             global
         } else {
-            check_and_apply_linkage(&self, &fn_attrs, ty, sym)
+            check_and_apply_linkage(self, fn_attrs, ty, sym)
         };
 
         if !def_id.is_local() {
@@ -371,11 +362,8 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
     let gcc_type = cx.layout_of(ty).gcc_type(cx);
     if let Some(linkage) = attrs.import_linkage {
         // Declare a symbol `foo` with the desired linkage.
-        let global1 = cx.declare_global_with_linkage(
-            &sym,
-            cx.type_i8(),
-            base::global_linkage_to_gcc(linkage),
-        );
+        let global1 =
+            cx.declare_global_with_linkage(sym, cx.type_i8(), base::global_linkage_to_gcc(linkage));
 
         // Declare an internal global `extern_with_linkage_foo` which
         // is initialized with the address of `foo`.  If `foo` is
@@ -384,7 +372,7 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
         // `extern_with_linkage_foo` will instead be initialized to
         // zero.
         let mut real_name = "_rust_extern_with_linkage_".to_string();
-        real_name.push_str(&sym);
+        real_name.push_str(sym);
         let global2 = cx.define_global(&real_name, gcc_type, is_tls, attrs.link_section);
         // TODO(antoyo): set linkage.
         let value = cx.const_ptrcast(global1.get_address(None), gcc_type);
@@ -401,6 +389,6 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
         // don't do this then linker errors can be generated where the linker
         // complains that one object files has a thread local version of the
         // symbol and another one doesn't.
-        cx.declare_global(&sym, gcc_type, GlobalKind::Imported, is_tls, attrs.link_section)
+        cx.declare_global(sym, gcc_type, GlobalKind::Imported, is_tls, attrs.link_section)
     }
 }

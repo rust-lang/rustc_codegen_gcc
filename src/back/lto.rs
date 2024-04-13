@@ -106,11 +106,10 @@ fn prepare_lto(
             if !crate_type_allows_lto(*crate_type) {
                 dcx.emit_err(LtoDisallowed);
                 return Err(FatalError);
-            } else if *crate_type == CrateType::Dylib {
-                if !cgcx.opts.unstable_opts.dylib_lto {
-                    dcx.emit_err(LtoDylib);
-                    return Err(FatalError);
-                }
+            }
+            if *crate_type == CrateType::Dylib && !cgcx.opts.unstable_opts.dylib_lto {
+                dcx.emit_err(LtoDylib);
+                return Err(FatalError);
             }
         }
 
@@ -129,8 +128,7 @@ fn prepare_lto(
             }
 
             let archive_data = unsafe {
-                Mmap::map(File::open(&path).expect("couldn't open rlib"))
-                    .expect("couldn't map rlib")
+                Mmap::map(File::open(path).expect("couldn't open rlib")).expect("couldn't map rlib")
             };
             let archive = ArchiveFile::parse(&*archive_data).expect("wanted an rlib");
             let obj_files = archive
