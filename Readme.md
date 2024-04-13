@@ -107,7 +107,7 @@ Then you have to run these commands, in the corresponding order:
 1- ./y.sh prepare
 2- ./y.sh build
 ```
-If you get an error while running the second command, you should delete the first line inside of your config.toml like the following:
+If you get an error while running the second command, you should delete the first line inside of your ``config.toml`` like the following:
 
 ```bash
 gcc-path = "gcc-build/gcc"
