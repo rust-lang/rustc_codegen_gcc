@@ -12,11 +12,10 @@ This is a GCC codegen for rustc, which means it can be loaded by the existing ru
 The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
 A secondary goal is to check if using the gcc backend will provide any run-time speed improvement for the programs compiled using rustc.
 
-To check if all is  working correctly, run:
+### Install rustup if need it
 
- ```bash
-$ ./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml
-```
+Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
+
 
 ## Building
 
@@ -103,10 +102,11 @@ You have to run these commands, in the corresponding order:
 $ ./y.sh prepare
 $ ./y.sh build
 ```
+To check if all is  working correctly, run:
 
-### Install rustup if need it
-
-Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
+ ```bash
+$ ./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml
+```
 
 ### Cargo
 
