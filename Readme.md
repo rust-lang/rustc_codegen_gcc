@@ -93,27 +93,12 @@ $ ./y.sh test --release
 
 ## Usage
 
-**Note:** You can ignore this step, by just cd into the repo directory.
-
-`$CG_GCCJIT_DIR` is the directory you cloned this repo into in the following instructions:
+You have to run these commands, in the corresponding order:
 
 ```bash
-export CG_GCCJIT_DIR=[the full path to rustc_codegen_gcc]
+$ ./y.sh prepare
+$ ./y.sh build
 ```
-
-Then you have to run these commands, in the corresponding order:
-
-```bash
-1- ./y.sh prepare
-2- ./y.sh build
-```
-If you get an error while running the second command, you should delete the first line inside of your ``config.toml`` like the following:
-
-```bash
-gcc-path = "gcc-build/gcc"
-download-gccjit = true
-```
-Delete ``gcc-path = "gcc-build/gcc"`` and run ``./y.sh build`` again.
 
 To check if all is  working correctly, run ``./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml`` in your terminal.
 
