@@ -17,6 +17,8 @@ A secondary goal is to check if using the gcc backend will provide any run-time 
 **This requires a patched libgccjit in order to work.
 You need to use my [fork of gcc](https://github.com/antoyo/gcc) which already includes these patches.**
 
+Run this in your terminal:
+
 ```bash
 $ cp config.example.toml config.toml
 ```
@@ -91,11 +93,38 @@ $ ./y.sh test --release
 
 ## Usage
 
+**Note:** You can ignore this step, by just cd into the repo directory.
+
 `$CG_GCCJIT_DIR` is the directory you cloned this repo into in the following instructions:
 
 ```bash
 export CG_GCCJIT_DIR=[the full path to rustc_codegen_gcc]
 ```
+
+Then you have to run these commands, in the corresponding order:
+
+```bash
+1- ./y.sh prepare
+2- ./y.sh build
+```
+If you get an error while running the second command, you should delete the first line inside of your config.toml like the following:
+
+```bash
+gcc-path = "gcc-build/gcc"
+download-gccjit = true
+```
+Delete ``gcc-path = "gcc-build/gcc"`` and run ``./y.sh build`` again.
+
+To check if all is  working correctly, run ``./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml`` in your terminal.
+
+
+### Install rustup if need it
+On Unix, run:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+This downloads and runs rustup-init, which in turn downloads and runs the correct version of the rustup-init executable for your platform.
 
 ### Cargo
 
