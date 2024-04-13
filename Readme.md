@@ -12,12 +12,16 @@ This is a GCC codegen for rustc, which means it can be loaded by the existing ru
 The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
 A secondary goal is to check if using the gcc backend will provide any run-time speed improvement for the programs compiled using rustc.
 
+To check if all is  working correctly, run:
+
+ ```bash
+$ ./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml
+```
+
 ## Building
 
 **This requires a patched libgccjit in order to work.
 You need to use my [fork of gcc](https://github.com/antoyo/gcc) which already includes these patches.**
-
-Run this in your terminal:
 
 ```bash
 $ cp config.example.toml config.toml
@@ -100,16 +104,9 @@ $ ./y.sh prepare
 $ ./y.sh build
 ```
 
-To check if all is  working correctly, run ``./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml`` in your terminal.
-
-
 ### Install rustup if need it
-On Unix, run:
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-This downloads and runs rustup-init, which in turn downloads and runs the correct version of the rustup-init executable for your platform.
+Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
 
 ### Cargo
 
