@@ -41,8 +41,7 @@ Commands:
         build     : Compiles the project. 
         test      : Runs tests for the project.
         info      : Displays information about the build environment and project configuration.
-        clone-gcc : Clones the GCC compiler from a specified source.
-        "
+        clone-gcc : Clones the GCC compiler from a specified source."
     );
 }
 
