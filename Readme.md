@@ -12,9 +12,9 @@ This is a GCC codegen for rustc, which means it can be loaded by the existing ru
 The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
 A secondary goal is to check if using the gcc backend will provide any run-time speed improvement for the programs compiled using rustc.
 
-### Install rustup if need it
+### Dependencies
 
-Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
+**rustup:** Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
 
 
 ## Building
