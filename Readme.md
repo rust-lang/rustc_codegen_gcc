@@ -16,7 +16,6 @@ A secondary goal is to check if using the gcc backend will provide any run-time 
 
 **rustup:** Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
 
-
 ## Building
 
 **This requires a patched libgccjit in order to work.
@@ -100,7 +99,7 @@ You have to run these commands, in the corresponding order:
 
 ```bash
 $ ./y.sh prepare
-$ ./y.sh build
+$ ./y.sh build --sysroot
 ```
 To check if all is  working correctly, run:
 
