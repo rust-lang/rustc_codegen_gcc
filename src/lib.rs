@@ -180,6 +180,7 @@ impl CodegenBackend for GccCodegenBackend {
         crate::DEFAULT_LOCALE_RESOURCE
     }
 
+
     fn init(&self, sess: &Session) {
         #[cfg(feature = "master")]
         {
