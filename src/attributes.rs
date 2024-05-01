@@ -75,8 +75,11 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
             && !codegen_fn_attrs.flags.contains(CodegenFnAttrFlags::NO_MANGLE)
             && codegen_fn_attrs.export_name.is_none()
         {
-            let signature = cx.tcx.def_path_str(instance.def_id());
+            let parent = cx.get_or_create_module(&instance);
+            let signature = cx.tcx.symbol_name(instance).to_string();
+            //let signature = cx.tcx.def_path_str(instance.def_id());
             func.add_attribute(FnAttribute::JITDwarfShortName(signature));
+            func.set_parent_debug_namespace(parent);
         }
     }
 

@@ -1,8 +1,9 @@
+use gccjit::{DebugNamespace, Function, FunctionType, GlobalKind, LValue, RValue, Type};
 #[cfg(feature = "master")]
 use gccjit::{FnAttribute, ToRValue};
-use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeMethods;
-use rustc_middle::ty::Ty;
+//use rustc_middle::query::Key;
+use rustc_middle::ty::{Instance, Ty};
 use rustc_span::Symbol;
 use rustc_target::abi::call::FnAbi;
 
@@ -152,6 +153,28 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {
         // TODO(antoyo): use a different field than globals, because this seems to return a function?
         self.globals.borrow().get(name).cloned()
+    }
+
+    #[inline]
+    pub fn get_or_create_module(&self, instance: &Instance<'tcx>) -> DebugNamespace {
+        let mut bor = self.modules.borrow_mut();
+        if let Some(debug_namespace) = bor.get(&instance) {
+            *debug_namespace
+        } else {
+
+            let parent = None;
+            /* let parent = if let Some(parent) = self.tcx.opt_parent(instance.def_id()) {
+             *     let parent = todo!();
+             *     Some(self.get_or_create_module(parent))
+             * } else {
+             *     None
+             * }; */
+            let name = self.tcx.symbol_name(*instance).name;
+
+            let debug_namespace = self.context.new_debug_namespace(name, parent);
+            bor.insert(*instance, debug_namespace);
+            *bor.get(&instance).unwrap()
+        }
     }
 }
 
