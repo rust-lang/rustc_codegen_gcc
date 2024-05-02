@@ -58,7 +58,7 @@ jobs:
     - name: Setup path to libgccjit
       run: |
           sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}
-          echo 'gcc-path = "/usr/lib/"' > config.toml
+          echo 'download-gccjit = true' > config.toml
 
     - name: Set env
       run: |
