@@ -12,6 +12,10 @@ This is a GCC codegen for rustc, which means it can be loaded by the existing ru
 The primary goal of this project is to be able to compile Rust code on platforms unsupported by LLVM.
 A secondary goal is to check if using the gcc backend will provide any run-time speed improvement for the programs compiled using rustc.
 
+### Dependencies
+
+**rustup:** Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
+
 ## Building
 
 **This requires a patched libgccjit in order to work.
@@ -80,7 +84,7 @@ Then you can run commands like this:
 
 ```bash
 $ ./y.sh prepare # download and patch sysroot src and install hyperfine for benchmarking
-$ ./y.sh build --release
+$ ./y.sh build --sysroot --release
 ```
 
 To run the tests:
@@ -91,10 +95,16 @@ $ ./y.sh test --release
 
 ## Usage
 
-`$CG_GCCJIT_DIR` is the directory you cloned this repo into in the following instructions:
+You have to run these commands, in the corresponding order:
 
 ```bash
-export CG_GCCJIT_DIR=[the full path to rustc_codegen_gcc]
+$ ./y.sh prepare
+$ ./y.sh build --sysroot
+```
+To check if all is  working correctly, run:
+
+ ```bash
+$ ./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml
 ```
 
 ### Cargo
@@ -118,7 +128,13 @@ error: failed to copy bitcode to object file: No such file or directory (os erro
 
 ### Rustc
 
-> You should prefer using the Cargo method.
+If you want to run `rustc` directly, you can do so with:
+
+```bash
+$ ./y.sh rustc my_crate.rs
+```
+
+You can do the same manually (although we don't recommend it):
 
 ```bash
 $ LIBRARY_PATH="[gcc-path value]" LD_LIBRARY_PATH="[gcc-path value]" rustc +$(cat $CG_GCCJIT_DIR/rust-toolchain | grep 'channel' | cut -d '=' -f 2 | sed 's/"//g' | sed 's/ //g') -Cpanic=abort -Zcodegen-backend=$CG_GCCJIT_DIR/target/release/librustc_codegen_gcc.so --sysroot $CG_GCCJIT_DIR/build_sysroot/sysroot my_crate.rs
