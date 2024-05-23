@@ -147,8 +147,10 @@ $ LIBRARY_PATH="[gcc-path value]" LD_LIBRARY_PATH="[gcc-path value]" rustc +$(ca
 ## Env vars
 
 <dl>
-    <dt>CG_GCCJIT_DISPLAY_CG_TIME</dt>
-    <dd>Display the time it took to perform codegen for a crate</dd>
+    <dt>CG_GCCJIT_DUMP_ALL_MODULES</dt>
+    <dd>Enables dumping of all compilation modules. When set to "1", a dump is created for each module during compilation and stored in `/tmp/reproducers/`.</dd>
+    <dt>CG_GCCJIT_DUMP_MODULE</dt>
+    <dd>Enables dumping of a specific module. When set with the module name, e.g., `CG_GCCJIT_DUMP_MODULE=module_name`, a dump of that specific module is created in `/tmp/reproducers/`.</dd>
     <dt>CG_RUSTFLAGS</dt>
     <dd>Send additional flags to rustc. Can be used to build the sysroot without unwinding by setting `CG_RUSTFLAGS=-Cpanic=abort`.</dd>
     <dt>CG_GCCJIT_DUMP_TO_FILE</dt>
