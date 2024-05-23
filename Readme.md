@@ -16,6 +16,10 @@ A secondary goal is to check if using the gcc backend will provide any run-time 
 
 **rustup:** Follow the instructions on the official [website](https://www.rust-lang.org/tools/install)
 
+**DejaGnu:** Consider to install DejaGnu for which is necessary for running the libgccjit test suite. [website](https://www.gnu.org/software/dejagnu/#downloading)
+
+
+
 ## Building
 
 **This requires a patched libgccjit in order to work.
