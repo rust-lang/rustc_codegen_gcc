@@ -23,6 +23,10 @@ fn get_runners() -> Runners {
     runners.insert("--test-rustc", ("Run all rustc tests", test_rustc as Runner));
     runners
         .insert("--test-successful-rustc", ("Run successful rustc tests", test_successful_rustc));
+    runners.insert(
+        "--test-failing-ui-pattern-tests",
+        ("Run failing ui pattern tests", test_failing_ui_pattern_tests),
+    );
     runners.insert("--test-failing-rustc", ("Run failing rustc tests", test_failing_rustc));
     runners.insert("--projects", ("Run the tests of popular crates", test_projects));
     runners.insert("--test-libcore", ("Run libcore tests", test_libcore));
@@ -860,6 +864,7 @@ fn test_rustc_inner<F>(
     env: &Env,
     args: &TestArg,
     prepare_files_callback: F,
+    should_run_test_callback: Option<Box<dyn Fn(&Path) -> bool>>,
     test_type: &str,
 ) -> Result<(), String>
 where
@@ -876,54 +881,90 @@ where
     }
 
     if test_type == "ui" {
-        walk_dir(
-            rust_path.join("tests/ui"),
-            |dir| {
-                let dir_name = dir.file_name().and_then(|name| name.to_str()).unwrap_or("");
-                if [
-                    "abi",
-                    "extern",
-                    "unsized-locals",
-                    "proc-macro",
-                    "threads-sendsync",
-                    "borrowck",
-                    "test-attrs",
-                ]
-                .iter()
-                .any(|name| *name == dir_name)
-                {
-                    std::fs::remove_dir_all(dir).map_err(|error| {
-                        format!("Failed to remove folder `{}`: {:?}", dir.display(), error)
-                    })?;
+        if let Some(callback) = should_run_test_callback {
+            fn walk_dir<F, G>(
+                dir_path: PathBuf,
+                dir_callback: F,
+                file_callback: G,
+            ) -> Result<(), String>
+            where
+                F: Fn(&Path) -> Result<(), String> + Copy,
+                G: Fn(&Path) -> Result<(), String> + Copy,
+            {
+                if dir_path.is_dir() {
+                    for entry in std::fs::read_dir(dir_path).unwrap() {
+                        let entry = entry;
+                        let path = entry.unwrap().path();
+                        if path.is_dir() {
+                            dir_callback(&path)?;
+                            walk_dir(path, dir_callback, file_callback)?; // Recursive call
+                        } else if path.is_file() {
+                            file_callback(&path)?;
+                        }
+                    }
                 }
                 Ok(())
-            },
-            |_| Ok(()),
-        )?;
-
-        // These two functions are used to remove files that are known to not be working currently
-        // with the GCC backend to reduce noise.
-        fn dir_handling(dir: &Path) -> Result<(), String> {
-            if dir.file_name().map(|name| name == "auxiliary").unwrap_or(true) {
-                return Ok(());
             }
-            walk_dir(dir, dir_handling, file_handling)
+            walk_dir(
+                rust_path.join("tests/ui"),
+                |_dir| Ok(()),
+                |file_path| {
+                    if callback(file_path) {
+                        Ok(())
+                    } else {
+                        remove_file(file_path).map_err(|e| e.to_string())
+                    }
+                },
+            )?;
+        } else {
+            walk_dir(
+                rust_path.join("tests/ui"),
+                |dir| {
+                    let dir_name = dir.file_name().and_then(|name| name.to_str()).unwrap_or("");
+                    if [
+                        "abi",
+                        "extern",
+                        "unsized-locals",
+                        "proc-macro",
+                        "threads-sendsync",
+                        "borrowck",
+                        "test-attrs",
+                    ]
+                    .iter()
+                    .any(|name| *name == dir_name)
+                    {
+                        std::fs::remove_dir_all(dir).map_err(|error| {
+                            format!("Failed to remove folder `{}`: {:?}", dir.display(), error)
+                        })?;
+                    }
+                    Ok(())
+                },
+                |_| Ok(()),
+            )?;
+
+            // These two functions are used to remove files that are known to not be working currently
+            // with the GCC backend to reduce noise.
+            fn dir_handling(dir: &Path) -> Result<(), String> {
+                if dir.file_name().map(|name| name == "auxiliary").unwrap_or(true) {
+                    return Ok(());
+                }
+                walk_dir(dir, dir_handling, file_handling)
+            }
+            fn file_handling(file_path: &Path) -> Result<(), String> {
+                if !file_path.extension().map(|extension| extension == "rs").unwrap_or(false) {
+                    return Ok(());
+                }
+                let path_str = file_path.display().to_string().replace("\\", "/");
+                if should_not_remove_test(&path_str) {
+                    return Ok(());
+                } else if should_remove_test(file_path)? {
+                    return remove_file(&file_path);
+                }
+                Ok(())
+            }
+
+            walk_dir(rust_path.join("tests/ui"), dir_handling, file_handling)?;
         }
-        fn file_handling(file_path: &Path) -> Result<(), String> {
-            if !file_path.extension().map(|extension| extension == "rs").unwrap_or(false) {
-                return Ok(());
-            }
-            let path_str = file_path.display().to_string().replace("\\", "/");
-            if should_not_remove_test(&path_str) {
-                return Ok(());
-            } else if should_remove_test(file_path)? {
-                return remove_file(&file_path);
-            }
-            Ok(())
-        }
-
-        walk_dir(rust_path.join("tests/ui"), dir_handling, file_handling)?;
-
         let nb_parts = args.nb_parts.unwrap_or(0);
         if nb_parts > 0 {
             let current_part = args.current_part.unwrap();
@@ -1004,8 +1045,8 @@ where
 }
 
 fn test_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
-    test_rustc_inner(env, args, |_| Ok(false), "run-make")?;
-    test_rustc_inner(env, args, |_| Ok(false), "ui")
+    test_rustc_inner(env, args, |_| Ok(false), None, "run-make")?;
+    test_rustc_inner(env, args, |_| Ok(false), None, "ui")
 }
 
 fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
@@ -1013,6 +1054,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         env,
         args,
         prepare_files_callback_failing("tests/failing-run-make-tests.txt", "run-make"),
+        None,
         "run-make",
     );
 
@@ -1020,6 +1062,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         env,
         args,
         prepare_files_callback_failing("tests/failing-ui-tests.txt", "ui"),
+        None,
         "ui",
     );
 
@@ -1031,13 +1074,25 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         env,
         args,
         prepare_files_callback_success("tests/failing-ui-tests.txt", "ui"),
+        None,
         "ui",
     )?;
     test_rustc_inner(
         env,
         args,
         prepare_files_callback_success("tests/failing-run-make-tests.txt", "run-make"),
+        None,
         "run-make",
+    )
+}
+
+fn test_failing_ui_pattern_tests(env: &Env, args: &TestArg) -> Result<(), String> {
+    test_rustc_inner(
+        env,
+        args,
+        |_| Ok(false),
+        Some(Box::new(|path| should_remove_test(path).unwrap_or(false))),
+        "ui",
     )
 }
 
