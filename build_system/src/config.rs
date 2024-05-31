@@ -474,6 +474,19 @@ fn download_gccjit(
     tempfile_name: String,
     with_progress_bar: bool,
 ) -> Result<(), String> {
+    if std::env::consts::OS != "linux" || std::env::consts::ARCH != "x86_64" {
+        eprintln!(
+            "\
+        pre-compiled libgccjit.so not available for this os or architecture\n\
+        please compile it yourself and in the config.toml set\n\
+        `download-gccjit = false` and `gcc-path` to the appropriate directory\
+        "
+        );
+        return Err(String::from(
+            "no appropriate pre-compiled libgccjit.so available for download",
+        ));
+    }
+
     // Try curl. If that fails and we are on windows, fallback to PowerShell.
     let mut ret = run_command_with_output(
         &[
