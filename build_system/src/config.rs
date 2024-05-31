@@ -232,7 +232,7 @@ impl ConfigInfo {
             let is_in_ci = std::env::var("GITHUB_ACTIONS").is_ok();
 
             let url = format!(
-                "https://github.com/antoyo/gcc/releases/download/master-{}/libgccjit.so",
+                "https://github.com/rust-lang/gcc/releases/download/master-{}/libgccjit.so",
                 commit,
             );
 
