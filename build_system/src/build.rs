@@ -1,4 +1,5 @@
-use crate::config::{Channel, ConfigInfo};
+mod config;
+use crate::config::{Channel, ConfigInfo, download_gccjit_if_needed};
 use crate::utils::{
     copy_file, create_dir, get_sysroot_dir, run_command, run_command_with_output_and_env, walk_dir,
 };
@@ -226,29 +227,22 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
 
 /// Executes the build process.
 pub fn run() -> Result<(), String> {
+    let os = env::consts::OS;
+    let arch = env::consts::ARCH;
     let mut args = match BuildArg::new()? {
         Some(args) => args,
         None => return Ok(()),
     };
+
+    if os == "linux" && arch == "x86_64" {
+        if download_gccjit_if_needed()?.is_err() {
+                return Err("Failed to download libgccjit.so.".to_string());
+        }
+    } else {
+            eprintln!("Compile libgccjit yourself and set the appropriate option.");
+    }
+    
     args.config_info.setup_gcc_path()?;
     build_codegen(&mut args)?;
     Ok(())
-}
-
-fn main() {
-    // Check target OS and architecture
-    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
-
-    if target_os == "linux" && target_arch == "x86_64" {
-        println!("Target is Linux x86_64. Proceeding with build.");
-        
-        if let Err(e) = run() {
-            eprintln!("Build failed: {}", e);
-            std::process::exit(1);
-        }
-    } else {
-        println!("Target is not Linux x86_64. Skipping libgccjit.so download and build.");
-        println!("Please compile libgccjit yourself and set the appropriate option.");
-    }
 }
