@@ -234,3 +234,21 @@ pub fn run() -> Result<(), String> {
     build_codegen(&mut args)?;
     Ok(())
 }
+
+fn main() {
+    // Check target OS and architecture
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+
+    if target_os == "linux" && target_arch == "x86_64" {
+        println!("Target is Linux x86_64. Proceeding with build.");
+        
+        if let Err(e) = run() {
+            eprintln!("Build failed: {}", e);
+            std::process::exit(1);
+        }
+    } else {
+        println!("Target is not Linux x86_64. Skipping libgccjit.so download and build.");
+        println!("Please compile libgccjit yourself and set the appropriate option.");
+    }
+}
