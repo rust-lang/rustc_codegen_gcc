@@ -1,4 +1,3 @@
-mod config;
 use crate::config::{Channel, ConfigInfo, download_gccjit_if_needed};
 use crate::utils::{
     copy_file, create_dir, get_sysroot_dir, run_command, run_command_with_output_and_env, walk_dir,
@@ -241,7 +240,7 @@ pub fn run() -> Result<(), String> {
     } else {
             eprintln!("Compile libgccjit yourself and set the appropriate option.");
     }
-    
+
     args.config_info.setup_gcc_path()?;
     build_codegen(&mut args)?;
     Ok(())
