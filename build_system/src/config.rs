@@ -473,9 +473,9 @@ fn download_gccjit(
     } else {
         eprintln!(
             "\
-        pre-compiled libgccjit.so not available for this os or architecture\n\
-        please compile it yourself and in the config.toml set\n\
-        `download-gccjit = false` and `gcc-path` to the appropriate directory\
+        Pre-compiled libgccjit.so not available for this os or architecture.\n\
+        Please compile it yourself and update the `config.toml` file\n\
+        to `download-gccjit = false` and set `gcc-path` to the appropriate directory.\
         "
         );
         return Err(String::from(
