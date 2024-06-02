@@ -1053,7 +1053,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     let result1 = test_rustc_inner(
         env,
         args,
-        prepare_files_callback_failing("tests/failing-run-make-tests.txt", "run-make"),
+        prepare_files_callback_retain("tests/failing-run-make-tests.txt", "run-make"),
         None,
         "run-make",
     );
@@ -1061,7 +1061,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     let result2 = test_rustc_inner(
         env,
         args,
-        prepare_files_callback_failing("tests/failing-ui-tests.txt", "ui"),
+        prepare_files_callback_retain("tests/failing-ui-tests.txt", "ui"),
         None,
         "ui",
     );
@@ -1073,14 +1073,14 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     test_rustc_inner(
         env,
         args,
-        prepare_files_callback_success("tests/failing-ui-tests.txt", "ui"),
+        prepare_files_callback_remove("tests/failing-ui-tests.txt", "ui"),
         None,
         "ui",
     )?;
     test_rustc_inner(
         env,
         args,
-        prepare_files_callback_success("tests/failing-run-make-tests.txt", "run-make"),
+        prepare_files_callback_remove("tests/failing-run-make-tests.txt", "run-make"),
         None,
         "run-make",
     )
@@ -1090,13 +1090,13 @@ fn test_failing_ui_pattern_tests(env: &Env, args: &TestArg) -> Result<(), String
     test_rustc_inner(
         env,
         args,
-        |_| Ok(false),
+        prepare_files_callback_remove("tests/failing-ice-tests.txt", "ui"),
         Some(Box::new(|path| should_remove_test(path).unwrap_or(false))),
         "ui",
     )
 }
 
-fn prepare_files_callback_failing<'a>(
+fn prepare_files_callback_retain<'a>(
     file_path: &'a str,
     test_type: &'a str,
 ) -> impl Fn(&Path) -> Result<bool, String> + 'a {
@@ -1159,7 +1159,7 @@ fn prepare_files_callback_failing<'a>(
     }
 }
 
-fn prepare_files_callback_success<'a>(
+fn prepare_files_callback_remove<'a>(
     file_path: &'a str,
     test_type: &'a str,
 ) -> impl Fn(&Path) -> Result<bool, String> + 'a {
