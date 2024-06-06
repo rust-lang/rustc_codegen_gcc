@@ -30,3 +30,7 @@ tests/ui/lto/dylib-works.rs
 tests/ui/lto/all-crates.rs
 tests/ui/issues/issue-47364.rs
 tests/ui/functions-closures/parallel-codegen-closures.rs
+tests/ui/sepcomp/sepcomp-unwind.rs
+tests/ui/extern/issue-64655-extern-rust-must-allow-unwind.rs
+tests/ui/extern/issue-64655-allow-unwind-when-calling-panic-directly.rs
+tests/ui/unwind-no-uwtable.rs
