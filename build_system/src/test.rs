@@ -812,7 +812,7 @@ fn extended_sysroot_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     Ok(())
 }
 
-fn should_not_remove_test(file: &str) -> bool {
+fn valid_ui_error_pattern_test(file: &str) -> bool {
     // contains //~ERROR, but shouldn't be removed
     [
         "issues/auxiliary/issue-3136-a.rs",
@@ -828,7 +828,7 @@ fn should_not_remove_test(file: &str) -> bool {
 }
 
 #[rustfmt::skip]
-fn should_remove_test(file_path: &Path) -> Result<bool, String> {
+fn contains_ui_error_patterns(file_path: &Path) -> Result<bool, String> {
     // Tests generating errors.
     let file = File::open(file_path)
         .map_err(|error| format!("Failed to read `{}`: {:?}", file_path.display(), error))?;
@@ -860,6 +860,14 @@ fn should_remove_test(file_path: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+// # Parameters
+//
+// * `env`: An environment variable that provides context for the function.
+// * `args`: The arguments passed to the test. This could include things like the flags, config etc.
+// * `prepare_files_callback`: A callback function that prepares the files needed for the test. Its used to remove/retain tests giving Error to run various rust test suits.
+// * `should_run_test_callback`: An optional callback function that determines whether a test should be run or not. Used to run tests following specific conditions by defining conditions in bool returning function and sending it as an argument.
+// * `test_type`: A string that indicates the type of the test being run.
+//
 fn test_rustc_inner<F>(
     env: &Env,
     args: &TestArg,
@@ -881,7 +889,9 @@ where
     }
 
     if test_type == "ui" {
+        // uses contains_ui_error_patterns function being sent as callback to run only only error pattern tests
         if let Some(callback) = should_run_test_callback {
+            // Redefining walk_dir to handle subdirectories
             fn walk_dir<F, G>(
                 dir_path: PathBuf,
                 dir_callback: F,
@@ -955,9 +965,9 @@ where
                     return Ok(());
                 }
                 let path_str = file_path.display().to_string().replace("\\", "/");
-                if should_not_remove_test(&path_str) {
+                if valid_ui_error_pattern_test(&path_str) {
                     return Ok(());
-                } else if should_remove_test(file_path)? {
+                } else if contains_ui_error_patterns(file_path)? {
                     return remove_file(&file_path);
                 }
                 Ok(())
@@ -1053,7 +1063,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     let result1 = test_rustc_inner(
         env,
         args,
-        prepare_files_callback_retain("tests/failing-run-make-tests.txt", "run-make"),
+        retain_files_callback("tests/failing-run-make-tests.txt", "run-make"),
         None,
         "run-make",
     );
@@ -1061,7 +1071,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     let result2 = test_rustc_inner(
         env,
         args,
-        prepare_files_callback_retain("tests/failing-ui-tests.txt", "ui"),
+        retain_files_callback("tests/failing-ui-tests.txt", "ui"),
         None,
         "ui",
     );
@@ -1073,14 +1083,14 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
     test_rustc_inner(
         env,
         args,
-        prepare_files_callback_remove("tests/failing-ui-tests.txt", "ui"),
+        remove_files_callback("tests/failing-ui-tests.txt", "ui"),
         None,
         "ui",
     )?;
     test_rustc_inner(
         env,
         args,
-        prepare_files_callback_remove("tests/failing-run-make-tests.txt", "run-make"),
+        remove_files_callback("tests/failing-run-make-tests.txt", "run-make"),
         None,
         "run-make",
     )
@@ -1090,13 +1100,13 @@ fn test_failing_ui_pattern_tests(env: &Env, args: &TestArg) -> Result<(), String
     test_rustc_inner(
         env,
         args,
-        prepare_files_callback_remove("tests/failing-ice-tests.txt", "ui"),
-        Some(Box::new(|path| should_remove_test(path).unwrap_or(false))),
+        remove_files_callback("tests/failing-ice-tests.txt", "ui"),
+        Some(Box::new(|path| contains_ui_error_patterns(path).unwrap_or(false))),
         "ui",
     )
 }
 
-fn prepare_files_callback_retain<'a>(
+fn retain_files_callback<'a>(
     file_path: &'a str,
     test_type: &'a str,
 ) -> impl Fn(&Path) -> Result<bool, String> + 'a {
@@ -1159,7 +1169,7 @@ fn prepare_files_callback_retain<'a>(
     }
 }
 
-fn prepare_files_callback_remove<'a>(
+fn remove_files_callback<'a>(
     file_path: &'a str,
     test_type: &'a str,
 ) -> impl Fn(&Path) -> Result<bool, String> + 'a {

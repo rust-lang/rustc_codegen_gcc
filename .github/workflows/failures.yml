@@ -102,9 +102,8 @@ jobs:
     - name: Run failing ui pattern tests for ICE
       id: ui-tests
       run: |
-        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --clean --build-sysroot --test-failing-ui-pattern-tests ${{ matrix.libgccjit_version.extra }} | tee output_log_ui
+        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --test-failing-ui-pattern-tests ${{ matrix.libgccjit_version.extra }} | tee output_log_ui
         if grep -q "the compiler unexpectedly panicked" output_log_ui; then
           echo "Error: 'the compiler unexpectedly panicked' found in output logs. CI Error!!"
           exit 1
         fi
-        rg --text "test result" output_log_ui >> $GITHUB_STEP_SUMMARY
