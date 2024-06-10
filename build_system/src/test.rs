@@ -889,47 +889,24 @@ where
     }
 
     if test_type == "ui" {
-        // uses contains_ui_error_patterns function being sent as callback to run only only error pattern tests
         if run_error_pattern_test {
-            // Redefining walk_dir to handle subdirectories
-            fn walk_dir<F, G>(
-                dir_path: PathBuf,
-                dir_callback: F,
-                file_callback: G,
-            ) -> Result<(), String>
-            where
-                F: Fn(&Path) -> Result<(), String> + Copy,
-                G: Fn(&Path) -> Result<(), String> + Copy,
-            {
-                if dir_path.is_dir() {
-                    for entry in std::fs::read_dir(dir_path).unwrap() {
-                        let entry = entry;
-                        let path = entry.unwrap().path();
-                        if path.is_dir() {
-                            dir_callback(&path)?;
-                            walk_dir(path, dir_callback, file_callback)?; // Recursive call
-                        } else if path.is_file() {
-                            file_callback(&path)?;
-                        }
-                    }
-                }
-                Ok(())
-            }
+            // After we removed the error tests that are known to panic with rustc_codegen_gcc, we now remove the passing tests since this runs the error tests.
             walk_dir(
                 rust_path.join("tests/ui"),
-                |_dir| Ok(()),
-                |file_path| {
+                &mut |_dir| Ok(()),
+                &mut |file_path| {
                     if contains_ui_error_patterns(file_path)? {
                         Ok(())
                     } else {
                         remove_file(file_path).map_err(|e| e.to_string())
                     }
                 },
+                true,
             )?;
         } else {
             walk_dir(
                 rust_path.join("tests/ui"),
-                |dir| {
+                &mut |dir| {
                     let dir_name = dir.file_name().and_then(|name| name.to_str()).unwrap_or("");
                     if [
                         "abi",
@@ -949,7 +926,8 @@ where
                     }
                     Ok(())
                 },
-                |_| Ok(()),
+                &mut |_| Ok(()),
+                false,
             )?;
 
             // These two functions are used to remove files that are known to not be working currently
@@ -958,7 +936,8 @@ where
                 if dir.file_name().map(|name| name == "auxiliary").unwrap_or(true) {
                     return Ok(());
                 }
-                walk_dir(dir, dir_handling, file_handling)
+
+                walk_dir(dir, &mut dir_handling, &mut file_handling, false)
             }
             fn file_handling(file_path: &Path) -> Result<(), String> {
                 if !file_path.extension().map(|extension| extension == "rs").unwrap_or(false) {
@@ -973,7 +952,7 @@ where
                 Ok(())
             }
 
-            walk_dir(rust_path.join("tests/ui"), dir_handling, file_handling)?;
+            walk_dir(rust_path.join("tests/ui"), &mut dir_handling, &mut file_handling, false)?;
         }
         let nb_parts = args.nb_parts.unwrap_or(0);
         if nb_parts > 0 {
