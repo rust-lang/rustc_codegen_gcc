@@ -16,14 +16,8 @@
 #![allow(internal_features)]
 #![doc(rust_logo)]
 #![feature(rustdoc_internals)]
-#![feature(
-    rustc_private,
-    decl_macro,
-    associated_type_bounds,
-    never_type,
-    trusted_len,
-    hash_raw_entry
-)]
+#![feature(rustc_private, decl_macro, never_type, trusted_len, hash_raw_entry)]
+#![cfg_attr(bootstrap, feature(associated_type_bounds))]
 #![allow(broken_intra_doc_links)]
 #![recursion_limit = "256"]
 #![warn(rust_2018_idioms)]

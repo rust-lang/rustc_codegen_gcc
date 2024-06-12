@@ -844,6 +844,7 @@ fn contains_ui_error_patterns(file_path: &Path) -> Result<bool, String> {
             "-Cllvm-args",
             "//~",
             "thread",
+            "-Zsanitizer=cfi",
         ]
             .iter()
             .any(|check| line.contains(check))
