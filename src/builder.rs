@@ -225,7 +225,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         let mut on_stack_param_indices = FxHashSet::default();
         if let Some(indices) = self.on_stack_params.borrow().get(&gcc_func) {
-            on_stack_param_indices = indices.clone();
+            on_stack_param_indices.clone_from(indices);
         }
 
         if all_args_match {
@@ -256,8 +256,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                         actual_val.dereference(self.location).to_rvalue()
                     } else {
                         assert!(
-                            !((actual_ty.is_vector() && !expected_ty.is_vector())
-                                || (!actual_ty.is_vector() && expected_ty.is_vector())),
+                            (!expected_ty.is_vector() || actual_ty.is_vector())
+                                && (expected_ty.is_vector() || !actual_ty.is_vector()),
                             "{:?} ({}) -> {:?} ({}), index: {:?}[{}]",
                             actual_ty,
                             actual_ty.is_vector(),
@@ -277,8 +277,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .collect();
 
         // NOTE: to take into account variadic functions.
-        for i in casted_args.len()..args.len() {
-            casted_args.push(args[i]);
+        for arg in args.iter().skip(casted_args.len()) {
+            casted_args.push(*arg);
         }
 
         Cow::Owned(casted_args)
@@ -353,7 +353,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let function_address_names = self.function_address_names.borrow();
             let original_function_name = function_address_names.get(&func_ptr);
             llvm::adjust_intrinsic_arguments(
-                &self,
+                self,
                 gcc_func,
                 args.into(),
                 &func_name,
@@ -361,7 +361,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             )
         };
         let args_adjusted = args.len() != previous_arg_count;
-        let args = self.check_ptr_call("call", func_ptr, &*args);
+        let args = self.check_ptr_call("call", func_ptr, &args);
 
         // gccjit requires to use the result of functions, even when it's not used.
         // That's why we assign the result to a local or call add_eval().
@@ -373,7 +373,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             unsafe { RETURN_VALUE_COUNT += 1 };
             let return_value = self.cx.context.new_call_through_ptr(self.location, func_ptr, &args);
             let return_value = llvm::adjust_intrinsic_return_value(
-                &self,
+                self,
                 return_value,
                 &func_name,
                 &args,
@@ -441,7 +441,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.block.add_assignment(
             self.location,
             result,
-            self.cx.context.new_call(self.location, func, &args),
+            self.cx.context.new_call(self.location, func, args),
         );
         result.to_rvalue()
     }
@@ -596,7 +596,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     ) -> RValue<'gcc> {
         let try_block = self.current_func().new_block("try");
 
-        let current_block = self.block.clone();
+        let current_block = self.block;
         self.block = try_block;
         let call = self.call(typ, fn_attrs, None, func, args, None, instance); // TODO(antoyo): use funclet here?
         self.block = current_block;
@@ -1125,7 +1125,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // the following cast is required to avoid this error:
         // gcc_jit_context_new_call: mismatching types for argument 2 of function "__atomic_store_4": assignment to param arg1 (type: int) from loadedValue3577 (type: unsigned int  __attribute__((aligned(4))))
         let int_type = atomic_store.get_param(1).to_rvalue().get_type();
-        let value = self.context.new_cast(self.location, value, int_type);
+        let value = self.context.new_bitcast(self.location, value, int_type);
         self.llbb().add_eval(
             self.location,
             self.context.new_call(self.location, atomic_store, &[ptr, value, ordering]),
@@ -1172,7 +1172,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // NOTE: due to opaque pointers now being used, we need to cast here.
         let ptr = self.context.new_cast(self.location, ptr, typ.make_pointer());
         // NOTE: array indexing is always considered in bounds in GCC (TODO(antoyo): to be verified).
-        let mut indices = indices.into_iter();
+        let mut indices = indices.iter();
         let index = indices.next().expect("first index in inbounds_gep");
         let mut result = self.context.new_array_access(self.location, ptr, *index);
         for index in indices {
@@ -1676,7 +1676,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn zext(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         // FIXME(antoyo): this does not zero-extend.
-        if value.get_type().is_bool() && dest_typ.is_i8(&self.cx) {
+        if value.get_type().is_bool() && dest_typ.is_i8(self.cx) {
             // FIXME(antoyo): hack because base::from_immediate converts i1 to i8.
             // Fix the code in codegen_ssa::base::from_immediate.
             return value;
@@ -2049,7 +2049,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 self.context.new_rvalue_from_vector(self.location, mask_type, &vector_elements);
             let shifted = self.context.new_rvalue_vector_perm(self.location, res, res, mask);
             shift *= 2;
-            res = op(res, shifted, &self.context);
+            res = op(res, shifted, self.context);
         }
         self.context
             .new_vector_access(self.location, res, self.context.new_rvalue_zero(self.int_type))
@@ -2065,7 +2065,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     pub fn vector_reduce_op(&mut self, src: RValue<'gcc>, op: BinaryOp) -> RValue<'gcc> {
-        let loc = self.location.clone();
+        let loc = self.location;
         self.vector_reduce(src, |a, b, context| context.new_binary_op(loc, op, a.get_type(), a, b))
     }
 
@@ -2082,7 +2082,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
         (0..element_count)
-            .into_iter()
             .map(|i| {
                 self.context
                     .new_vector_access(
@@ -2113,7 +2112,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let vector_type = src.get_type().unqualified().dyncast_vector().expect("vector type");
         let element_count = vector_type.get_num_units();
         (0..element_count)
-            .into_iter()
             .map(|i| {
                 self.context
                     .new_vector_access(
@@ -2133,7 +2131,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     // Inspired by Hacker's Delight min implementation.
     pub fn vector_reduce_min(&mut self, src: RValue<'gcc>) -> RValue<'gcc> {
-        let loc = self.location.clone();
+        let loc = self.location;
         self.vector_reduce(src, |a, b, context| {
             let differences_or_zeros = difference_or_zero(loc, a, b, context);
             context.new_binary_op(loc, BinaryOp::Plus, b.get_type(), b, differences_or_zeros)
@@ -2142,7 +2140,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
     // Inspired by Hacker's Delight max implementation.
     pub fn vector_reduce_max(&mut self, src: RValue<'gcc>) -> RValue<'gcc> {
-        let loc = self.location.clone();
+        let loc = self.location;
         self.vector_reduce(src, |a, b, context| {
             let differences_or_zeros = difference_or_zero(loc, a, b, context);
             context.new_binary_op(loc, BinaryOp::Minus, a.get_type(), a, differences_or_zeros)
@@ -2337,7 +2335,7 @@ impl<'tcx> HasParamEnv<'tcx> for Builder<'_, '_, 'tcx> {
 
 impl<'tcx> HasTargetSpec for Builder<'_, '_, 'tcx> {
     fn target_spec(&self) -> &Target {
-        &self.cx.target_spec()
+        self.cx.target_spec()
     }
 }
 

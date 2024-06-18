@@ -389,7 +389,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn sess(&self) -> &'tcx Session {
-        &self.tcx.sess
+        self.tcx.sess
     }
 
     pub fn bitcast_if_needed(
@@ -436,7 +436,9 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         let func_name = self.tcx.symbol_name(instance).name;
 
         let func = if self.intrinsics.borrow().contains_key(func_name) {
-            self.intrinsics.borrow()[func_name].clone()
+            self.intrinsics.borrow()[func_name]
+        } else if let Some(variable) = self.get_declared_value(func_name) {
+            return variable;
         } else {
             get_fn(self, instance)
         };
@@ -488,7 +490,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 let symbol_name = tcx.symbol_name(instance).name;
                 let fn_abi = self.fn_abi_of_instance(instance, ty::List::empty());
                 self.linkage.set(FunctionType::Extern);
-                let func = self.declare_fn(symbol_name, &fn_abi);
+                let func = self.declare_fn(symbol_name, fn_abi);
                 let func: RValue<'gcc> = unsafe { std::mem::transmute(func) };
                 func
             }
@@ -508,7 +510,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     }
 
     fn sess(&self) -> &Session {
-        &self.tcx.sess
+        self.tcx.sess
     }
 
     fn check_overflow(&self) -> bool {
@@ -529,7 +531,7 @@ impl<'gcc, 'tcx> MiscMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
     fn declare_c_main(&self, fn_type: Self::Type) -> Option<Self::Function> {
         let entry_name = self.sess().target.entry_name.as_ref();
-        if self.get_declared_value(entry_name).is_none() {
+        if !self.functions.borrow().contains_key(entry_name) {
             Some(self.declare_entry_fn(entry_name, fn_type, ()))
         } else {
             // If the symbol already exists, it is an error: for example, the user wrote
@@ -621,8 +623,8 @@ impl<'b, 'tcx> CodegenCx<'b, 'tcx> {
         // user defined names
         let mut name = String::with_capacity(prefix.len() + 6);
         name.push_str(prefix);
-        name.push_str(".");
-        name.push_str(&(idx as u64).to_base(ALPHANUMERIC_ONLY));
+        name.push('.');
+        base_n::push_str(idx as u128, base_n::ALPHANUMERIC_ONLY, &mut name);
         name
     }
 }
