@@ -452,8 +452,8 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         );
 
         match *in_elem.kind() {
-            ty::RawPtr(p) => {
-                let metadata = p.ty.ptr_metadata_ty(bx.tcx, |ty| {
+            ty::RawPtr(p_ty, _) => {
+                let metadata = p_ty.ptr_metadata_ty(bx.tcx, |ty| {
                     bx.tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), ty)
                 });
                 require!(
@@ -466,8 +466,8 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             }
         }
         match *out_elem.kind() {
-            ty::RawPtr(p) => {
-                let metadata = p.ty.ptr_metadata_ty(bx.tcx, |ty| {
+            ty::RawPtr(p_ty, _) => {
+                let metadata = p_ty.ptr_metadata_ty(bx.tcx, |ty| {
                     bx.tcx.normalize_erasing_regions(ty::ParamEnv::reveal_all(), ty)
                 });
                 require!(
@@ -492,7 +492,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(bx.context.new_rvalue_from_vector(bx.location, llret_ty, &values));
     }
 
-    if name == sym::simd_expose_addr {
+    if name == sym::simd_expose_provenance {
         require_simd!(ret_ty, InvalidMonomorphization::SimdReturn { span, name, ty: ret_ty });
         let (out_len, out_elem) = ret_ty.simd_size_and_type(bx.tcx());
 
@@ -509,7 +509,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         );
 
         match *in_elem.kind() {
-            ty::RawPtr(_) => {}
+            ty::RawPtr(_, _) => {}
             _ => {
                 return_error!(InvalidMonomorphization::ExpectedPointer { span, name, ty: in_elem })
             }
@@ -531,7 +531,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(bx.context.new_rvalue_from_vector(bx.location, llret_ty, &values));
     }
 
-    if name == sym::simd_from_exposed_addr {
+    if name == sym::simd_with_exposed_provenance {
         require_simd!(ret_ty, InvalidMonomorphization::SimdReturn { span, name, ty: ret_ty });
         let (out_len, out_elem) = ret_ty.simd_size_and_type(bx.tcx());
 
@@ -552,7 +552,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             _ => return_error!(InvalidMonomorphization::ExpectedUsize { span, name, ty: in_elem }),
         }
         match *out_elem.kind() {
-            ty::RawPtr(_) => {}
+            ty::RawPtr(_, _) => {}
             _ => {
                 return_error!(InvalidMonomorphization::ExpectedPointer { span, name, ty: out_elem })
             }
