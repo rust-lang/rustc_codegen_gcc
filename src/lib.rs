@@ -413,7 +413,10 @@ impl WriteBackendMethods for GccCodegenBackend {
         back::write::codegen(cgcx, dcx, module, config)
     }
 
-    fn prepare_thin(_module: ModuleCodegen<Self::Module>, _emit_summary: bool) -> (String, Self::ThinBuffer) {
+    fn prepare_thin(
+        _module: ModuleCodegen<Self::Module>,
+        _emit_summary: bool,
+    ) -> (String, Self::ThinBuffer) {
         unimplemented!();
     }
 
