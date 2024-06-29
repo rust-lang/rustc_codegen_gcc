@@ -51,30 +51,3 @@ If you wish to build a custom sysroot, pass the path of your sysroot source to `
 
 If you need to check what gccjit is generating (GIMPLE), then take a look at how to
 generate it in [gimple.md](./doc/gimple.md).
-
-### How to build a cross-compiling libgccjit
-
-#### Building libgccjit
-
- * Follow the instructions on [this repo](https://github.com/cross-cg-gcc-tools/cross-gcc).
-
-#### Configuring rustc_codegen_gcc
-
- * Run `./y.sh prepare --cross` so that the sysroot is patched for the cross-compiling case.
- * Set the path to the cross-compiling libgccjit in `gcc-path` (in `config.toml`).
- * Make sure you have the linker for your target (for instance `m68k-unknown-linux-gnu-gcc`) in your `$PATH`. Currently, the linker name is hardcoded as being `$TARGET-gcc`. Specify the target when building the sysroot: `./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu`.
- * Build your project by specifying the target: `OVERWRITE_TARGET_TRIPLE=m68k-unknown-linux-gnu ../y.sh cargo build --target m68k-unknown-linux-gnu`.
-
-If the target is not yet supported by the Rust compiler, create a [target specification file](https://docs.rust-embedded.org/embedonomicon/custom-target.html) (note that the `arch` specified in this file must be supported by the rust compiler).
-Then, you can use it the following way:
-
- * Add the target specification file using `--target` as an **absolute** path to build the sysroot: `./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target $(pwd)/m68k-unknown-linux-gnu.json`
- * Build your project by specifying the target specification file: `OVERWRITE_TARGET_TRIPLE=m68k-unknown-linux-gnu ../y.sh cargo build --target path/to/m68k-unknown-linux-gnu.json`.
-
-If you get the following error:
-
-```
-/usr/bin/ld: unrecognised emulation mode: m68kelf
-```
-
-Make sure you set `gcc-path` (in `config.toml`) to the install directory.
