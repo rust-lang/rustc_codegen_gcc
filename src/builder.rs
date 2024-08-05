@@ -1219,7 +1219,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             // TODO(antoyo): nothing to do as it is only for LLVM?
             return value;
         }
-        self.context.new_cast(self.location, value, dest_ty)
+
+        self.extend_int(value, dest_ty, true)
     }
 
     fn fptoui(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
@@ -1700,9 +1701,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         call
     }
 
-    fn zext(&mut self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
-        // FIXME(antoyo): this does not zero-extend.
-        self.gcc_int_cast(value, dest_typ)
+    fn zext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        self.extend_int(value, dest_ty, false)
     }
 
     fn cx(&self) -> &CodegenCx<'gcc, 'tcx> {

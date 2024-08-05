@@ -5,6 +5,7 @@
 use gccjit::{BinaryOp, ComparisonOp, FunctionType, Location, RValue, ToRValue, Type, UnaryOp};
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
 use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeMethods, BuilderMethods, OverflowOp};
+use rustc_middle::bug;
 use rustc_middle::ty::{ParamEnv, Ty};
 use rustc_target::abi::{
     call::{ArgAbi, ArgAttributes, Conv, FnAbi, PassMode},
@@ -864,6 +865,21 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         loc: Option<Location<'gcc>>,
     ) -> RValue<'gcc> {
         self.bitwise_operation(BinaryOp::BitwiseOr, a, b, loc)
+    }
+
+    pub fn extend_int(
+        &self,
+        value: RValue<'gcc>,
+        dest_ty: Type<'gcc>,
+        signed: bool,
+    ) -> RValue<'gcc> {
+        let src_ty = value.get_type();
+        if !self.is_int_type_or_bool(src_ty) || !self.is_int_type_or_bool(dest_ty) {
+            bug!("got extend_int for non-int type {:?} -> {:?}", src_ty, dest_ty);
+        }
+
+        let intermediate_ty = self.get_matching_int_type(src_ty, signed);
+        self.gcc_int_cast(self.gcc_int_cast(value, intermediate_ty), dest_ty)
     }
 
     // TODO(antoyo): can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
