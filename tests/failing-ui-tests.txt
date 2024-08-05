@@ -31,8 +31,6 @@ tests/ui/panic-runtime/abort-link-to-unwinding-crates.rs
 tests/ui/panic-runtime/abort.rs
 tests/ui/panic-runtime/link-to-abort.rs
 tests/ui/unwind-no-uwtable.rs
-tests/ui/parser/unclosed-delimiter-in-dep.rs
-tests/ui/consts/missing_span_in_backtrace.rs
 tests/ui/drop/dynamic-drop.rs
 tests/ui/issues/issue-40883.rs
 tests/ui/issues/issue-43853.rs
@@ -60,17 +58,11 @@ tests/ui/async-await/deep-futures-are-freeze.rs
 tests/ui/coroutine/resume-after-return.rs
 tests/ui/simd/masked-load-store.rs
 tests/ui/simd/repr_packed.rs
-tests/ui/async-await/in-trait/dont-project-to-specializable-projection.rs
-tests/ui/consts/try-operator.rs
 tests/ui/coroutine/unwind-abort-mix.rs
 tests/ui/type-alias-impl-trait/rpit_tait_equality_in_canonical_query.rs
 tests/ui/impl-trait/equality-in-canonical-query.rs
-tests/ui/consts/issue-miri-1910.rs
 tests/ui/mir/mir_heavy_promoted.rs
 tests/ui/consts/const_cmp_type_id.rs
-tests/ui/consts/issue-73976-monomorphic.rs
-tests/ui/consts/issue-94675.rs
-tests/ui/rfcs/rfc-2632-const-trait-impl/const-drop-fail.rs
 tests/ui/rfcs/rfc-2632-const-trait-impl/const-drop.rs
 tests/ui/runtime/on-broken-pipe/child-processes.rs
 tests/ui/sanitizer/cfi-assoc-ty-lifetime-issue-123053.rs
@@ -90,7 +82,6 @@ tests/ui/backtrace/dylib-dep.rs
 tests/ui/errors/pic-linker.rs
 tests/ui/delegation/fn-header.rs
 tests/ui/consts/zst_no_llvm_alloc.rs
-tests/ui/consts/const-eval/parse_ints.rs
 tests/ui/simd/intrinsic/generic-arithmetic-pass.rs
 tests/ui/backtrace/backtrace.rs
 tests/ui/lifetimes/tail-expr-lock-poisoning.rs
