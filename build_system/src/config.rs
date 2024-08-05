@@ -97,7 +97,7 @@ impl ConfigFile {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct ConfigInfo {
     pub target: String,
     pub target_triple: String,
@@ -122,6 +122,7 @@ pub struct ConfigInfo {
     pub no_download: bool,
     pub no_default_features: bool,
     pub backend: Option<String>,
+    pub features: Vec<String>,
 }
 
 impl ConfigInfo {
@@ -132,6 +133,13 @@ impl ConfigInfo {
         args: &mut impl Iterator<Item = String>,
     ) -> Result<bool, String> {
         match arg {
+            "--features" => {
+                if let Some(arg) = args.next() {
+                    self.features.push(arg);
+                } else {
+                    return Err("Expected a value after `--features`, found nothing".to_string());
+                }
+            }
             "--target" => {
                 if let Some(arg) = args.next() {
                     self.target = arg;
@@ -442,6 +450,7 @@ impl ConfigInfo {
     pub fn show_usage() {
         println!(
             "\
+    --features [arg]       : Add a new feature [arg]
     --target-triple [arg]  : Set the target triple to [arg]
     --target [arg]         : Set the target to [arg]
     --out-dir              : Location where the files will be generated

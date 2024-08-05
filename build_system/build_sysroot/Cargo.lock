@@ -4,12 +4,12 @@ version = 3
 
 [[package]]
 name = "addr2line"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a30b2e23b9e17a9f90641c7ab1549cd9b44f296d3ccbf309d2863cfe398a0cb"
+checksum = "6e4503c46a5c0c7844e948c9a4d6acd9f50cccb4de1c48eb9e291ea17470c678"
 dependencies = [
  "compiler_builtins",
- "gimli",
+ "gimli 0.29.0",
  "rustc-std-workspace-alloc",
  "rustc-std-workspace-core",
 ]
@@ -50,9 +50,9 @@ dependencies = [
 
 [[package]]
 name = "compiler_builtins"
-version = "0.1.109"
+version = "0.1.113"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11973008a8cf741fe6d22f339eba21fd0ca81e2760a769ba8243ed6c21edd7e"
+checksum = "f7a6025b8e1885a239509ec7a00859e721eecb5725a64206ab1a6a96f7b55660"
 dependencies = [
  "rustc-std-workspace-core",
 ]
@@ -107,6 +107,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40ecd4077b5ae9fd2e9e169b102c6c330d0605168eb0e8bf79952b256dbefffd"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -120,9 +131,9 @@ dependencies = [
 
 [[package]]
 name = "hermit-abi"
-version = "0.3.9"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
+checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
 dependencies = [
  "compiler_builtins",
  "rustc-std-workspace-alloc",
@@ -162,9 +173,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.32.2"
+version = "0.36.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a622008b6e321afc04970976f62ee297fdbaa6f95318ca343e3eebb9648441"
+checksum = "3f203fa8daa7bb185f760ae12bd8e097f63d17041dcdcaf675ac54cdf863170e"
 dependencies = [
  "compiler_builtins",
  "memchr",
@@ -226,9 +237,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-demangle"
-version = "0.1.23"
+version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
+checksum = "719b953e2095829ee67db738b3bfa9fa368c94900df327b3f07fe6e794d2fe1f"
 dependencies = [
  "compiler_builtins",
  "rustc-std-workspace-core",
@@ -310,8 +321,6 @@ dependencies = [
  "core",
  "getopts",
  "libc",
- "panic_abort",
- "panic_unwind",
  "std",
 ]
 
@@ -344,7 +353,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37a19a21a537f635c16c7576f22d0f2f7d63353c1337ad4ce0d8001c7952a25b"
 dependencies = [
  "compiler_builtins",
- "gimli",
+ "gimli 0.28.1",
  "rustc-std-workspace-core",
 ]
 
