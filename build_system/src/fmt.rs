@@ -1,7 +1,6 @@
+use crate::utils::run_command_with_output;
 use std::ffi::OsStr;
 use std::path::Path;
-
-use crate::utils::run_command_with_output;
 
 fn show_usage() {
     println!(

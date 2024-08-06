@@ -278,7 +278,7 @@ impl ConfigInfo {
         self.gcc_path = match gcc_path {
             Some(path) => path,
             None => {
-                return Err(format!("missing `gcc-path` value from `{}`", config_file.display(),));
+                return Err(format!("missing `gcc-path` value from `{}`", config_file.display()))
             }
         };
         Ok(())

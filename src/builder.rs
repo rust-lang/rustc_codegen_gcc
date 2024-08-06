@@ -40,9 +40,6 @@ use crate::type_of::LayoutGccExt;
 // TODO(antoyo)
 type Funclet = ();
 
-// TODO(antoyo): remove this variable.
-static mut RETURN_VALUE_COUNT: usize = 0;
-
 enum ExtremumOperation {
     Max,
     Min,
@@ -51,13 +48,18 @@ enum ExtremumOperation {
 pub struct Builder<'a: 'gcc, 'gcc, 'tcx> {
     pub cx: &'a CodegenCx<'gcc, 'tcx>,
     pub block: Block<'gcc>,
-    stack_var_count: Cell<usize>,
     pub location: Option<Location<'gcc>>,
+    value_counter: Cell<u64>,
 }
 
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn with_cx(cx: &'a CodegenCx<'gcc, 'tcx>, block: Block<'gcc>) -> Self {
-        Builder { cx, block, stack_var_count: Cell::new(0), location: None }
+        Builder { cx, block, location: None, value_counter: Cell::new(0) }
+    }
+
+    fn next_value_counter(&self) -> u64 {
+        self.value_counter.set(self.value_counter.get() + 1);
+        self.value_counter.get()
     }
 
     fn atomic_extremum(
@@ -323,11 +325,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let void_type = self.context.new_type::<()>();
         let current_func = self.block.get_function();
         if return_type != void_type {
-            unsafe { RETURN_VALUE_COUNT += 1 };
             let result = current_func.new_local(
                 self.location,
                 return_type,
-                &format!("returnValue{}", unsafe { RETURN_VALUE_COUNT }),
+                &format!("returnValue{}", self.next_value_counter()),
             );
             self.block.add_assignment(
                 self.location,
@@ -383,7 +384,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let current_func = self.block.get_function();
 
         if return_type != void_type {
-            unsafe { RETURN_VALUE_COUNT += 1 };
             let return_value = self.cx.context.new_call_through_ptr(self.location, func_ptr, &args);
             let return_value = llvm::adjust_intrinsic_return_value(
                 self,
@@ -396,7 +396,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             let result = current_func.new_local(
                 self.location,
                 return_value.get_type(),
-                &format!("ptrReturnValue{}", unsafe { RETURN_VALUE_COUNT }),
+                &format!("ptrReturnValue{}", self.next_value_counter()),
             );
             self.block.add_assignment(self.location, result, return_value);
             result.to_rvalue()
@@ -445,11 +445,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         let return_type = self.context.new_type::<bool>();
         let current_func = self.block.get_function();
         // TODO(antoyo): return the new_call() directly? Since the overflow function has no side-effects.
-        unsafe { RETURN_VALUE_COUNT += 1 };
         let result = current_func.new_local(
             self.location,
             return_type,
-            &format!("overflowReturnValue{}", unsafe { RETURN_VALUE_COUNT }),
+            &format!("overflowReturnValue{}", self.next_value_counter()),
         );
         self.block.add_assignment(
             self.location,
@@ -933,9 +932,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn alloca(&mut self, size: Size, align: Align) -> RValue<'gcc> {
         let ty = self.cx.type_array(self.cx.type_i8(), size.bytes()).get_aligned(align.bytes());
         // TODO(antoyo): It might be better to return a LValue, but fixing the rustc API is non-trivial.
-        self.stack_var_count.set(self.stack_var_count.get() + 1);
         self.current_func()
-            .new_local(self.location, ty, &format!("stack_var_{}", self.stack_var_count.get()))
+            .new_local(self.location, ty, &format!("stack_var_{}", self.next_value_counter()))
             .get_address(self.location)
     }
 
@@ -958,11 +956,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         };
         let ptr = self.context.new_cast(self.location, ptr, aligned_type.make_pointer());
         let deref = ptr.dereference(self.location).to_rvalue();
-        unsafe { RETURN_VALUE_COUNT += 1 };
         let loaded_value = function.new_local(
             self.location,
             aligned_type,
-            &format!("loadedValue{}", unsafe { RETURN_VALUE_COUNT }),
+            &format!("loadedValue{}", self.next_value_counter()),
         );
         block.add_assignment(self.location, loaded_value, deref);
         loaded_value.to_rvalue()
