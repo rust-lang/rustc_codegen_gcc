@@ -10,12 +10,12 @@ use rustc_data_structures::base_n::ToBaseN;
 use rustc_data_structures::base_n::ALPHANUMERIC_ONLY;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::mono::CodegenUnit;
-use rustc_middle::span_bug;
 use rustc_middle::ty::layout::{
     FnAbiError, FnAbiOf, FnAbiOfHelpers, FnAbiRequest, HasParamEnv, HasTyCtxt, LayoutError,
     LayoutOfHelpers, TyAndLayout,
 };
 use rustc_middle::ty::{self, Instance, ParamEnv, PolyExistentialTraitRef, Ty, TyCtxt};
+use rustc_middle::{bug, span_bug};
 use rustc_session::Session;
 use rustc_span::{source_map::respan, Span};
 use rustc_target::abi::{
@@ -358,6 +358,31 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             value.get_type()
         );
         function
+    }
+
+    pub fn get_matching_int_type(&self, typ: Type<'gcc>, signed: bool) -> Type<'gcc> {
+        let size = if typ.is_compatible_with(self.bool_type) {
+            // For booleans, return an 8-bit integer instead.
+            1
+        } else {
+            typ.get_size()
+        };
+
+        match (size, signed) {
+            (1, false) => self.u8_type,
+            (2, false) => self.u16_type,
+            (4, false) => self.u32_type,
+            (8, false) => self.u64_type,
+            (16, false) => self.u128_type,
+            (1, true) => self.i8_type,
+            (2, true) => self.i16_type,
+            (4, true) => self.i32_type,
+            (8, true) => self.i64_type,
+            (16, true) => self.i128_type,
+            _ => {
+                bug!("attempt to get bad int type {}{}", if signed { 'i' } else { 'u' }, size * 8);
+            }
+        }
     }
 
     pub fn is_native_int_type(&self, typ: Type<'gcc>) -> bool {
