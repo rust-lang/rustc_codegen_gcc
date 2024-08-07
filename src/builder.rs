@@ -949,7 +949,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let deref = ptr.dereference(self.location).to_rvalue();
         let loaded_value = function.new_local(
             self.location,
-            aligned_type,
+            pointee_ty,
             &format!("loadedValue{}", self.next_value_counter()),
         );
         block.add_assignment(self.location, loaded_value, deref);
