@@ -27,6 +27,8 @@
 // Some "regular" crates we want to share with rustc
 extern crate object;
 extern crate smallvec;
+// FIXME: clippy bug: remove the #[allow] when it's fixed.
+#[allow(unused_extern_crates)]
 extern crate tempfile;
 #[macro_use]
 extern crate tracing;
