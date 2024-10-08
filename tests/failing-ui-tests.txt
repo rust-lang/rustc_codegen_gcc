@@ -122,3 +122,5 @@ tests/ui/codegen/equal-pointers-unequal/strict-provenance/segfault.rs
 tests/ui/codegen/equal-pointers-unequal/strict-provenance/zero.rs
 tests/ui/sanitizer/cfi/sized-associated-ty.rs
 tests/ui/sanitizer/cfi/can-reveal-opaques.rs
+tests/ui/sanitizer/cfi/transparent-has-regions.rs
+tests/ui/simd/simd-bitmask-notpow2.rs
