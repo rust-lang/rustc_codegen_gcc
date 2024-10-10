@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fs::{remove_dir_all, File};
+use std::fs::{File, remove_dir_all};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -563,7 +563,7 @@ fn asm_tests(env: &Env, args: &TestArg) -> Result<(), String> {
             &"--stage",
             &"0",
             &"tests/assembly/asm",
-            &"--rustc-args",
+            &"--compiletest-rustc-args",
             &rustc_args,
         ],
         Some(&rust_dir),
@@ -1032,7 +1032,7 @@ where
             &"--stage",
             &"0",
             &format!("tests/{}", test_type),
-            &"--rustc-args",
+            &"--compiletest-rustc-args",
             &rustc_args,
         ],
         Some(&rust_path),

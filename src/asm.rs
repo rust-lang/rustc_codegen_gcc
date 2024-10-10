@@ -5,8 +5,8 @@ use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::operand::OperandValue;
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::{
-    AsmBuilderMethods, AsmMethods, BaseTypeMethods, BuilderMethods, GlobalAsmOperandRef,
-    InlineAsmOperandRef,
+    AsmBuilderMethods, AsmCodegenMethods, BaseTypeCodegenMethods, BuilderMethods,
+    GlobalAsmOperandRef, InlineAsmOperandRef,
 };
 use rustc_middle::bug;
 use rustc_middle::ty::Instance;
@@ -682,6 +682,11 @@ fn reg_to_gcc(reg: InlineAsmRegOrRegClass) -> ConstraintOrRegister {
             InlineAsmRegClass::S390x(S390xInlineAsmRegClass::reg) => "r",
             InlineAsmRegClass::S390x(S390xInlineAsmRegClass::reg_addr) => "a",
             InlineAsmRegClass::S390x(S390xInlineAsmRegClass::freg) => "f",
+            InlineAsmRegClass::S390x(
+                S390xInlineAsmRegClass::vreg | S390xInlineAsmRegClass::areg,
+            ) => {
+                unreachable!("clobber-only")
+            }
             InlineAsmRegClass::Err => unreachable!(),
         },
     };
@@ -757,6 +762,9 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
             S390xInlineAsmRegClass::reg | S390xInlineAsmRegClass::reg_addr,
         ) => cx.type_i32(),
         InlineAsmRegClass::S390x(S390xInlineAsmRegClass::freg) => cx.type_f64(),
+        InlineAsmRegClass::S390x(S390xInlineAsmRegClass::vreg | S390xInlineAsmRegClass::areg) => {
+            unreachable!("clobber-only")
+        }
         InlineAsmRegClass::Msp430(Msp430InlineAsmRegClass::reg) => cx.type_i16(),
         InlineAsmRegClass::M68k(M68kInlineAsmRegClass::reg) => cx.type_i32(),
         InlineAsmRegClass::M68k(M68kInlineAsmRegClass::reg_addr) => cx.type_i32(),
@@ -770,7 +778,7 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
     }
 }
 
-impl<'gcc, 'tcx> AsmMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
+impl<'gcc, 'tcx> AsmCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn codegen_global_asm(
         &self,
         template: &[InlineAsmTemplatePiece],

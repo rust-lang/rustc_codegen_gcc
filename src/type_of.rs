@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use gccjit::{Struct, Type};
-use rustc_codegen_ssa::traits::{BaseTypeMethods, DerivedTypeMethods, LayoutTypeMethods};
+use rustc_codegen_ssa::traits::{
+    BaseTypeCodegenMethods, DerivedTypeCodegenMethods, LayoutTypeCodegenMethods,
+};
 use rustc_middle::bug;
 use rustc_middle::ty::layout::{LayoutOf, TyAndLayout};
 use rustc_middle::ty::print::with_no_trimmed_paths;
@@ -205,7 +207,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
         // layout.
         if let Abi::Scalar(ref scalar) = self.abi {
             // Use a different cache for scalars because pointers to DSTs
-            // can be either fat or thin (data pointers of fat pointers).
+            // can be either wide or thin (data pointers of wide pointers).
             if let Some(&ty) = cx.scalar_types.borrow().get(&self.ty) {
                 return ty;
             }
@@ -213,9 +215,8 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
                 // NOTE: we cannot remove this match like in the LLVM codegen because the call
                 // to fn_ptr_backend_type handle the on-stack attribute.
                 // TODO(antoyo): find a less hackish way to hande the on-stack attribute.
-                ty::FnPtr(sig) => {
-                    cx.fn_ptr_backend_type(cx.fn_abi_of_fn_ptr(sig, ty::List::empty()))
-                }
+                ty::FnPtr(sig_tys, hdr) => cx
+                    .fn_ptr_backend_type(cx.fn_abi_of_fn_ptr(sig_tys.with(hdr), ty::List::empty())),
                 _ => self.scalar_gcc_type_at(cx, scalar, Size::ZERO),
             };
             cx.scalar_types.borrow_mut().insert(self.ty, ty);
@@ -331,7 +332,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
     }
 }
 
-impl<'gcc, 'tcx> LayoutTypeMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
+impl<'gcc, 'tcx> LayoutTypeCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn backend_type(&self, layout: TyAndLayout<'tcx>) -> Type<'gcc> {
         layout.gcc_type(self)
     }
