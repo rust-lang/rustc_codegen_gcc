@@ -66,6 +66,8 @@ jobs:
     - name: Add more failing tests because of undefined symbol errors (FIXME)
       run: cat tests/failing-lto-tests.txt >> tests/failing-ui-tests.txt
 
+    # TODO TODO: probablement que les erreurs viennent du fait qu'on ne spécifie pas le plugin de linker.
+
     - name: Run tests
       run: |
         # FIXME(antoyo): we cannot enable LTO for stdarch tests currently because of some failing LTO tests using proc-macros.
