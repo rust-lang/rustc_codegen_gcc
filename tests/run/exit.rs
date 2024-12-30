@@ -3,7 +3,7 @@
 // Run-time:
 //   status: 2
 
-#![feature(auto_traits, lang_items, no_core, start, intrinsics)]
+#![feature(no_core, start)]
 #![allow(internal_features)]
 
 #![no_std]
@@ -20,22 +20,14 @@ mod libc {
  * Core
  */
 
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
+extern crate mini_core;
+use mini_core::{
+    libc,
+    Sized,
+    Copy,
+    Receiver,
+    Freeze
+};
 
 /*
  * Code

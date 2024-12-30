@@ -9,7 +9,7 @@
 //      12
 //      1
 
-#![feature(auto_traits, lang_items, no_core, start, intrinsics, rustc_attrs)]
+#![feature(no_core, start)]
 #![allow(internal_features)]
 
 #![no_std]
@@ -19,56 +19,17 @@
  * Core
  */
 
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "destruct"]
-pub trait Destruct {}
-
-#[lang = "drop"]
-pub trait Drop {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-impl<T: ?Sized> Copy for *mut T {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-mod intrinsics {
-    use super::Sized;
-
-    extern "rust-intrinsic" {
-        #[rustc_safe_intrinsic]
-        pub fn abort() -> !;
-    }
-}
-
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn printf(format: *const i8, ...) -> i32;
-    }
-}
-
-#[lang = "structural_peq"]
-pub trait StructuralPartialEq {}
-
-#[lang = "drop_in_place"]
-#[allow(unconditional_recursion)]
-pub unsafe fn drop_in_place<T: ?Sized>(to_drop: *mut T) {
-    // Code here does not matter - this is replaced by the
-    // real drop glue by the compiler.
-    drop_in_place(to_drop);
-}
+extern crate mini_core;
+use mini_core::{
+    libc,
+    Sized,
+    Copy,
+    Receiver,
+    Freeze,
+    Destruct,
+    Drop,
+    StructuralPartialEq
+};
 
 /*
  * Code

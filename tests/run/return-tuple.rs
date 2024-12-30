@@ -6,49 +6,24 @@
 //     10
 //     42
 
-#![feature(auto_traits, lang_items, no_core, start, intrinsics)]
+#![feature(no_core, start)]
 #![allow(internal_features)]
 
 #![no_std]
 #![no_core]
 
-#[lang = "copy"]
-pub unsafe trait Copy {}
-
-unsafe impl Copy for bool {}
-unsafe impl Copy for u8 {}
-unsafe impl Copy for u16 {}
-unsafe impl Copy for u32 {}
-unsafe impl Copy for u64 {}
-unsafe impl Copy for usize {}
-unsafe impl Copy for i8 {}
-unsafe impl Copy for i16 {}
-unsafe impl Copy for i32 {}
-unsafe impl Copy for isize {}
-unsafe impl Copy for f32 {}
-unsafe impl Copy for char {}
-
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn printf(format: *const i8, ...) -> i32;
-    }
-}
-
 /*
  * Core
  */
 
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
+extern crate mini_core;
+use mini_core::{
+    libc,
+    Sized,
+    Copy,
+    Receiver,
+    Freeze
+};
 
 /*
  * Code
