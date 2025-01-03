@@ -6,7 +6,7 @@
 //     10
 
 #![allow(internal_features, unused_attributes)]
-#![feature(no_core, start)]
+#![feature(no_core, start, include, include_str)]
 
 #![no_std]
 #![no_core]

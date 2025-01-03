@@ -4,7 +4,7 @@
 //   status: 0
 //   stdout: 3
 
-#![feature(auto_traits, lang_items, no_core, start, intrinsics)]
+#![feature(no_core, start, include, include_strs)]
 #![allow(internal_features)]
 
 #![no_std]

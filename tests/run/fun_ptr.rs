@@ -4,7 +4,7 @@
 //   status: 0
 //   stdout: 1
 
-#![feature(no_core, start)]
+#![feature(no_core, start, include, include_str)]
 #![allow(internal_features)]
 
 #![no_std]

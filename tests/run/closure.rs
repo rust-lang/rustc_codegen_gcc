@@ -8,7 +8,7 @@
 //     Int argument: 2
 //     Both args: 11
 
-#![feature(no_core, start)]
+#![feature(no_core, start, include, include_str)]
 #![allow(internal_features)]
 
 #![no_std]
