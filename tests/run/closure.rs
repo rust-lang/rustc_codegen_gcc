@@ -14,21 +14,7 @@
 #![no_std]
 #![no_core]
 
-/*
- * Core
- */
-
-extern crate mini_core;
-use mini_core::{
-    libc,
-    FnOnce,
-    FnMut,
-    Tuple,
-    Add,
-    Sized,
-    Unsize,
-    CoerceUnsized
-};
+include!("../../example/mini_core.rs");
 
 /*
  * Code

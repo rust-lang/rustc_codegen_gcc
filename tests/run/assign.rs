@@ -11,22 +11,7 @@
 #![no_std]
 #![no_core]
 
-/*
- * Core
- */
-
-extern crate mini_core;
-use mini_core::{
-    libc,
-    intrinsics,
-    Sized,
-    Copy,
-    Receiver,
-    Freeze,
-    Add,
-    panic
-};
-
+include!("../../example/mini_core.rs");
 
 /*
  * Code

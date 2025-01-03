@@ -15,21 +15,7 @@
 #![no_std]
 #![no_core]
 
-/*
- * Core
- */
-
-extern crate mini_core;
-use mini_core::{
-    libc,
-    Sized,
-    Copy,
-    Receiver,
-    Freeze,
-    Destruct,
-    Drop,
-    StructuralPartialEq
-};
+include!("../../example/mini_core.rs");
 
 /*
  * Code
