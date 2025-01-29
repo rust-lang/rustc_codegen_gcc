@@ -12,7 +12,7 @@ def run_command(command, cwd=None):
         sys.exit(1)
 
 
-def clone_repository(repo_name, path, repo_url, sub_paths, commit):
+def clone_repository(repo_name, path, repo_url, sub_paths):
     if os.path.exists(path):
         while True:
             choice = input("There is already a `{}` folder, do you want to update it? [y/N]".format(path))
@@ -21,9 +21,8 @@ def clone_repository(repo_name, path, repo_url, sub_paths, commit):
                 return
             elif choice.lower() == "y":
                 print("Updating repository...")
-                run_command(["git", "pull", "origin"], cwd=path)
+                run_command(["git", "fetch", "origin"], cwd=path)
                 run_command(["git", "checkout", "origin/main",], cwd=path)
-                run_command(["git", "checkout", commit], cwd=path)
                 return
             else:
                 print("Didn't understand answer...")
@@ -31,8 +30,7 @@ def clone_repository(repo_name, path, repo_url, sub_paths, commit):
     run_command(["git", "clone", repo_url, "--filter=tree:0", "--no-checkout", path])
     run_command(["git", "sparse-checkout", "init"], cwd=path)
     run_command(["git", "sparse-checkout", "set", *sub_paths], cwd=path)
-    # run_command(["git", "checkout", "origin/main",], cwd=path)
-    run_command(["git", "checkout", commit], cwd=path)
+    run_command(["git", "checkout", "origin/main",], cwd=path)
 
 
 def append_intrinsic(array, intrinsic_name, translation):
@@ -112,10 +110,14 @@ def main():
         llvm_path,
         "https://github.com/llvm/llvm-project",
         ["llvm/include/llvm/IR", "llvm/include/llvm/CodeGen/"],
-        # This is the git submodule commit of the LLVM repository used in the Rust repository.
-        "1268e87bdbaed0693a9d782ccd5a21e2cab2de33",
     )
     update_intrinsics(llvm_path)
+
+# llvm-tblgen can be built with:
+#
+# mkdir llvm-tblgen-build && cd llvm-tblgen-build
+# cmake -G Ninja  -DLLVM_ENABLE_PROJECTS="llvm"  -DCMAKE_BUILD_TYPE=Release  ../llvm
+# ninja llvm-tblgen
 
 
 if __name__ == "__main__":
