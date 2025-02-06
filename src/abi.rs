@@ -138,6 +138,13 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             if attrs.regular.contains(rustc_target::abi::call::ArgAttribute::NonNull) {
                 non_null_args.push(arg_index as i32 + 1);
             }
+            if let Some(align) = attrs.pointee_align {
+                if let Some(pointee) = ty.get_pointee() {
+                    ty = cx.type_ptr_to(pointee.get_aligned(align.bytes()));
+                } else {
+                    ty = ty.get_aligned(align.bytes());
+                }
+            }
             ty
         };
         #[cfg(not(feature = "master"))]
