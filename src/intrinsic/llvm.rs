@@ -808,23 +808,24 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
 
 #[cfg(feature = "master")]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
-    if matches!(name,
-        "llvm.x86.ldtilecfg" |
-        "llvm.x86.sttilecfg" |
-        "llvm.x86.tileloadd64" |
-        "llvm.x86.tilestored64" |
-        "llvm.x86.tilerelease" |
-        "llvm.x86.tileloaddt164" |
-        "llvm.x86.tilezero" |
-        "llvm.x86.tdpbf16ps" |
-        "llvm.x86.tdpbssd" |
-        "llvm.x86.tdpbsud" |
-        "llvm.x86.tdpbusd" |
-        "llvm.x86.tdpbuud" |
-        "llvm.x86.tdpfp16ps" |
-        "llvm.x86.tcmmimfp16ps" |
-        "llvm.x86.tcmmrlfp16ps") {
-        
+    if matches!(
+        name,
+        "llvm.x86.ldtilecfg"
+            | "llvm.x86.sttilecfg"
+            | "llvm.x86.tileloadd64"
+            | "llvm.x86.tilestored64"
+            | "llvm.x86.tilerelease"
+            | "llvm.x86.tileloaddt164"
+            | "llvm.x86.tilezero"
+            | "llvm.x86.tdpbf16ps"
+            | "llvm.x86.tdpbssd"
+            | "llvm.x86.tdpbsud"
+            | "llvm.x86.tdpbusd"
+            | "llvm.x86.tdpfp16ps"
+            | "llvm.x86.tdpbuud"
+            | "llvm.x86.tcmmimfp16ps"
+            | "llvm.x86.tcmmrlfp16ps"
+    ) {
         let gcc_name = match name {
             "llvm.x86.ldtilecfg" => "__builtin_ia32_ldtilecfg",
             "llvm.x86.sttilecfg" => "__builtin_ia32_sttilecfg",
@@ -843,12 +844,10 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
             "llvm.x86.tcmmrlfp16ps" => "__builtin_ia32_tcmmrlfp16ps",
             _ => unreachable!(),
         };
-    
         let func = cx.context.get_target_builtin_function(gcc_name);
         cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
         return func;
     }
-    
     let gcc_name = match name {
         "llvm.prefetch" => {
             let gcc_name = "__builtin_prefetch";
