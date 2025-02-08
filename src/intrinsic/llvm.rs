@@ -808,6 +808,47 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
 
 #[cfg(feature = "master")]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
+    if matches!(name,
+        "llvm.x86.ldtilecfg" |
+        "llvm.x86.sttilecfg" |
+        "llvm.x86.tileloadd64" |
+        "llvm.x86.tilestored64" |
+        "llvm.x86.tilerelease" |
+        "llvm.x86.tileloaddt164" |
+        "llvm.x86.tilezero" |
+        "llvm.x86.tdpbf16ps" |
+        "llvm.x86.tdpbssd" |
+        "llvm.x86.tdpbsud" |
+        "llvm.x86.tdpbusd" |
+        "llvm.x86.tdpbuud" |
+        "llvm.x86.tdpfp16ps" |
+        "llvm.x86.tcmmimfp16ps" |
+        "llvm.x86.tcmmrlfp16ps") {
+        
+        let gcc_name = match name {
+            "llvm.x86.ldtilecfg" => "__builtin_ia32_ldtilecfg",
+            "llvm.x86.sttilecfg" => "__builtin_ia32_sttilecfg",
+            "llvm.x86.tileloadd64" => "__builtin_ia32_tileloadd64",
+            "llvm.x86.tilestored64" => "__builtin_ia32_tilestored64",
+            "llvm.x86.tilerelease" => "__builtin_ia32_tilerelease",
+            "llvm.x86.tileloaddt164" => "__builtin_ia32_tileloaddt164",
+            "llvm.x86.tilezero" => "__builtin_ia32_tilezero",
+            "llvm.x86.tdpbf16ps" => "__builtin_ia32_tdpbf16ps",
+            "llvm.x86.tdpbssd" => "__builtin_ia32_tdpbssd",
+            "llvm.x86.tdpbsud" => "__builtin_ia32_tdpbsud",
+            "llvm.x86.tdpbusd" => "__builtin_ia32_tdpbusd",
+            "llvm.x86.tdpbuud" => "__builtin_ia32_tdpbuud",
+            "llvm.x86.tdpfp16ps" => "__builtin_ia32_tdpfp16ps",
+            "llvm.x86.tcmmimfp16ps" => "__builtin_ia32_tcmmimfp16ps",
+            "llvm.x86.tcmmrlfp16ps" => "__builtin_ia32_tcmmrlfp16ps",
+            _ => unreachable!(),
+        };
+    
+        let func = cx.context.get_target_builtin_function(gcc_name);
+        cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
+        return func;
+    }
+    
     let gcc_name = match name {
         "llvm.prefetch" => {
             let gcc_name = "__builtin_prefetch";
@@ -1322,96 +1363,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.avx512fp16.mask.vfmadd.cph.256" => "__builtin_ia32_vfmaddcph256_mask3",
         "llvm.x86.avx512fp16.mask.vfcmadd.cph.128" => "__builtin_ia32_vfcmaddcph128_mask3",
         "llvm.x86.avx512fp16.mask.vfmadd.cph.128" => "__builtin_ia32_vfmaddcph128_mask3",
-        "llvm.x86.ldtilecfg" => {
-            let gcc_name = "__builtin_ia32_ldtilecfg"; 
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.sttilecfg" => {
-            let gcc_name = "__builtin_ia32_sttilecfg";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tileloadd64" => {
-            let gcc_name = "__builtin_ia32_tileloadd64";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tilestored64" => {
-            let gcc_name = "__builtin_ia32_tilestored64";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tilerelease" => {
-            let gcc_name = "__builtin_ia32_tilerelease";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tileloaddt164" => {
-            let gcc_name = "__builtin_ia32_tileloaddt164";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tilezero" => {
-            let gcc_name = "__builtin_ia32_tilezero";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpbf16ps" => {
-            let gcc_name = "__builtin_ia32_tdpbf16ps";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpbssd" => {
-            let gcc_name = "__builtin_ia32_tdpbssd";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpbsud" => {
-            let gcc_name = "__builtin_ia32_tdpbsud";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpbusd" => {
-            let gcc_name = "__builtin_ia32_tdpbusd";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpbuud" => {
-            let gcc_name = "__builtin_ia32_tdpbuud";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tdpfp16ps" => {
-            let gcc_name = "__builtin_ia32_tdpfp16ps";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tcmmimfp16ps" => {
-            let gcc_name = "__builtin_ia32_tcmmimfp16ps";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
-        "llvm.x86.tcmmrlfp16ps" => {
-            let gcc_name = "__builtin_ia32_tcmmrlfp16ps";
-            let func = cx.context.get_target_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
 
         // NOTE: this file is generated by https://github.com/GuillaumeGomez/llvmint/blob/master/generate_list.py
         _ => include!("archs.rs"),
