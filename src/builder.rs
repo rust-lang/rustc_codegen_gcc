@@ -379,7 +379,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 gcc_func,
                 args.into(),
                 &func_name,
-                original_function_name,
             )
         };
         let args_adjusted = args.len() != previous_arg_count;
