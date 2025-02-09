@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use gccjit::{CType, Context, Function, FunctionPtrType, RValue, ToRValue, UnaryOp};
+use gccjit::{CType, Context, Function, FunctionPtrType, RValue, ToRValue};
 use rustc_codegen_ssa::traits::BuilderMethods;
 
 use crate::builder::Builder;
@@ -43,7 +43,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
     gcc_func: FunctionPtrType<'gcc>,
     mut args: Cow<'b, [RValue<'gcc>]>,
     func_name: &str,
-    original_function_name: Option<&String>,
 ) -> Cow<'b, [RValue<'gcc>]> {
     // TODO: this might not be a good way to workaround the missing tile builtins.
     if func_name == "__builtin_trap" {
