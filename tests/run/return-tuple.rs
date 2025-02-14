@@ -13,47 +13,9 @@
 #![no_core]
 #![no_main]
 
-#[lang = "copy"]
-pub unsafe trait Copy {}
+extern crate mini_core;
 
-impl Copy for bool {}
-impl Copy for u8 {}
-impl Copy for u16 {}
-impl Copy for u32 {}
-impl Copy for u64 {}
-impl Copy for usize {}
-impl Copy for i8 {}
-impl Copy for i16 {}
-impl Copy for i32 {}
-impl Copy for isize {}
-impl Copy for f32 {}
-impl Copy for char {}
-
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn printf(format: *const i8, ...) -> i32;
-    }
-}
-
-/*
- * Core
- */
-
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "legacy_receiver"]
-trait LegacyReceiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-/*
- * Code
- */
+use mini_core::libc;
 
 fn int_cast(a: u16, b: i16) -> (u8, u16, u32, usize, i8, i16, i32, isize, u8, u32) {
     (

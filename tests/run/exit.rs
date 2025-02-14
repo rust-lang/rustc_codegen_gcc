@@ -10,37 +10,9 @@
 #![no_core]
 #![no_main]
 
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn exit(status: i32);
-    }
-}
+extern crate mini_core;
 
-/*
- * Core
- */
-
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-/*
- * Code
- */
+use mini_core::libc;
 
 #[no_mangle]
 extern "C" fn main(argc: i32, _argv: *const *const u8) -> i32 {

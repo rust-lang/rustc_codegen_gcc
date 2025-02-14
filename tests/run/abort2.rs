@@ -10,44 +10,10 @@
 #![no_core]
 #![no_main]
 
-/*
- * Core
- */
-
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-mod intrinsics {
-    use super::Sized;
-
-    #[rustc_nounwind]
-    #[rustc_intrinsic]
-    #[rustc_intrinsic_must_be_overridden]
-    pub fn abort() -> ! {
-        loop {}
-    }
-}
-
-/*
- * Code
- */
+extern crate mini_core;
 
 fn fail() -> i32 {
-    unsafe { intrinsics::abort() };
+    mini_core::intrinsics::abort();
     0
 }
 

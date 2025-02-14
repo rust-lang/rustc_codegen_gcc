@@ -12,37 +12,9 @@
 #![no_core]
 #![no_main]
 
-/*
- * Core
- */
+extern crate mini_core;
 
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn printf(format: *const i8, ...) -> i32;
-    }
-}
-
-/*
- * Code
- */
+use mini_core::libc;
 
 struct Test {
     field: isize,
