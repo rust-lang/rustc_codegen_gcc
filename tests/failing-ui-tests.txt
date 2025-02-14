@@ -31,7 +31,6 @@ tests/ui/unwind-no-uwtable.rs
 tests/ui/parser/unclosed-delimiter-in-dep.rs
 tests/ui/consts/missing_span_in_backtrace.rs
 tests/ui/drop/dynamic-drop.rs
-tests/ui/issues/issue-40883.rs
 tests/ui/issues/issue-43853.rs
 tests/ui/issues/issue-47364.rs
 tests/ui/macros/rfc-2011-nicer-assert-messages/assert-without-captures-does-not-create-unnecessary-code.rs
