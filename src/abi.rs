@@ -9,9 +9,9 @@ use rustc_middle::ty::Ty;
 use rustc_middle::ty::layout::LayoutOf;
 #[cfg(feature = "master")]
 use rustc_session::config;
-use rustc_target::callconv::{ArgAttributes, CastTarget, FnAbi, PassMode};
 #[cfg(feature = "master")]
 use rustc_target::callconv::Conv;
+use rustc_target::callconv::{ArgAttributes, CastTarget, FnAbi, PassMode};
 
 use crate::builder::Builder;
 use crate::context::CodegenCx;
@@ -252,9 +252,9 @@ pub fn conv_to_fn_attribute<'gcc>(conv: Conv, arch: &str) -> Option<FnAttribute<
         Conv::PreserveAll => return None,
         Conv::GpuKernel => {
             if arch == "amdgpu" {
-                return None
+                return None;
             } else if arch == "nvptx64" {
-                return None
+                return None;
             } else {
                 panic!("Architecture {} does not support GpuKernel calling convention", arch);
             }
