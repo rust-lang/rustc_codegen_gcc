@@ -4,16 +4,15 @@ Date: Thu, 28 Sep 2023 17:37:38 -0400
 Subject: [PATCH] Disable libstd and libtest dylib
 
 ---
- library/std/Cargo.toml  | 2 +-
- library/test/Cargo.toml | 2 +-
- 2 files changed, 2 insertions(+), 2 deletions(-)
+ library/std/Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/library/std/Cargo.toml b/library/std/Cargo.toml
-index 5b21355..cb0c49b 100644
+index add5a20..3d670d2 100644
 --- a/library/std/Cargo.toml
 +++ b/library/std/Cargo.toml
-@@ -9,7 +9,7 @@ description = "The Rust Standard Library"
- edition = "2021"
+@@ -10,7 +10,7 @@ edition = "2021"
+ autobenches = false
  
  [lib]
 -crate-type = ["dylib", "rlib"]
@@ -21,3 +20,6 @@ index 5b21355..cb0c49b 100644
  
  [dependencies]
  alloc = { path = "../alloc", public = true }
+-- 
+2.48.1
+

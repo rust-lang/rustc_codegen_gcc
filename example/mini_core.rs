@@ -54,6 +54,9 @@ impl<T: ?Sized, A: Allocator> LegacyReceiver for Box<T, A> {}
 #[lang = "copy"]
 pub trait Copy {}
 
+#[lang = "bikeshed_guaranteed_no_drop"]
+pub trait BikeshedGuaranteedNoDrop {}
+
 impl Copy for bool {}
 impl Copy for u8 {}
 impl Copy for u16 {}
@@ -139,6 +142,14 @@ impl Mul for usize {
     }
 }
 
+impl Mul for i32 {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self * rhs
+    }
+}
+
 #[lang = "add"]
 pub trait Add<RHS = Self> {
     type Output;
@@ -155,6 +166,14 @@ impl Add for u8 {
 }
 
 impl Add for i8 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        self + rhs
+    }
+}
+
+impl Add for i32 {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -202,6 +221,14 @@ impl Sub for u8 {
 }
 
 impl Sub for i8 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        self - rhs
+    }
+}
+
+impl Sub for i32 {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -664,6 +691,7 @@ pub mod libc {
         pub fn memcpy(dst: *mut u8, src: *const u8, size: usize);
         pub fn memmove(dst: *mut u8, src: *const u8, size: usize);
         pub fn strncpy(dst: *mut u8, src: *const u8, size: usize);
+        pub fn exit(status: i32);
     }
 }
 
@@ -689,7 +717,7 @@ impl<T> Index<usize> for [T] {
     }
 }
 
-extern {
+extern "C" {
     type VaListImpl;
 }
 

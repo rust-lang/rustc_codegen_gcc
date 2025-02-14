@@ -5,43 +5,16 @@
 //   stdout: 1
 //     2
 
-#![feature(auto_traits, lang_items, no_core, start, intrinsics)]
+#![feature(auto_traits, lang_items, no_core, intrinsics)]
 #![allow(internal_features)]
 
 #![no_std]
 #![no_core]
+#![no_main]
 
-/*
- * Core
- */
+extern crate mini_core;
 
-// Because we don't have core yet.
-#[lang = "sized"]
-pub trait Sized {}
-
-#[lang = "copy"]
-trait Copy {
-}
-
-impl Copy for isize {}
-
-#[lang = "receiver"]
-trait Receiver {
-}
-
-#[lang = "freeze"]
-pub(crate) unsafe auto trait Freeze {}
-
-mod libc {
-    #[link(name = "c")]
-    extern "C" {
-        pub fn printf(format: *const i8, ...) -> i32;
-    }
-}
-
-/*
- * Code
- */
+use mini_core::libc;
 
 struct Test {
     field: isize,
@@ -55,8 +28,8 @@ fn one() -> isize {
     1
 }
 
-#[start]
-fn main(mut argc: isize, _argv: *const *const u8) -> isize {
+#[no_mangle]
+extern "C" fn main(argc: i32, _argv: *const *const u8) -> i32 {
     let test = Test {
         field: one(),
     };
