@@ -727,7 +727,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
             else if width == 128 {
                 // Algorithm from: https://stackoverflow.com/a/28433850/389119 updated to check for high 64bits being 0
-                let result = self.current_func().new_local(None, self.u32_type, "zeros");
+                let result = self.current_func().new_local(None, result_type, "zeros");
                 let ctlz_then_block = self.current_func().new_block("ctlz_then");
                 let ctlz_else_block = self.current_func().new_block("ctlz_else");
                 let ctlz_after_block = self.current_func().new_block("ctlz_after");
@@ -755,7 +755,8 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let low = self.gcc_int_cast(arg, self.u64_type);
                 let low_leading_zeroes =
                     self.gcc_int_cast(self.context.new_call(None, clzll, &[low]), result_type);
-                let leading_zeroes = self.add(low_leading_zeroes, sixty_four);
+                let sixty_four_u32 = self.const_uint(result_type, 64);
+                let leading_zeroes = self.add(low_leading_zeroes, sixty_four_u32);
                 ctlz_else_block.add_assignment(None, result, leading_zeroes);
                 ctlz_else_block.end_with_jump(None, ctlz_after_block);
 
