@@ -44,7 +44,7 @@ $ git clone https://github.com/rust-lang/gcc
 $ sudo apt install flex libmpfr-dev libgmp-dev libmpc3 libmpc-dev
 $ mkdir gcc-build gcc-install
 $ cd gcc-build
-$ ../gcc/configure \
+$ ../configure \
     --enable-host-shared \
     --enable-languages=jit \
     --enable-checking=release \ # it enables extra checks which allow to find bugs
