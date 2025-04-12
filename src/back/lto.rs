@@ -50,8 +50,7 @@ pub fn crate_type_allows_lto(crate_type: CrateType) -> bool {
 }
 
 struct LtoData {
-    // TODO(antoyo): use symbols_below_threshold.
-    //symbols_below_threshold: Vec<String>,
+    symbols_below_threshold: Vec<String>,
     upstream_modules: Vec<(SerializedModule<ModuleBuffer>, CString)>,
     tmp_path: TempDir,
 }
@@ -156,7 +155,11 @@ fn prepare_lto(
         }
     }
 
-    Ok(LtoData { upstream_modules, tmp_path })
+    Ok(LtoData {
+        upstream_modules,
+        symbols_below_threshold,
+        tmp_path,
+    })
 }
 
 fn save_as_file(obj: &[u8], path: &Path) -> Result<(), LtoBitcodeFromRlib> {
@@ -175,8 +178,8 @@ pub(crate) fn run_fat(
     let dcx = cgcx.create_dcx();
     let dcx = dcx.handle();
     let lto_data = prepare_lto(cgcx, dcx)?;
-    /*let symbols_below_threshold =
-    lto_data.symbols_below_threshold.iter().map(|c| c.as_ptr()).collect::<Vec<_>>();*/
+    let symbols_below_threshold =
+    lto_data.symbols_below_threshold.iter().map(|c| c.as_ptr()).collect::<Vec<_>>();
     fat_lto(
         cgcx,
         dcx,
@@ -184,7 +187,7 @@ pub(crate) fn run_fat(
         cached_modules,
         lto_data.upstream_modules,
         lto_data.tmp_path,
-        //&lto_data.symbols_below_threshold,
+        &lto_data.symbols_below_threshold,
     )
 }
 
@@ -195,7 +198,7 @@ fn fat_lto(
     cached_modules: Vec<(SerializedModule<ModuleBuffer>, WorkProduct)>,
     mut serialized_modules: Vec<(SerializedModule<ModuleBuffer>, CString)>,
     tmp_path: TempDir,
-    //symbols_below_threshold: &[String],
+    symbols_below_threshold: &[String],
 ) -> Result<LtoModuleCodegen<GccCodegenBackend>, FatalError> {
     let _timer = cgcx.prof.generic_activity("GCC_fat_lto_build_monolithic_module");
     info!("going for a fat lto");
@@ -312,6 +315,11 @@ fn fat_lto(
         }
         save_temp_bitcode(cgcx, &module, "lto.input");
 
+        for symbol in symbols_below_threshold {
+            println!("Internalize {}", symbol);
+            // TODO: Create a function that is always_inline and that calls the symbol here (e.g.
+            // main)?
+        }
         // Internalize everything below threshold to help strip out more modules and such.
         /*unsafe {
         let ptr = symbols_below_threshold.as_ptr();

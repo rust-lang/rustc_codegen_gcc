@@ -35,4 +35,4 @@ codegen-units = 10000
 
 [profile.release]
 debug = "limited"
-#lto = "fat" # TODO(antoyo): re-enable when the failing LTO tests regarding proc-macros are fixed.
+lto = "fat" # TODO(antoyo): re-enable when the failing LTO tests regarding proc-macros are fixed.
