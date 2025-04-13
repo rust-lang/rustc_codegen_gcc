@@ -169,6 +169,11 @@ pub(crate) unsafe fn codegen(
                     if fat_lto {
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
+
+                        // FIXME: the problem is probably that the code is only in GIMPLE IR while
+                        // we would want to get the optimized asm done from LTO.
+                        // ===> But we call "gcc -x lto" later, so that should be asm and not
+                        // GIMPLE IR.
                     }
 
                     context.add_driver_option("-Wl,-r");
@@ -206,6 +211,8 @@ pub(crate) unsafe fn codegen(
                         context.add_driver_option("lto");
                         add_pic_option(&context, module.module_llvm.relocation_model);
                         context.add_driver_option(lto_path);
+                        // TODO TODO: inspect the resulting file to see if it contains the GIMPLE IR or
+                        // the asm.
 
                         context.compile_to_file(OutputKind::ObjectFile, path);
                     } else {

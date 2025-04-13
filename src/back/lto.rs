@@ -21,7 +21,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gccjit::{Context, OutputKind};
+use gccjit::{Context, FnAttribute, FunctionType, GlobalKind, OutputKind};
 use object::read::archive::ArchiveFile;
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule, ThinShared};
 use rustc_codegen_ssa::back::symbol_export;
@@ -178,8 +178,6 @@ pub(crate) fn run_fat(
     let dcx = cgcx.create_dcx();
     let dcx = dcx.handle();
     let lto_data = prepare_lto(cgcx, dcx)?;
-    let symbols_below_threshold =
-    lto_data.symbols_below_threshold.iter().map(|c| c.as_ptr()).collect::<Vec<_>>();
     fat_lto(
         cgcx,
         dcx,
@@ -315,11 +313,28 @@ fn fat_lto(
         }
         save_temp_bitcode(cgcx, &module, "lto.input");
 
+        let int_type = module.module_llvm.context.new_type::<i32>();
         for symbol in symbols_below_threshold {
-            println!("Internalize {}", symbol);
+            println!("*** Keeping symbol: {}", symbol);
+            module.module_llvm.context.new_global(None, GlobalKind::Imported, int_type, symbol);
             // TODO: Create a function that is always_inline and that calls the symbol here (e.g.
             // main)?
         }
+        let void_type = module.module_llvm.context.new_type::<()>();
+        let main_func = module.module_llvm.context.new_function(None, FunctionType::Extern, void_type, &[], "main", false);
+        main_func.add_attribute(FnAttribute::Used);
+
+        // NOTE: look at the code from 64b30d344ce54f8ee496cb3590b4c7cf3cb30447 to see previous
+        // attemps.
+        let func = module.module_llvm.context.new_function(None, FunctionType::Exported, void_type, &[], "__my_call_main", false);
+        func.add_attribute(FnAttribute::AlwaysInline);
+        func.add_attribute(FnAttribute::Inline);
+        func.add_attribute(FnAttribute::Used);
+        let block = func.new_block("start");
+        let call = module.module_llvm.context.new_call(None, main_func, &[]);
+        block.add_eval(None, call);
+        block.end_with_void_return(None);
+
         // Internalize everything below threshold to help strip out more modules and such.
         /*unsafe {
         let ptr = symbols_below_threshold.as_ptr();
