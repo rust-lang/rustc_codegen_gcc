@@ -57,6 +57,9 @@ pub(crate) unsafe fn codegen(
                     );
                 }*/
 
+                // TODO: make this work to make it easier to debug GCC-related issue within
+                // rustc_codegen_gcc:
+                //context.add_driver_option("-wrapper gdb,--args");
                 if config.emit_bc || config.emit_obj == EmitObj::Bitcode {
                     let _timer = cgcx.prof.generic_activity_with_arg(
                         "GCC_module_codegen_emit_bitcode",
@@ -64,6 +67,7 @@ pub(crate) unsafe fn codegen(
                     );
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    //context.add_command_line_option("-fno-use-linker-plugin");
                     // TODO(antoyo): remove since we don't want fat objects when it is for Bitcode only.
                     context.add_command_line_option("-ffat-lto-objects");
                     context.compile_to_file(
@@ -82,6 +86,7 @@ pub(crate) unsafe fn codegen(
 
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    //context.add_command_line_option("-fno-use-linker-plugin");
                     context.add_command_line_option("-ffat-lto-objects");
                     // TODO(antoyo): Send -plugin/usr/lib/gcc/x86_64-pc-linux-gnu/11.1.0/liblto_plugin.so to linker (this should be done when specifying the appropriate rustc cli argument).
                     context.compile_to_file(
@@ -169,6 +174,14 @@ pub(crate) unsafe fn codegen(
                     if fat_lto {
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
+                        //context.add_command_line_option("-ffat-lto-objects");
+                        //context.add_command_line_option("-fno-use-linker-plugin");
+
+                        // FIXME FIXME FIXME:
+                        // /usr/bin/ld: warning: incremental linking of LTO and non-LTO objects; using -flinker-output=nolto-rel which will bypass whole program optimization
+                        // ====> So I'm probably missing -flto somewhere.
+
+                        println!("**** Adding -flto to {:?}", obj_out.to_str().expect("path to str"));
 
                         // FIXME: the problem is probably that the code is only in GIMPLE IR while
                         // we would want to get the optimized asm done from LTO.
@@ -180,6 +193,7 @@ pub(crate) unsafe fn codegen(
                     // NOTE: we need -nostdlib, otherwise, we get the following error:
                     // /usr/bin/ld: cannot find -lgcc_s: No such file or directory
                     context.add_driver_option("-nostdlib");
+                    //context.add_driver_option("-v");
 
                     let path = obj_out.to_str().expect("path to str");
 
@@ -193,9 +207,12 @@ pub(crate) unsafe fn codegen(
                         //
                         // This option is to mute it to make the UI tests pass with LTO enabled.
                         context.add_driver_option("-Wno-lto-type-mismatch");
+                        //context.add_driver_option("-v");
                         // NOTE: this doesn't actually generate an executable. With the above
                         // flags, it combines the .o files together in another .o.
+                        println!("Lto path: {:?}", lto_path);
                         context.compile_to_file(OutputKind::Executable, &lto_path);
+                        println!("****************************************************************************************************");
 
                         let context = Context::default();
                         if cgcx.target_arch == "x86" || cgcx.target_arch == "x86_64" {
@@ -209,6 +226,7 @@ pub(crate) unsafe fn codegen(
                         // needs to be at the very beginning.
                         context.add_driver_option("-x");
                         context.add_driver_option("lto");
+                        //context.add_driver_option("-v");
                         add_pic_option(&context, module.module_llvm.relocation_model);
                         context.add_driver_option(lto_path);
                         // TODO TODO: inspect the resulting file to see if it contains the GIMPLE IR or

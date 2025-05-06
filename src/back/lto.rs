@@ -280,6 +280,7 @@ fn fat_lto(
             context.set_optimization_level(to_gcc_opt_level(config.opt_level));
             context.add_command_line_option("-flto=auto");
             context.add_command_line_option("-flto-partition=one");
+            //context.add_command_line_option("-fno-use-linker-plugin");
             context.compile_to_file(OutputKind::ObjectFile, path);
             let buffer = ModuleBuffer::new(PathBuf::from(path));
             let llmod_id = CString::new(&module.name[..]).unwrap();
@@ -314,6 +315,20 @@ fn fat_lto(
         save_temp_bitcode(cgcx, &module, "lto.input");
 
         let int_type = module.module_llvm.context.new_type::<i32>();
+        /*
+         * TODO: Preserve the symbols via a linker script instead?
+         * TODO TODO: use the symbols in inline asm to keep them?
+         * ===> This seems to work and is easy.
+         *
+         * FIXME: main is not genarated in GIMPLE IR; it is generated as asm.
+         * ===> seems now fixed since I commented this line in libgccjit:
+         * ADD_ARG ("-fno-use-linker-plugin");
+         * FIXME: it seems "make install" doesn't copy liblto_plugin.so.
+         * ===> seems now fixed after a rebuild.
+         *
+         * TODO TODO TODO: add -fno-use-linker-plugin because:
+         * This option is enabled by default when LTO support in GCC is enabled and GCC was configured for use with a linker supporting plugins (GNU ld 2.21 or newer or gold).
+         */
         for symbol in symbols_below_threshold {
             println!("*** Keeping symbol: {}", symbol);
             module.module_llvm.context.new_global(None, GlobalKind::Imported, int_type, symbol);
@@ -322,17 +337,20 @@ fn fat_lto(
         }
         let void_type = module.module_llvm.context.new_type::<()>();
         let main_func = module.module_llvm.context.new_function(None, FunctionType::Extern, void_type, &[], "main", false);
-        main_func.add_attribute(FnAttribute::Used);
+        //main_func.add_attribute(FnAttribute::Used);
 
         // NOTE: look at the code from 64b30d344ce54f8ee496cb3590b4c7cf3cb30447 to see previous
         // attemps.
         let func = module.module_llvm.context.new_function(None, FunctionType::Exported, void_type, &[], "__my_call_main", false);
-        func.add_attribute(FnAttribute::AlwaysInline);
-        func.add_attribute(FnAttribute::Inline);
+        //func.add_attribute(FnAttribute::AlwaysInline);
+        //func.add_attribute(FnAttribute::Inline);
         func.add_attribute(FnAttribute::Used);
         let block = func.new_block("start");
-        let call = module.module_llvm.context.new_call(None, main_func, &[]);
-        block.add_eval(None, call);
+        let main_func_address = main_func.get_address(None);
+        /*let asm = block.add_extended_asm(None, "");
+        asm.add_input_operand(None, "X", main_func_address);*/
+        //let call = module.module_llvm.context.new_call(None, main_func, &[]);
+        //block.add_eval(None, call);
         block.end_with_void_return(None);
 
         // Internalize everything below threshold to help strip out more modules and such.
