@@ -196,7 +196,7 @@ impl CodegenBackend for GccCodegenBackend {
             // Get the second TargetInfo with the correct CPU features by setting the arch.
             let context = Context::default();
             context.add_command_line_option("-fno-use-linker-plugin");
-            context.add_driver_option("-fno-use-linker-plugin");
+            //context.add_driver_option("-fno-use-linker-plugin");
             if target_cpu != "generic" {
                 context.add_command_line_option(format!("-march={}", target_cpu));
             }
@@ -213,7 +213,7 @@ impl CodegenBackend for GccCodegenBackend {
             let temp_file = temp_dir.into_path().join("result.asm");
             let check_context = Context::default();
             context.add_command_line_option("-fno-use-linker-plugin");
-            context.add_driver_option("-fno-use-linker-plugin");
+            //context.add_driver_option("-fno-use-linker-plugin");
             check_context.set_print_errors_to_stderr(false);
             let _int128_ty = check_context.new_c_type(CType::UInt128t);
             // NOTE: we cannot just call compile() as this would require other files than libgccjit.so.
@@ -271,8 +271,12 @@ impl CodegenBackend for GccCodegenBackend {
 
 fn new_context<'gcc, 'tcx>(tcx: TyCtxt<'tcx>) -> Context<'gcc> {
     let context = Context::default();
+    context.add_command_line_option("-flto=auto");
+    context.add_command_line_option("-flto-partition=one");
+    context.add_driver_option("-flto=auto");
+    context.add_driver_option("-flto-partition=one");
     context.add_command_line_option("-fno-use-linker-plugin");
-    context.add_driver_option("-fno-use-linker-plugin");
+    //context.add_driver_option("-fno-use-linker-plugin");
     if tcx.sess.target.arch == "x86" || tcx.sess.target.arch == "x86_64" {
         context.add_command_line_option("-masm=intel");
     }
@@ -306,6 +310,7 @@ impl ExtraBackendMethods for GccCodegenBackend {
             should_combine_object_files: false,
             temp_dir: None,
         };
+        mods.context.add_driver_option("-fno-use-linker-plugin");
 
         unsafe {
             allocator::codegen(tcx, &mut mods, module_name, kind, alloc_error_handler_kind);
@@ -468,7 +473,7 @@ pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
         // Float16).
         let context = Context::default();
         context.add_command_line_option("-fno-use-linker-plugin");
-        context.add_driver_option("-fno-use-linker-plugin");
+        //context.add_driver_option("-fno-use-linker-plugin");
         Arc::new(Mutex::new(IntoDynSyncSend(context.get_target_info())))
     };
     #[cfg(not(feature = "master"))]

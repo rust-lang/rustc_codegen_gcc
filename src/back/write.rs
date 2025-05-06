@@ -65,13 +65,18 @@ pub(crate) unsafe fn codegen(
                         "GCC_module_codegen_emit_bitcode",
                         &*module.name,
                     );
+                    println!("Adding -flto for {}", bc_out.to_str().unwrap());
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    context.add_driver_option("-flto=auto");
+                    context.add_driver_option("-flto-partition=one");
+                    context.add_command_line_option("-fno-fat-lto-objects");
+                    context.add_driver_option("-fno-fat-lto-objects");
                     // FIXME FIXME FIXME: it seems that uncommenting "ADD_ARG ("-fno-use-linker-plugin")" in libgccjit
                     // make the test fail (undefined symbol main).
                     // TODO: Perhaps we're not sending this flag somewhere?
                     context.add_command_line_option("-fno-use-linker-plugin");
-                    context.add_driver_option("-fno-use-linker-plugin");
+                    //context.add_driver_option("-fno-use-linker-plugin");
                     // TODO(antoyo): remove since we don't want fat objects when it is for Bitcode only.
                     context.add_command_line_option("-ffat-lto-objects");
                     context.compile_to_file(
@@ -88,10 +93,15 @@ pub(crate) unsafe fn codegen(
                     // TODO(antoyo): maybe we should call embed_bitcode to have the proper iOS fixes?
                     //embed_bitcode(cgcx, llcx, llmod, &config.bc_cmdline, data);
 
+                    println!("Adding -flto for {}", bc_out.to_str().unwrap());
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    context.add_driver_option("-flto=auto");
+                    context.add_driver_option("-flto-partition=one");
+                    context.add_command_line_option("-fno-fat-lto-objects");
+                    context.add_driver_option("-fno-fat-lto-objects");
                     context.add_command_line_option("-fno-use-linker-plugin");
-                    context.add_driver_option("-fno-use-linker-plugin");
+                    //context.add_driver_option("-fno-use-linker-plugin");
                     context.add_command_line_option("-ffat-lto-objects");
                     // TODO(antoyo): Send -plugin/usr/lib/gcc/x86_64-pc-linux-gnu/11.1.0/liblto_plugin.so to linker (this should be done when specifying the appropriate rustc cli argument).
                     context.compile_to_file(
@@ -179,15 +189,20 @@ pub(crate) unsafe fn codegen(
                     if fat_lto {
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
+                        context.add_driver_option("-flto=auto");
+                        context.add_driver_option("-flto-partition=one");
+                        context.add_command_line_option("-fno-fat-lto-objects");
+                        context.add_driver_option("-fno-fat-lto-objects");
                         //context.add_command_line_option("-ffat-lto-objects");
                         context.add_command_line_option("-fno-use-linker-plugin");
-                        context.add_driver_option("-fno-use-linker-plugin");
+                        //context.add_driver_option("-fno-use-linker-plugin");
 
-                        // FIXME FIXME FIXME:
+                        // FIXME:
                         // /usr/bin/ld: warning: incremental linking of LTO and non-LTO objects; using -flinker-output=nolto-rel which will bypass whole program optimization
-                        // ====> So I'm probably missing -flto somewhere.
+                        // => So I'm probably missing -flto somewhere.
+                        // ====> That was caused because I didn't build the sysroot with LTO.
 
-                        println!("**** Adding -flto to {:?}", obj_out.to_str().expect("path to str"));
+                        println!("Adding -flto to {:?}", obj_out.to_str().expect("path to str"));
 
                         // FIXME: the problem is probably that the code is only in GIMPLE IR while
                         // we would want to get the optimized asm done from LTO.
@@ -221,8 +236,14 @@ pub(crate) unsafe fn codegen(
                         println!("****************************************************************************************************");
 
                         let context = Context::default();
+                        context.add_command_line_option("-flto=auto");
+                        context.add_command_line_option("-flto-partition=one");
+                        context.add_driver_option("-flto=auto");
+                        context.add_driver_option("-flto-partition=one");
+                        context.add_command_line_option("-fno-fat-lto-objects");
+                        context.add_driver_option("-fno-fat-lto-objects");
                         context.add_command_line_option("-fno-use-linker-plugin");
-                        context.add_driver_option("-fno-use-linker-plugin");
+                        //context.add_driver_option("-fno-use-linker-plugin");
                         if cgcx.target_arch == "x86" || cgcx.target_arch == "x86_64" {
                             // NOTE: it seems we need to use add_driver_option instead of
                             // add_command_line_option here because we use the LTO frontend via gcc.

@@ -272,6 +272,7 @@ fn fat_lto(
         // We cannot load and merge GCC contexts in memory like cg_llvm is doing.
         // Instead, we combine the object files into a single object file.
         for module in in_memory {
+            println!("Adding -flto for {}", module.name);
             let path = tmp_path.path().to_path_buf().join(&module.name);
             let path = path.to_str().expect("path");
             let context = &module.module_llvm.context;
@@ -280,6 +281,10 @@ fn fat_lto(
             context.set_optimization_level(to_gcc_opt_level(config.opt_level));
             context.add_command_line_option("-flto=auto");
             context.add_command_line_option("-flto-partition=one");
+            context.add_driver_option("-flto=auto");
+            context.add_driver_option("-flto-partition=one");
+            context.add_command_line_option("-fno-fat-lto-objects");
+            context.add_driver_option("-fno-fat-lto-objects");
             context.add_command_line_option("-fno-use-linker-plugin");
             context.add_driver_option("-fno-use-linker-plugin");
             context.compile_to_file(OutputKind::ObjectFile, path);
@@ -518,8 +523,9 @@ fn thin_lto(
         });*/
 
         match module {
-            SerializedModule::Local(_) => {
-                //let path = module_buffer.0.to_str().expect("path");
+            SerializedModule::Local(ref module) => {
+                let path = module.0.to_str().expect("path");
+                println!("??? Should we add -flto for: {:?}", path);
                 //let my_path = PathBuf::from(path);
                 //let exists = my_path.exists();
                 /*module.module_llvm.should_combine_object_files = true;
@@ -653,6 +659,12 @@ pub unsafe fn optimize_thin_module(
         Some(thin_buffer) => Arc::clone(&thin_buffer.context),
         None => {
             let context = Context::default();
+            context.add_command_line_option("-flto=auto");
+            context.add_command_line_option("-flto-partition=one");
+            context.add_driver_option("-flto=auto");
+            context.add_driver_option("-flto-partition=one");
+            context.add_command_line_option("-fno-fat-lto-objects");
+            context.add_driver_option("-fno-fat-lto-objects");
             context.add_command_line_option("-fno-use-linker-plugin");
             context.add_driver_option("-fno-use-linker-plugin");
             let len = thin_module.shared.thin_buffers.len();
