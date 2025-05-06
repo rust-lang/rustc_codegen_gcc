@@ -280,7 +280,8 @@ fn fat_lto(
             context.set_optimization_level(to_gcc_opt_level(config.opt_level));
             context.add_command_line_option("-flto=auto");
             context.add_command_line_option("-flto-partition=one");
-            //context.add_command_line_option("-fno-use-linker-plugin");
+            context.add_command_line_option("-fno-use-linker-plugin");
+            context.add_driver_option("-fno-use-linker-plugin");
             context.compile_to_file(OutputKind::ObjectFile, path);
             let buffer = ModuleBuffer::new(PathBuf::from(path));
             let llmod_id = CString::new(&module.name[..]).unwrap();
@@ -652,6 +653,8 @@ pub unsafe fn optimize_thin_module(
         Some(thin_buffer) => Arc::clone(&thin_buffer.context),
         None => {
             let context = Context::default();
+            context.add_command_line_option("-fno-use-linker-plugin");
+            context.add_driver_option("-fno-use-linker-plugin");
             let len = thin_module.shared.thin_buffers.len();
             let module = &thin_module.shared.serialized_modules[thin_module.idx - len];
             match *module {

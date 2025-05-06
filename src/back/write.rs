@@ -67,7 +67,11 @@ pub(crate) unsafe fn codegen(
                     );
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
-                    //context.add_command_line_option("-fno-use-linker-plugin");
+                    // FIXME FIXME FIXME: it seems that uncommenting "ADD_ARG ("-fno-use-linker-plugin")" in libgccjit
+                    // make the test fail (undefined symbol main).
+                    // TODO: Perhaps we're not sending this flag somewhere?
+                    context.add_command_line_option("-fno-use-linker-plugin");
+                    context.add_driver_option("-fno-use-linker-plugin");
                     // TODO(antoyo): remove since we don't want fat objects when it is for Bitcode only.
                     context.add_command_line_option("-ffat-lto-objects");
                     context.compile_to_file(
@@ -86,7 +90,8 @@ pub(crate) unsafe fn codegen(
 
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
-                    //context.add_command_line_option("-fno-use-linker-plugin");
+                    context.add_command_line_option("-fno-use-linker-plugin");
+                    context.add_driver_option("-fno-use-linker-plugin");
                     context.add_command_line_option("-ffat-lto-objects");
                     // TODO(antoyo): Send -plugin/usr/lib/gcc/x86_64-pc-linux-gnu/11.1.0/liblto_plugin.so to linker (this should be done when specifying the appropriate rustc cli argument).
                     context.compile_to_file(
@@ -175,7 +180,8 @@ pub(crate) unsafe fn codegen(
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
                         //context.add_command_line_option("-ffat-lto-objects");
-                        //context.add_command_line_option("-fno-use-linker-plugin");
+                        context.add_command_line_option("-fno-use-linker-plugin");
+                        context.add_driver_option("-fno-use-linker-plugin");
 
                         // FIXME FIXME FIXME:
                         // /usr/bin/ld: warning: incremental linking of LTO and non-LTO objects; using -flinker-output=nolto-rel which will bypass whole program optimization
@@ -215,6 +221,8 @@ pub(crate) unsafe fn codegen(
                         println!("****************************************************************************************************");
 
                         let context = Context::default();
+                        context.add_command_line_option("-fno-use-linker-plugin");
+                        context.add_driver_option("-fno-use-linker-plugin");
                         if cgcx.target_arch == "x86" || cgcx.target_arch == "x86_64" {
                             // NOTE: it seems we need to use add_driver_option instead of
                             // add_command_line_option here because we use the LTO frontend via gcc.
