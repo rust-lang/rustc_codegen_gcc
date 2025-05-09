@@ -135,6 +135,17 @@ pub fn compile_codegen_unit(
         // NOTE: Rust relies on LLVM doing wrapping on overflow.
         context.add_command_line_option("-fwrapv");
 
+        let soft_float_enabled = tcx.global_backend_features(())
+            .iter()
+            .any(|feature| {
+                feature == "soft-float" || feature == "+soft-float"
+            });
+
+        if soft_float_enabled {
+            /*context.add_command_line_option("-msoft-float");
+            context.add_driver_option("-msoft-float");*/
+        }
+
         if let Some(model) = tcx.sess.code_model() {
             use rustc_target::spec::CodeModel;
 
