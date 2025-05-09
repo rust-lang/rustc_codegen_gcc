@@ -34,6 +34,30 @@ To run specific tests, use appropriate flags such as:
 - `./y.sh test --test-libcore`
 - `./y.sh test --std-tests`
 - `cargo test -- <name of test>`
+##### Cargo tests
+To run `cargo test`s, you need to do a few things.
+First and foremost, set the correct `LD_LIBRARY_PATH` and `LIBRARY_PATH`. 
+
+You can find out this path by running `./y.sh build`. 
+You should see output like this:
+```
+[BUILD] build system
+    Finished `release` profile [optimized] target(s) in 0.01s
+Using `EXAMPLE_PATH` as path for libgccjit
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.02s
+```
+Copy the path from that output, and use it to set `LD_LIBRARY_PATH` and `LIBRARY_PATH`. 
+```shell
+export EXAMPLE_PATH=SOME_PATH
+export EXAMPLE_PATH=SOME_PATH
+```
+Before running any of the cargo tests, you must also first run this command:
+```sh
+./y.sh test --mini-tests
+```
+It will build some of the dependencies neccesary for running tests.
+
+##### `libgccjit` tests
 
 Additionally, you can run the tests of `libgccjit`:
 
