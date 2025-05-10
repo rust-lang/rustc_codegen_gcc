@@ -207,6 +207,8 @@ fn handle_native(name: &str) -> &str {
     {
         // Get the native arch.
         let context = Context::default();
+        context.add_command_line_option("-fno-use-linker-plugin");
+        context.add_driver_option("-fno-use-linker-plugin");
         context.get_target_info().arch().unwrap().to_str().unwrap()
     }
     #[cfg(not(feature = "master"))]
