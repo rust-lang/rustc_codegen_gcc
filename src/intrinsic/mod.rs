@@ -224,39 +224,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                 match int_type_width_signed(ty, self) {
                     Some((width, signed)) => match name {
                         sym::ctlz | sym::cttz => {
-                            let func = self.current_func.borrow().expect("func");
-                            let then_block = func.new_block("then");
-                            let else_block = func.new_block("else");
-                            let after_block = func.new_block("after");
-
-                            let arg = args[0].immediate();
-                            let result = func.new_local(None, self.u32_type, "zeros");
-                            let zero = self.cx.gcc_zero(arg.get_type());
-                            let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
-                            self.llbb().end_with_conditional(None, cond, then_block, else_block);
-
-                            let zero_result = self.cx.gcc_uint(self.u32_type, width);
-                            then_block.add_assignment(None, result, zero_result);
-                            then_block.end_with_jump(None, after_block);
-
-                            // NOTE: since jumps were added in a place
-                            // count_leading_zeroes() does not expect, the current block
-                            // in the state need to be updated.
-                            self.switch_to_block(else_block);
-
-                            let zeros = match name {
-                                sym::ctlz => self.count_leading_zeroes(width, arg),
-                                sym::cttz => self.count_trailing_zeroes(width, arg),
-                                _ => unreachable!(),
-                            };
-                            self.llbb().add_assignment(None, result, zeros);
-                            self.llbb().end_with_jump(None, after_block);
-
-                            // NOTE: since jumps were added in a place rustc does not
-                            // expect, the current block in the state need to be updated.
-                            self.switch_to_block(after_block);
-
-                            result.to_rvalue()
+                            self.checked_bitcount_intrinsic(name, args[0].immediate(), width)
                         }
                         sym::ctlz_nonzero => self.count_leading_zeroes(width, args[0].immediate()),
                         sym::cttz_nonzero => self.count_trailing_zeroes(width, args[0].immediate()),
@@ -712,7 +680,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.gcc_int_cast(result, result_type)
     }
 
-    fn count_leading_zeroes(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn count_leading_zeroes(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): use width?
         let arg_type = arg.get_type();
         let result_type = self.u32_type;
@@ -743,15 +711,16 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let one = self.context.new_rvalue_one(self.usize_type);
                 let two = self.context.new_rvalue_from_long(self.usize_type, 2);
 
-                let clzll = self.context.get_builtin_function("__builtin_clzll");
-
                 let first_elem = self.context.new_array_access(None, result, zero);
-                let first_value = self.gcc_int_cast(self.context.new_call(None, clzll, &[high]), arg_type);
+                let high_ctlz = self.checked_bitcount_intrinsic(sym::ctlz, high, 64);
+                let first_value = self.gcc_int_cast(high_ctlz, arg_type);
                 self.llbb()
                     .add_assignment(self.location, first_elem, first_value);
 
                 let second_elem = self.context.new_array_access(self.location, result, one);
-                let cast = self.gcc_int_cast(self.context.new_call(self.location, clzll, &[low]), arg_type);
+
+                let low_ctlz = self.checked_bitcount_intrinsic(sym::ctlz,low,64 );
+                let cast = self.gcc_int_cast(low_ctlz, arg_type);
                 let second_value = self.add(cast, sixty_four);
                 self.llbb()
                     .add_assignment(self.location, second_elem, second_value);
@@ -788,7 +757,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.context.new_cast(self.location, res, result_type)
     }
 
-    fn count_trailing_zeroes(&mut self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn count_trailing_zeroes(&mut self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
         let arg_type = arg.get_type();
         let result_type = self.u32_type;
         let arg = if arg_type.is_signed(self.cx) {
@@ -826,15 +795,15 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 let one = self.context.new_rvalue_one(self.usize_type);
                 let two = self.context.new_rvalue_from_long(self.usize_type, 2);
 
-                let ctzll = self.context.get_builtin_function("__builtin_ctzll");
-
                 let first_elem = self.context.new_array_access(self.location, result, zero);
-                let first_value = self.gcc_int_cast(self.context.new_call(self.location, ctzll, &[low]), arg_type);
+                let low_ctzll = self.checked_bitcount_intrinsic(sym::cttz,low , 64);
+                let first_value = self.gcc_int_cast(low_ctzll, arg_type);
                 self.llbb()
                     .add_assignment(self.location, first_elem, first_value);
 
                 let second_elem = self.context.new_array_access(self.location, result, one);
-                let second_value = self.gcc_add(self.gcc_int_cast(self.context.new_call(self.location, ctzll, &[high]), arg_type), sixty_four);
+                let high_ctzll = self.checked_bitcount_intrinsic(sym::cttz,high , 64);
+                let second_value = self.gcc_add(self.gcc_int_cast(high_ctzll, arg_type), sixty_four);
                 self.llbb()
                     .add_assignment(self.location, second_elem, second_value);
 
