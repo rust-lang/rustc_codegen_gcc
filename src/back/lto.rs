@@ -283,6 +283,9 @@ fn fat_lto(
             context.add_command_line_option("-flto-partition=one");
             context.add_driver_option("-flto=auto");
             context.add_driver_option("-flto-partition=one");
+            // FIXME: we apparently generate fat objects since we had trouble with a sync:
+            // https://blog.antoyo.xyz/rustc_codegen_gcc-progress-report-33
+            // TODO: Maybe fix this before removing -fuse-linker-plugin.
             context.add_command_line_option("-fno-fat-lto-objects");
             context.add_driver_option("-fno-fat-lto-objects");
             context.add_command_line_option("-fno-use-linker-plugin");
