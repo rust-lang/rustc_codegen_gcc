@@ -46,12 +46,76 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 }
 
 pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) -> RValue<'gcc> {
-    let context = &cx.context;
-    let byte_type = context.new_type::<u8>();
-    let typ = context.new_array_type(None, byte_type, bytes.len() as u64);
-    let elements: Vec<_> =
-        bytes.iter().map(|&byte| context.new_rvalue_from_int(byte_type, byte as i32)).collect();
-    context.new_array_constructor(None, typ, &elements)
+    //if cx.sess().target.options.endian == Endian::Little {}
+    match bytes.len() % 8 {
+        0 => {
+            let context = &cx.context;
+            let byte_type = context.new_type::<u64>();
+            let typ = context.new_array_type(None, byte_type, bytes.len() as u64 / 8);
+            let elements: Vec<_> = bytes
+                .chunks_exact(8)
+                .map(|arr| {
+                    let arr: [u8; 8] = arr.try_into().unwrap();
+                    context.new_rvalue_from_long(
+                        byte_type,
+                        match cx.sess().target.options.endian {
+                            rustc_abi::Endian::Little => u64::from_le_bytes(arr) as i64,
+                            rustc_abi::Endian::Big => u64::from_be_bytes(arr) as i64,
+                        },
+                    )
+                })
+                .collect();
+            context.new_array_constructor(None, typ, &elements)
+        }
+        4 => {
+            let context = &cx.context;
+            let byte_type = context.new_type::<u32>();
+            let typ = context.new_array_type(None, byte_type, bytes.len() as u64 / 4);
+            let elements: Vec<_> = bytes
+                .chunks_exact(4)
+                .map(|arr| {
+                    let arr: [u8; 4] = arr.try_into().unwrap();
+                    context.new_rvalue_from_int(
+                        byte_type,
+                        match cx.sess().target.options.endian {
+                            rustc_abi::Endian::Little => u32::from_le_bytes(arr) as i32,
+                            rustc_abi::Endian::Big => u32::from_be_bytes(arr) as i32,
+                        },
+                    )
+                })
+                .collect();
+            context.new_array_constructor(None, typ, &elements)
+        }
+        2..6 => {
+            let context = &cx.context;
+            let byte_type = context.new_type::<u16>();
+            let typ = context.new_array_type(None, byte_type, bytes.len() as u64 / 2);
+            let elements: Vec<_> = bytes
+                .chunks_exact(2)
+                .map(|arr| {
+                    let arr: [u8; 2] = arr.try_into().unwrap();
+                    context.new_rvalue_from_int(
+                        byte_type,
+                        match cx.sess().target.options.endian {
+                            rustc_abi::Endian::Little => u16::from_le_bytes(arr) as u32 as i32,
+                            rustc_abi::Endian::Big => u16::from_be_bytes(arr) as u32 as i32,
+                        },
+                    )
+                })
+                .collect();
+            context.new_array_constructor(None, typ, &elements)
+        }
+        _ => {
+            let context = &cx.context;
+            let byte_type = context.new_type::<u8>();
+            let typ = context.new_array_type(None, byte_type, bytes.len() as u64);
+            let elements: Vec<_> = bytes
+                .iter()
+                .map(|&byte| context.new_rvalue_from_int(byte_type, byte as i32))
+                .collect();
+            context.new_array_constructor(None, typ, &elements)
+        }
+    }
 }
 
 pub fn type_is_pointer(typ: Type<'_>) -> bool {
