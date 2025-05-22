@@ -115,7 +115,9 @@ pub fn main_inner(profile: Profile) {
                 }
             }
             match profile {
-                Profile::Debug => {}
+                Profile::Debug => {
+                    compiler.args(["-C", "llvm-args=santize-undefined"]);
+                }
                 Profile::Release => {
                     compiler.args(["-C", "opt-level=3", "-C", "lto=no"]);
                 }
