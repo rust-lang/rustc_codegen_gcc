@@ -5,7 +5,6 @@ use rustc_codegen_ssa::traits::BuilderMethods;
 
 use crate::builder::Builder;
 use crate::context::CodegenCx;
-
 fn encode_key_128_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
 ) -> (Type<'gcc>, Field<'gcc>, Field<'gcc>) {
@@ -26,7 +25,6 @@ fn encode_key_128_type<'a, 'gcc, 'tcx>(
     encode_type.as_type().set_packed();
     (encode_type.as_type(), field1, field2)
 }
-
 fn encode_key_256_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
 ) -> (Type<'gcc>, Field<'gcc>, Field<'gcc>) {
@@ -48,7 +46,6 @@ fn encode_key_256_type<'a, 'gcc, 'tcx>(
     encode_type.as_type().set_packed();
     (encode_type.as_type(), field1, field2)
 }
-
 fn aes_output_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
 ) -> (Type<'gcc>, Field<'gcc>, Field<'gcc>) {
@@ -61,7 +58,6 @@ fn aes_output_type<'a, 'gcc, 'tcx>(
     typ.set_packed();
     (typ, field1, field2)
 }
-
 fn wide_aes_output_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
 ) -> (Type<'gcc>, Field<'gcc>, Field<'gcc>) {
@@ -84,7 +80,6 @@ fn wide_aes_output_type<'a, 'gcc, 'tcx>(
     aes_output_type.as_type().set_packed();
     (aes_output_type.as_type(), field1, field2)
 }
-
 #[cfg_attr(not(feature = "master"), allow(unused_variables))]
 pub fn adjust_function<'gcc>(
     context: &'gcc Context<'gcc>,
@@ -113,10 +108,8 @@ pub fn adjust_function<'gcc>(
         }
         _ => (),
     }
-
     func_ptr
 }
-
 pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
     gcc_func: FunctionPtrType<'gcc>,
@@ -127,7 +120,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
     if func_name == "__builtin_trap" {
         return vec![].into();
     }
-
     // Some LLVM intrinsics do not map 1-to-1 to GCC intrinsics, so we add the missing
     // arguments here.
     if gcc_func.get_param_count() != args.len() {
@@ -362,16 +354,13 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
             }
             "__builtin_ia32_vfmaddps512_mask" | "__builtin_ia32_vfmaddpd512_mask" => {
                 let mut new_args = args.to_vec();
-
                 let mut last_arg = None;
                 if args.len() == 4 {
                     last_arg = new_args.pop();
                 }
-
                 let arg4_type = gcc_func.get_param_type(3);
                 let minus_one = builder.context.new_rvalue_from_int(arg4_type, -1);
                 new_args.push(minus_one);
-
                 if args.len() == 3 {
                     // Both llvm.fma.v16f32 and llvm.x86.avx512.vfmadd.ps.512 maps to
                     // the same GCC intrinsic, but the former has 3 parameters and the
@@ -379,11 +368,9 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                     let arg5_type = gcc_func.get_param_type(4);
                     new_args.push(builder.context.new_rvalue_from_int(arg5_type, 4));
                 }
-
                 if let Some(last_arg) = last_arg {
                     new_args.push(last_arg);
                 }
-
                 args = new_args.into();
             }
             "__builtin_ia32_addps512_mask"
@@ -554,7 +541,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
             | "__builtin_ia32_minph512_mask_round" => {
                 let mut new_args = args.to_vec();
                 let last_arg = new_args.pop().expect("last arg");
-
                 let arg3_type = gcc_func.get_param_type(2);
                 let vector_type = arg3_type.dyncast_vector().expect("vector type");
                 let zero = builder.context.new_rvalue_zero(vector_type.get_element_type());
@@ -562,7 +548,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 let first_arg =
                     builder.context.new_rvalue_from_vector(None, arg3_type, &vec![zero; num_units]);
                 new_args.push(first_arg);
-
                 let arg4_type = gcc_func.get_param_type(3);
                 let minus_one = builder.context.new_rvalue_from_int(arg4_type, -1);
                 new_args.push(minus_one);
@@ -614,16 +599,13 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
             | "__builtin_ia32_aesencwide256kl_u8"
             | "__builtin_ia32_aesdecwide256kl_u8" => {
                 let mut new_args = vec![];
-
                 let mut old_args = args.to_vec();
                 let handle = old_args.swap_remove(0); // Called __P in GCC.
                 let first_value = old_args.swap_remove(0);
-
                 let element_type = first_value.get_type();
                 let array_type = builder.context.new_array_type(None, element_type, 8);
                 let result = builder.current_func().new_local(None, array_type, "result");
                 new_args.push(result.get_address(None));
-
                 let array = builder.current_func().new_local(None, array_type, "array");
                 let input = builder.context.new_array_constructor(
                     None,
@@ -644,7 +626,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 let arg2_type = gcc_func.get_param_type(1);
                 let input_ptr = builder.context.new_cast(None, input_ptr, arg2_type);
                 new_args.push(input_ptr);
-
                 new_args.push(handle);
                 args = new_args.into();
             }
@@ -767,10 +748,8 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
             _ => (),
         }
     }
-
     args
 }
-
 pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
     mut return_value: RValue<'gcc>,
@@ -829,7 +808,6 @@ pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
             let success_variable =
                 builder.current_func().new_local(None, return_value.get_type(), "success");
             builder.llbb().add_assignment(None, success_variable, return_value);
-
             let field1 = builder.context.new_field(None, random_number.get_type(), "random_number");
             let field2 = builder.context.new_field(None, return_value.get_type(), "success");
             let struct_type =
@@ -937,10 +915,8 @@ pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
         }
         _ => (),
     }
-
     return_value
 }
-
 pub fn ignore_arg_cast(func_name: &str, index: usize, args_len: usize) -> bool {
     // FIXME(antoyo): find a way to refactor in order to avoid this hack.
     match func_name {
@@ -995,10 +971,8 @@ pub fn ignore_arg_cast(func_name: &str, index: usize, args_len: usize) -> bool {
         }
         _ => (),
     }
-
     false
 }
-
 #[cfg(not(feature = "master"))]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
     let gcc_name = match name {
@@ -1014,7 +988,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
     cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
     return func;
 }
-
 #[cfg(feature = "master")]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
     let gcc_name = match name {
@@ -1024,7 +997,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
             cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
             return func;
         }
-
         "llvm.aarch64.isb" => {
             // FIXME: GCC doesn't support __builtin_arm_isb yet, check if this builtin is OK.
             let gcc_name = "__atomic_thread_fence";
@@ -1032,66 +1004,11 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
             cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
             return func;
         }
-
         "llvm.x86.xgetbv" => "__builtin_ia32_xgetbv",
         // NOTE: this doc specifies the equivalent GCC builtins: http://huonw.github.io/llvmint/llvmint/x86/index.html
         "llvm.sqrt.v2f64" => "__builtin_ia32_sqrtpd",
-        "llvm.x86.avx512.pmul.dq.512" => "__builtin_ia32_pmuldq512_mask",
-        "llvm.x86.avx512.pmulu.dq.512" => "__builtin_ia32_pmuludq512_mask",
-        "llvm.x86.avx512.max.ps.512" => "__builtin_ia32_maxps512_mask",
-        "llvm.x86.avx512.max.pd.512" => "__builtin_ia32_maxpd512_mask",
-        "llvm.x86.avx512.min.ps.512" => "__builtin_ia32_minps512_mask",
-        "llvm.x86.avx512.min.pd.512" => "__builtin_ia32_minpd512_mask",
         "llvm.fma.v16f32" => "__builtin_ia32_vfmaddps512_mask",
         "llvm.fma.v8f64" => "__builtin_ia32_vfmaddpd512_mask",
-        "llvm.x86.avx512.vfmaddsub.ps.512" => "__builtin_ia32_vfmaddsubps512_mask",
-        "llvm.x86.avx512.vfmaddsub.pd.512" => "__builtin_ia32_vfmaddsubpd512_mask",
-        "llvm.x86.avx512.pternlog.d.512" => "__builtin_ia32_pternlogd512_mask",
-        "llvm.x86.avx512.pternlog.d.256" => "__builtin_ia32_pternlogd256_mask",
-        "llvm.x86.avx512.pternlog.d.128" => "__builtin_ia32_pternlogd128_mask",
-        "llvm.x86.avx512.pternlog.q.512" => "__builtin_ia32_pternlogq512_mask",
-        "llvm.x86.avx512.pternlog.q.256" => "__builtin_ia32_pternlogq256_mask",
-        "llvm.x86.avx512.pternlog.q.128" => "__builtin_ia32_pternlogq128_mask",
-        "llvm.x86.avx512.add.ps.512" => "__builtin_ia32_addps512_mask",
-        "llvm.x86.avx512.add.pd.512" => "__builtin_ia32_addpd512_mask",
-        "llvm.x86.avx512.sub.ps.512" => "__builtin_ia32_subps512_mask",
-        "llvm.x86.avx512.sub.pd.512" => "__builtin_ia32_subpd512_mask",
-        "llvm.x86.avx512.mul.ps.512" => "__builtin_ia32_mulps512_mask",
-        "llvm.x86.avx512.mul.pd.512" => "__builtin_ia32_mulpd512_mask",
-        "llvm.x86.avx512.div.ps.512" => "__builtin_ia32_divps512_mask",
-        "llvm.x86.avx512.div.pd.512" => "__builtin_ia32_divpd512_mask",
-        "llvm.x86.avx512.vfmadd.ps.512" => "__builtin_ia32_vfmaddps512_mask",
-        "llvm.x86.avx512.vfmadd.pd.512" => "__builtin_ia32_vfmaddpd512_mask",
-        "llvm.x86.avx512.sitofp.round.v16f32.v16i32" => "__builtin_ia32_cvtdq2ps512_mask",
-        "llvm.x86.avx512.uitofp.round.v16f32.v16i32" => "__builtin_ia32_cvtudq2ps512_mask",
-        "llvm.x86.avx512.mask.ucmp.d.512" => "__builtin_ia32_ucmpd512_mask",
-        "llvm.x86.avx512.mask.ucmp.d.256" => "__builtin_ia32_ucmpd256_mask",
-        "llvm.x86.avx512.mask.ucmp.d.128" => "__builtin_ia32_ucmpd128_mask",
-        "llvm.x86.avx512.mask.cmp.d.512" => "__builtin_ia32_cmpd512_mask",
-        "llvm.x86.avx512.mask.cmp.d.256" => "__builtin_ia32_cmpd256_mask",
-        "llvm.x86.avx512.mask.cmp.d.128" => "__builtin_ia32_cmpd128_mask",
-        "llvm.x86.avx512.mask.ucmp.q.512" => "__builtin_ia32_ucmpq512_mask",
-        "llvm.x86.avx512.mask.ucmp.q.256" => "__builtin_ia32_ucmpq256_mask",
-        "llvm.x86.avx512.mask.ucmp.q.128" => "__builtin_ia32_ucmpq128_mask",
-        "llvm.x86.avx512.mask.cmp.q.512" => "__builtin_ia32_cmpq512_mask",
-        "llvm.x86.avx512.mask.cmp.q.256" => "__builtin_ia32_cmpq256_mask",
-        "llvm.x86.avx512.mask.cmp.q.128" => "__builtin_ia32_cmpq128_mask",
-        "llvm.x86.avx512.mask.max.ss.round" => "__builtin_ia32_maxss_mask_round",
-        "llvm.x86.avx512.mask.max.sd.round" => "__builtin_ia32_maxsd_mask_round",
-        "llvm.x86.avx512.mask.min.ss.round" => "__builtin_ia32_minss_mask_round",
-        "llvm.x86.avx512.mask.min.sd.round" => "__builtin_ia32_minsd_mask_round",
-        "llvm.x86.avx512.mask.sqrt.ss" => "__builtin_ia32_sqrtss_mask_round",
-        "llvm.x86.avx512.mask.sqrt.sd" => "__builtin_ia32_sqrtsd_mask_round",
-        "llvm.x86.avx512.mask.getexp.ss" => "__builtin_ia32_getexpss_mask_round",
-        "llvm.x86.avx512.mask.getexp.sd" => "__builtin_ia32_getexpsd_mask_round",
-        "llvm.x86.avx512.mask.getmant.ss" => "__builtin_ia32_getmantss_mask_round",
-        "llvm.x86.avx512.mask.getmant.sd" => "__builtin_ia32_getmantsd_mask_round",
-        "llvm.x86.avx512.mask.rndscale.ss" => "__builtin_ia32_rndscaless_mask_round",
-        "llvm.x86.avx512.mask.rndscale.sd" => "__builtin_ia32_rndscalesd_mask_round",
-        "llvm.x86.avx512.mask.scalef.ss" => "__builtin_ia32_scalefss_mask_round",
-        "llvm.x86.avx512.mask.scalef.sd" => "__builtin_ia32_scalefsd_mask_round",
-        "llvm.x86.avx512.vfmadd.f32" => "__builtin_ia32_vfmaddss3_round",
-        "llvm.x86.avx512.vfmadd.f64" => "__builtin_ia32_vfmaddsd3_round",
         "llvm.ceil.v4f64" => "__builtin_ia32_ceilpd256",
         "llvm.ceil.v8f32" => "__builtin_ia32_ceilps256",
         "llvm.floor.v4f64" => "__builtin_ia32_floorpd256",
@@ -1122,65 +1039,17 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.ctlz.v4i64" => "__builtin_ia32_vplzcntq_256_mask",
         "llvm.ctlz.v2i64" => "__builtin_ia32_vplzcntq_128_mask",
         "llvm.ctpop.v32i16" => "__builtin_ia32_vpopcountw_v32hi",
-        "llvm.x86.avx512.conflict.d.512" => "__builtin_ia32_vpconflictsi_512_mask",
-        "llvm.x86.avx512.conflict.d.256" => "__builtin_ia32_vpconflictsi_256_mask",
-        "llvm.x86.avx512.conflict.d.128" => "__builtin_ia32_vpconflictsi_128_mask",
-        "llvm.x86.avx512.conflict.q.512" => "__builtin_ia32_vpconflictdi_512_mask",
-        "llvm.x86.avx512.conflict.q.256" => "__builtin_ia32_vpconflictdi_256_mask",
-        "llvm.x86.avx512.conflict.q.128" => "__builtin_ia32_vpconflictdi_128_mask",
-        "llvm.x86.avx512.vpermi2var.qi.512" => "__builtin_ia32_vpermt2varqi512_mask",
-        "llvm.x86.avx512.vpermi2var.qi.256" => "__builtin_ia32_vpermt2varqi256_mask",
-        "llvm.x86.avx512.vpermi2var.qi.128" => "__builtin_ia32_vpermt2varqi128_mask",
-        "llvm.x86.avx512.permvar.qi.512" => "__builtin_ia32_permvarqi512_mask",
-        "llvm.x86.avx512.permvar.qi.256" => "__builtin_ia32_permvarqi256_mask",
-        "llvm.x86.avx512.permvar.qi.128" => "__builtin_ia32_permvarqi128_mask",
-        "llvm.x86.avx512.pmultishift.qb.512" => "__builtin_ia32_vpmultishiftqb512_mask",
-        "llvm.x86.avx512.pmultishift.qb.256" => "__builtin_ia32_vpmultishiftqb256_mask",
-        "llvm.x86.avx512.pmultishift.qb.128" => "__builtin_ia32_vpmultishiftqb128_mask",
         "llvm.ctpop.v16i16" => "__builtin_ia32_vpopcountw_v16hi",
         "llvm.ctpop.v8i16" => "__builtin_ia32_vpopcountw_v8hi",
         "llvm.ctpop.v64i8" => "__builtin_ia32_vpopcountb_v64qi",
         "llvm.ctpop.v32i8" => "__builtin_ia32_vpopcountb_v32qi",
         "llvm.ctpop.v16i8" => "__builtin_ia32_vpopcountb_v16qi",
-        "llvm.x86.avx512.mask.vpshufbitqmb.512" => "__builtin_ia32_vpshufbitqmb512_mask",
-        "llvm.x86.avx512.mask.vpshufbitqmb.256" => "__builtin_ia32_vpshufbitqmb256_mask",
-        "llvm.x86.avx512.mask.vpshufbitqmb.128" => "__builtin_ia32_vpshufbitqmb128_mask",
-        "llvm.x86.avx512.mask.ucmp.w.512" => "__builtin_ia32_ucmpw512_mask",
-        "llvm.x86.avx512.mask.ucmp.w.256" => "__builtin_ia32_ucmpw256_mask",
-        "llvm.x86.avx512.mask.ucmp.w.128" => "__builtin_ia32_ucmpw128_mask",
-        "llvm.x86.avx512.mask.ucmp.b.512" => "__builtin_ia32_ucmpb512_mask",
-        "llvm.x86.avx512.mask.ucmp.b.256" => "__builtin_ia32_ucmpb256_mask",
-        "llvm.x86.avx512.mask.ucmp.b.128" => "__builtin_ia32_ucmpb128_mask",
-        "llvm.x86.avx512.mask.cmp.w.512" => "__builtin_ia32_cmpw512_mask",
-        "llvm.x86.avx512.mask.cmp.w.256" => "__builtin_ia32_cmpw256_mask",
-        "llvm.x86.avx512.mask.cmp.w.128" => "__builtin_ia32_cmpw128_mask",
-        "llvm.x86.avx512.mask.cmp.b.512" => "__builtin_ia32_cmpb512_mask",
-        "llvm.x86.avx512.mask.cmp.b.256" => "__builtin_ia32_cmpb256_mask",
-        "llvm.x86.avx512.mask.cmp.b.128" => "__builtin_ia32_cmpb128_mask",
         "llvm.x86.xrstor" => "__builtin_ia32_xrstor",
         "llvm.x86.xrstor64" => "__builtin_ia32_xrstor64",
         "llvm.x86.xsavec" => "__builtin_ia32_xsavec",
         "llvm.x86.xsavec64" => "__builtin_ia32_xsavec64",
         "llvm.x86.addcarry.32" => "__builtin_ia32_addcarryx_u32",
         "llvm.x86.subborrow.32" => "__builtin_ia32_sbb_u32",
-        "llvm.x86.avx512.mask.compress.store.w.512" => "__builtin_ia32_compressstoreuhi512_mask",
-        "llvm.x86.avx512.mask.compress.store.w.256" => "__builtin_ia32_compressstoreuhi256_mask",
-        "llvm.x86.avx512.mask.compress.store.w.128" => "__builtin_ia32_compressstoreuhi128_mask",
-        "llvm.x86.avx512.mask.compress.store.b.512" => "__builtin_ia32_compressstoreuqi512_mask",
-        "llvm.x86.avx512.mask.compress.store.b.256" => "__builtin_ia32_compressstoreuqi256_mask",
-        "llvm.x86.avx512.mask.compress.store.b.128" => "__builtin_ia32_compressstoreuqi128_mask",
-        "llvm.x86.avx512.mask.compress.w.512" => "__builtin_ia32_compresshi512_mask",
-        "llvm.x86.avx512.mask.compress.w.256" => "__builtin_ia32_compresshi256_mask",
-        "llvm.x86.avx512.mask.compress.w.128" => "__builtin_ia32_compresshi128_mask",
-        "llvm.x86.avx512.mask.compress.b.512" => "__builtin_ia32_compressqi512_mask",
-        "llvm.x86.avx512.mask.compress.b.256" => "__builtin_ia32_compressqi256_mask",
-        "llvm.x86.avx512.mask.compress.b.128" => "__builtin_ia32_compressqi128_mask",
-        "llvm.x86.avx512.mask.expand.w.512" => "__builtin_ia32_expandhi512_mask",
-        "llvm.x86.avx512.mask.expand.w.256" => "__builtin_ia32_expandhi256_mask",
-        "llvm.x86.avx512.mask.expand.w.128" => "__builtin_ia32_expandhi128_mask",
-        "llvm.x86.avx512.mask.expand.b.512" => "__builtin_ia32_expandqi512_mask",
-        "llvm.x86.avx512.mask.expand.b.256" => "__builtin_ia32_expandqi256_mask",
-        "llvm.x86.avx512.mask.expand.b.128" => "__builtin_ia32_expandqi128_mask",
         "llvm.fshl.v8i64" => "__builtin_ia32_vpshldv_v8di",
         "llvm.fshl.v4i64" => "__builtin_ia32_vpshldv_v4di",
         "llvm.fshl.v2i64" => "__builtin_ia32_vpshldv_v2di",
@@ -1200,7 +1069,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.fshr.v16i16" => "__builtin_ia32_vpshrdv_v16hi",
         "llvm.fshr.v8i16" => "__builtin_ia32_vpshrdv_v8hi",
         "llvm.x86.rdrand.64" => "__builtin_ia32_rdrand64_step",
-
         // The above doc points to unknown builtins for the following, so override them:
         "llvm.x86.avx2.gather.d.d" => "__builtin_ia32_gathersiv4si",
         "llvm.x86.avx2.gather.d.d.256" => "__builtin_ia32_gathersiv8si",
@@ -1218,79 +1086,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.avx2.gather.q.q.256" => "__builtin_ia32_gatherdiv4di",
         "llvm.x86.avx2.gather.q.pd" => "__builtin_ia32_gatherdiv2df",
         "llvm.x86.avx2.gather.q.pd.256" => "__builtin_ia32_gatherdiv4df",
-        "llvm.x86.avx512.pslli.d.512" => "__builtin_ia32_pslldi512_mask",
-        "llvm.x86.avx512.psrli.d.512" => "__builtin_ia32_psrldi512_mask",
-        "llvm.x86.avx512.pslli.q.512" => "__builtin_ia32_psllqi512_mask",
-        "llvm.x86.avx512.psrli.q.512" => "__builtin_ia32_psrlqi512_mask",
-        "llvm.x86.avx512.psll.d.512" => "__builtin_ia32_pslld512_mask",
-        "llvm.x86.avx512.psrl.d.512" => "__builtin_ia32_psrld512_mask",
-        "llvm.x86.avx512.psll.q.512" => "__builtin_ia32_psllq512_mask",
-        "llvm.x86.avx512.psrl.q.512" => "__builtin_ia32_psrlq512_mask",
-        "llvm.x86.avx512.psra.d.512" => "__builtin_ia32_psrad512_mask",
-        "llvm.x86.avx512.psra.q.512" => "__builtin_ia32_psraq512_mask",
-        "llvm.x86.avx512.psra.q.256" => "__builtin_ia32_psraq256_mask",
-        "llvm.x86.avx512.psra.q.128" => "__builtin_ia32_psraq128_mask",
-        "llvm.x86.avx512.psrai.d.512" => "__builtin_ia32_psradi512_mask",
-        "llvm.x86.avx512.psrai.q.512" => "__builtin_ia32_psraqi512_mask",
-        "llvm.x86.avx512.psrai.q.256" => "__builtin_ia32_psraqi256_mask",
-        "llvm.x86.avx512.psrai.q.128" => "__builtin_ia32_psraqi128_mask",
-        "llvm.x86.avx512.psrav.d.512" => "__builtin_ia32_psrav16si_mask",
-        "llvm.x86.avx512.psrav.q.512" => "__builtin_ia32_psrav8di_mask",
-        "llvm.x86.avx512.psrav.q.256" => "__builtin_ia32_psravq256_mask",
-        "llvm.x86.avx512.psrav.q.128" => "__builtin_ia32_psravq128_mask",
-        "llvm.x86.avx512.psllv.d.512" => "__builtin_ia32_psllv16si_mask",
-        "llvm.x86.avx512.psrlv.d.512" => "__builtin_ia32_psrlv16si_mask",
-        "llvm.x86.avx512.psllv.q.512" => "__builtin_ia32_psllv8di_mask",
-        "llvm.x86.avx512.psrlv.q.512" => "__builtin_ia32_psrlv8di_mask",
-        "llvm.x86.avx512.permvar.si.512" => "__builtin_ia32_permvarsi512_mask",
-        "llvm.x86.avx512.vpermilvar.ps.512" => "__builtin_ia32_vpermilvarps512_mask",
-        "llvm.x86.avx512.vpermilvar.pd.512" => "__builtin_ia32_vpermilvarpd512_mask",
-        "llvm.x86.avx512.permvar.di.512" => "__builtin_ia32_permvardi512_mask",
-        "llvm.x86.avx512.permvar.di.256" => "__builtin_ia32_permvardi256_mask",
-        "llvm.x86.avx512.permvar.sf.512" => "__builtin_ia32_permvarsf512_mask",
-        "llvm.x86.avx512.permvar.df.512" => "__builtin_ia32_permvardf512_mask",
-        "llvm.x86.avx512.permvar.df.256" => "__builtin_ia32_permvardf256_mask",
-        "llvm.x86.avx512.vpermi2var.d.512" => "__builtin_ia32_vpermi2vard512_mask",
-        "llvm.x86.avx512.vpermi2var.d.256" => "__builtin_ia32_vpermi2vard256_mask",
-        "llvm.x86.avx512.vpermi2var.d.128" => "__builtin_ia32_vpermi2vard128_mask",
-        "llvm.x86.avx512.vpermi2var.q.512" => "__builtin_ia32_vpermi2varq512_mask",
-        "llvm.x86.avx512.vpermi2var.q.256" => "__builtin_ia32_vpermi2varq256_mask",
-        "llvm.x86.avx512.vpermi2var.q.128" => "__builtin_ia32_vpermi2varq128_mask",
-        "llvm.x86.avx512.vpermi2var.ps.512" => "__builtin_ia32_vpermi2varps512_mask",
-        "llvm.x86.avx512.vpermi2var.ps.256" => "__builtin_ia32_vpermi2varps256_mask",
-        "llvm.x86.avx512.vpermi2var.ps.128" => "__builtin_ia32_vpermi2varps128_mask",
-        "llvm.x86.avx512.vpermi2var.pd.512" => "__builtin_ia32_vpermi2varpd512_mask",
-        "llvm.x86.avx512.vpermi2var.pd.256" => "__builtin_ia32_vpermi2varpd256_mask",
-        "llvm.x86.avx512.vpermi2var.pd.128" => "__builtin_ia32_vpermi2varpd128_mask",
-        "llvm.x86.avx512.mask.add.ss.round" => "__builtin_ia32_addss_mask_round",
-        "llvm.x86.avx512.mask.add.sd.round" => "__builtin_ia32_addsd_mask_round",
-        "llvm.x86.avx512.mask.sub.ss.round" => "__builtin_ia32_subss_mask_round",
-        "llvm.x86.avx512.mask.sub.sd.round" => "__builtin_ia32_subsd_mask_round",
-        "llvm.x86.avx512.mask.mul.ss.round" => "__builtin_ia32_mulss_mask_round",
-        "llvm.x86.avx512.mask.mul.sd.round" => "__builtin_ia32_mulsd_mask_round",
-        "llvm.x86.avx512.mask.div.ss.round" => "__builtin_ia32_divss_mask_round",
-        "llvm.x86.avx512.mask.div.sd.round" => "__builtin_ia32_divsd_mask_round",
-        "llvm.x86.avx512.mask.cvtss2sd.round" => "__builtin_ia32_cvtss2sd_mask_round",
-        "llvm.x86.avx512.mask.cvtsd2ss.round" => "__builtin_ia32_cvtsd2ss_mask_round",
-        "llvm.x86.avx512.mask.range.ss" => "__builtin_ia32_rangess128_mask_round",
-        "llvm.x86.avx512.mask.range.sd" => "__builtin_ia32_rangesd128_mask_round",
-        "llvm.x86.avx512.rcp28.ss" => "__builtin_ia32_rcp28ss_mask_round",
-        "llvm.x86.avx512.rcp28.sd" => "__builtin_ia32_rcp28sd_mask_round",
-        "llvm.x86.avx512.rsqrt28.ss" => "__builtin_ia32_rsqrt28ss_mask_round",
-        "llvm.x86.avx512.rsqrt28.sd" => "__builtin_ia32_rsqrt28sd_mask_round",
-        "llvm.x86.avx512fp16.mask.add.sh.round" => "__builtin_ia32_addsh_mask_round",
-        "llvm.x86.avx512fp16.mask.div.sh.round" => "__builtin_ia32_divsh_mask_round",
-        "llvm.x86.avx512fp16.mask.getmant.sh" => "__builtin_ia32_getmantsh_mask_round",
-        "llvm.x86.avx512fp16.mask.max.sh.round" => "__builtin_ia32_maxsh_mask_round",
-        "llvm.x86.avx512fp16.mask.min.sh.round" => "__builtin_ia32_minsh_mask_round",
-        "llvm.x86.avx512fp16.mask.mul.sh.round" => "__builtin_ia32_mulsh_mask_round",
-        "llvm.x86.avx512fp16.mask.rndscale.sh" => "__builtin_ia32_rndscalesh_mask_round",
-        "llvm.x86.avx512fp16.mask.scalef.sh" => "__builtin_ia32_scalefsh_mask_round",
-        "llvm.x86.avx512fp16.mask.sub.sh.round" => "__builtin_ia32_subsh_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtsd2sh.round" => "__builtin_ia32_vcvtsd2sh_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtsh2sd.round" => "__builtin_ia32_vcvtsh2sd_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtsh2ss.round" => "__builtin_ia32_vcvtsh2ss_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtss2sh.round" => "__builtin_ia32_vcvtss2sh_mask_round",
         "llvm.x86.aesni.aesenc.256" => "__builtin_ia32_vaesenc_v32qi",
         "llvm.x86.aesni.aesenclast.256" => "__builtin_ia32_vaesenclast_v32qi",
         "llvm.x86.aesni.aesdec.256" => "__builtin_ia32_vaesdec_v32qi",
@@ -1299,226 +1094,12 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.aesni.aesenclast.512" => "__builtin_ia32_vaesenclast_v64qi",
         "llvm.x86.aesni.aesdec.512" => "__builtin_ia32_vaesdec_v64qi",
         "llvm.x86.aesni.aesdeclast.512" => "__builtin_ia32_vaesdeclast_v64qi",
-        "llvm.x86.avx512bf16.cvtne2ps2bf16.128" => "__builtin_ia32_cvtne2ps2bf16_v8bf",
-        "llvm.x86.avx512bf16.cvtne2ps2bf16.256" => "__builtin_ia32_cvtne2ps2bf16_v16bf",
-        "llvm.x86.avx512bf16.cvtne2ps2bf16.512" => "__builtin_ia32_cvtne2ps2bf16_v32bf",
-        "llvm.x86.avx512bf16.cvtneps2bf16.256" => "__builtin_ia32_cvtneps2bf16_v8sf",
-        "llvm.x86.avx512bf16.cvtneps2bf16.512" => "__builtin_ia32_cvtneps2bf16_v16sf",
-        "llvm.x86.avx512bf16.dpbf16ps.128" => "__builtin_ia32_dpbf16ps_v4sf",
-        "llvm.x86.avx512bf16.dpbf16ps.256" => "__builtin_ia32_dpbf16ps_v8sf",
-        "llvm.x86.avx512bf16.dpbf16ps.512" => "__builtin_ia32_dpbf16ps_v16sf",
         "llvm.x86.pclmulqdq.512" => "__builtin_ia32_vpclmulqdq_v8di",
         "llvm.x86.pclmulqdq.256" => "__builtin_ia32_vpclmulqdq_v4di",
-        "llvm.x86.avx512.pmulhu.w.512" => "__builtin_ia32_pmulhuw512_mask",
-        "llvm.x86.avx512.pmulh.w.512" => "__builtin_ia32_pmulhw512_mask",
-        "llvm.x86.avx512.pmul.hr.sw.512" => "__builtin_ia32_pmulhrsw512_mask",
-        "llvm.x86.avx512.pmaddw.d.512" => "__builtin_ia32_pmaddwd512_mask",
-        "llvm.x86.avx512.pmaddubs.w.512" => "__builtin_ia32_pmaddubsw512_mask",
-        "llvm.x86.avx512.packssdw.512" => "__builtin_ia32_packssdw512_mask",
-        "llvm.x86.avx512.packsswb.512" => "__builtin_ia32_packsswb512_mask",
-        "llvm.x86.avx512.packusdw.512" => "__builtin_ia32_packusdw512_mask",
-        "llvm.x86.avx512.packuswb.512" => "__builtin_ia32_packuswb512_mask",
-        "llvm.x86.avx512.pavg.w.512" => "__builtin_ia32_pavgw512_mask",
-        "llvm.x86.avx512.pavg.b.512" => "__builtin_ia32_pavgb512_mask",
-        "llvm.x86.avx512.psll.w.512" => "__builtin_ia32_psllw512_mask",
-        "llvm.x86.avx512.pslli.w.512" => "__builtin_ia32_psllwi512_mask",
-        "llvm.x86.avx512.psllv.w.512" => "__builtin_ia32_psllv32hi_mask",
-        "llvm.x86.avx512.psllv.w.256" => "__builtin_ia32_psllv16hi_mask",
-        "llvm.x86.avx512.psllv.w.128" => "__builtin_ia32_psllv8hi_mask",
-        "llvm.x86.avx512.psrl.w.512" => "__builtin_ia32_psrlw512_mask",
-        "llvm.x86.avx512.psrli.w.512" => "__builtin_ia32_psrlwi512_mask",
-        "llvm.x86.avx512.psrlv.w.512" => "__builtin_ia32_psrlv32hi_mask",
-        "llvm.x86.avx512.psrlv.w.256" => "__builtin_ia32_psrlv16hi_mask",
-        "llvm.x86.avx512.psrlv.w.128" => "__builtin_ia32_psrlv8hi_mask",
-        "llvm.x86.avx512.psra.w.512" => "__builtin_ia32_psraw512_mask",
-        "llvm.x86.avx512.psrai.w.512" => "__builtin_ia32_psrawi512_mask",
-        "llvm.x86.avx512.psrav.w.512" => "__builtin_ia32_psrav32hi_mask",
-        "llvm.x86.avx512.psrav.w.256" => "__builtin_ia32_psrav16hi_mask",
-        "llvm.x86.avx512.psrav.w.128" => "__builtin_ia32_psrav8hi_mask",
-        "llvm.x86.avx512.vpermi2var.hi.512" => "__builtin_ia32_vpermt2varhi512_mask",
-        "llvm.x86.avx512.vpermi2var.hi.256" => "__builtin_ia32_vpermt2varhi256_mask",
-        "llvm.x86.avx512.vpermi2var.hi.128" => "__builtin_ia32_vpermt2varhi128_mask",
-        "llvm.x86.avx512.permvar.hi.512" => "__builtin_ia32_permvarhi512_mask",
-        "llvm.x86.avx512.permvar.hi.256" => "__builtin_ia32_permvarhi256_mask",
-        "llvm.x86.avx512.permvar.hi.128" => "__builtin_ia32_permvarhi128_mask",
-        "llvm.x86.avx512.pshuf.b.512" => "__builtin_ia32_pshufb512_mask",
-        "llvm.x86.avx512.dbpsadbw.512" => "__builtin_ia32_dbpsadbw512_mask",
-        "llvm.x86.avx512.dbpsadbw.256" => "__builtin_ia32_dbpsadbw256_mask",
-        "llvm.x86.avx512.dbpsadbw.128" => "__builtin_ia32_dbpsadbw128_mask",
-        "llvm.x86.avx512.vpmadd52h.uq.512" => "__builtin_ia32_vpmadd52huq512_mask",
-        "llvm.x86.avx512.vpmadd52l.uq.512" => "__builtin_ia32_vpmadd52luq512_mask",
-        "llvm.x86.avx512.vpmadd52h.uq.256" => "__builtin_ia32_vpmadd52huq256",
-        "llvm.x86.avx512.vpmadd52l.uq.256" => "__builtin_ia32_vpmadd52luq256",
-        "llvm.x86.avx512.vpmadd52h.uq.128" => "__builtin_ia32_vpmadd52huq128",
-        "llvm.x86.avx512.vpdpwssd.512" => "__builtin_ia32_vpdpwssd_v16si",
-        "llvm.x86.avx512.vpdpwssd.256" => "__builtin_ia32_vpdpwssd_v8si",
-        "llvm.x86.avx512.vpdpwssd.128" => "__builtin_ia32_vpdpwssd_v4si",
-        "llvm.x86.avx512.vpdpwssds.512" => "__builtin_ia32_vpdpwssds_v16si",
-        "llvm.x86.avx512.vpdpwssds.256" => "__builtin_ia32_vpdpwssds_v8si",
-        "llvm.x86.avx512.vpdpwssds.128" => "__builtin_ia32_vpdpwssds_v4si",
-        "llvm.x86.avx512.vpdpbusd.512" => "__builtin_ia32_vpdpbusd_v16si",
-        "llvm.x86.avx512.vpdpbusd.256" => "__builtin_ia32_vpdpbusd_v8si",
-        "llvm.x86.avx512.vpdpbusd.128" => "__builtin_ia32_vpdpbusd_v4si",
-        "llvm.x86.avx512.vpdpbusds.512" => "__builtin_ia32_vpdpbusds_v16si",
-        "llvm.x86.avx512.vpdpbusds.256" => "__builtin_ia32_vpdpbusds_v8si",
-        "llvm.x86.avx512.vpdpbusds.128" => "__builtin_ia32_vpdpbusds_v4si",
         "llvm.x86.xsave" => "__builtin_ia32_xsave",
         "llvm.x86.xsave64" => "__builtin_ia32_xsave64",
         "llvm.x86.xsaveopt" => "__builtin_ia32_xsaveopt",
         "llvm.x86.xsaveopt64" => "__builtin_ia32_xsaveopt64",
-        "llvm.x86.avx512.mask.loadu.w.512" => "__builtin_ia32_loaddquhi512_mask",
-        "llvm.x86.avx512.mask.loadu.b.512" => "__builtin_ia32_loaddquqi512_mask",
-        "llvm.x86.avx512.mask.loadu.w.256" => "__builtin_ia32_loaddquhi256_mask",
-        "llvm.x86.avx512.mask.loadu.b.256" => "__builtin_ia32_loaddquqi256_mask",
-        "llvm.x86.avx512.mask.loadu.w.128" => "__builtin_ia32_loaddquhi128_mask",
-        "llvm.x86.avx512.mask.loadu.b.128" => "__builtin_ia32_loaddquqi128_mask",
-        "llvm.x86.avx512.mask.storeu.w.512" => "__builtin_ia32_storedquhi512_mask",
-        "llvm.x86.avx512.mask.storeu.b.512" => "__builtin_ia32_storedquqi512_mask",
-        "llvm.x86.avx512.mask.storeu.w.256" => "__builtin_ia32_storedquhi256_mask",
-        "llvm.x86.avx512.mask.storeu.b.256" => "__builtin_ia32_storedquqi256_mask",
-        "llvm.x86.avx512.mask.storeu.w.128" => "__builtin_ia32_storedquhi128_mask",
-        "llvm.x86.avx512.mask.storeu.b.128" => "__builtin_ia32_storedquqi128_mask",
-        "llvm.x86.avx512.mask.expand.load.w.512" => "__builtin_ia32_expandloadhi512_mask",
-        "llvm.x86.avx512.mask.expand.load.w.256" => "__builtin_ia32_expandloadhi256_mask",
-        "llvm.x86.avx512.mask.expand.load.w.128" => "__builtin_ia32_expandloadhi128_mask",
-        "llvm.x86.avx512.mask.expand.load.b.512" => "__builtin_ia32_expandloadqi512_mask",
-        "llvm.x86.avx512.mask.expand.load.b.256" => "__builtin_ia32_expandloadqi256_mask",
-        "llvm.x86.avx512.mask.expand.load.b.128" => "__builtin_ia32_expandloadqi128_mask",
-        "llvm.x86.avx512.sitofp.round.v8f64.v8i64" => "__builtin_ia32_cvtqq2pd512_mask",
-        "llvm.x86.avx512.sitofp.round.v2f64.v2i64" => "__builtin_ia32_cvtqq2pd128_mask",
-        "llvm.x86.avx512.sitofp.round.v4f64.v4i64" => "__builtin_ia32_cvtqq2pd256_mask",
-        "llvm.x86.avx512.sitofp.round.v8f32.v8i64" => "__builtin_ia32_cvtqq2ps512_mask",
-        "llvm.x86.avx512.sitofp.round.v4f32.v4i64" => "__builtin_ia32_cvtqq2ps256_mask",
-        "llvm.x86.avx512.uitofp.round.v8f64.v8u64" => "__builtin_ia32_cvtuqq2pd512_mask",
-        "llvm.x86.avx512.uitofp.round.v2f64.v2u64" => "__builtin_ia32_cvtuqq2pd128_mask",
-        "llvm.x86.avx512.uitofp.round.v4f64.v4u64" => "__builtin_ia32_cvtuqq2pd256_mask",
-        "llvm.x86.avx512.uitofp.round.v8f32.v8u64" => "__builtin_ia32_cvtuqq2ps512_mask",
-        "llvm.x86.avx512.uitofp.round.v4f32.v4u64" => "__builtin_ia32_cvtuqq2ps256_mask",
-        "llvm.x86.avx512.mask.reduce.pd.512" => "__builtin_ia32_reducepd512_mask_round",
-        "llvm.x86.avx512.mask.reduce.ps.512" => "__builtin_ia32_reduceps512_mask_round",
-        "llvm.x86.avx512.mask.reduce.sd" => "__builtin_ia32_reducesd_mask_round",
-        "llvm.x86.avx512.mask.reduce.ss" => "__builtin_ia32_reducess_mask_round",
-        "llvm.x86.avx512.mask.loadu.d.256" => "__builtin_ia32_loaddqusi256_mask",
-        "llvm.x86.avx512.mask.loadu.q.256" => "__builtin_ia32_loaddqudi256_mask",
-        "llvm.x86.avx512.mask.loadu.ps.256" => "__builtin_ia32_loadups256_mask",
-        "llvm.x86.avx512.mask.loadu.pd.256" => "__builtin_ia32_loadupd256_mask",
-        "llvm.x86.avx512.mask.loadu.d.128" => "__builtin_ia32_loaddqusi128_mask",
-        "llvm.x86.avx512.mask.loadu.q.128" => "__builtin_ia32_loaddqudi128_mask",
-        "llvm.x86.avx512.mask.loadu.ps.128" => "__builtin_ia32_loadups128_mask",
-        "llvm.x86.avx512.mask.loadu.pd.128" => "__builtin_ia32_loadupd128_mask",
-        "llvm.x86.avx512.mask.load.d.512" => "__builtin_ia32_movdqa32load512_mask",
-        "llvm.x86.avx512.mask.load.q.512" => "__builtin_ia32_movdqa64load512_mask",
-        "llvm.x86.avx512.mask.load.ps.512" => "__builtin_ia32_loadaps512_mask",
-        "llvm.x86.avx512.mask.load.pd.512" => "__builtin_ia32_loadapd512_mask",
-        "llvm.x86.avx512.mask.load.d.256" => "__builtin_ia32_movdqa32load256_mask",
-        "llvm.x86.avx512.mask.load.q.256" => "__builtin_ia32_movdqa64load256_mask",
-        "llvm.x86.avx512fp16.mask.cmp.sh" => "__builtin_ia32_cmpsh_mask_round",
-        "llvm.x86.avx512fp16.vcomi.sh" => "__builtin_ia32_cmpsh_mask_round",
-        "llvm.x86.avx512fp16.add.ph.512" => "__builtin_ia32_addph512_mask_round",
-        "llvm.x86.avx512fp16.sub.ph.512" => "__builtin_ia32_subph512_mask_round",
-        "llvm.x86.avx512fp16.mul.ph.512" => "__builtin_ia32_mulph512_mask_round",
-        "llvm.x86.avx512fp16.div.ph.512" => "__builtin_ia32_divph512_mask_round",
-        "llvm.x86.avx512fp16.mask.vfmul.cph.512" => "__builtin_ia32_vfmulcph512_mask_round",
-        "llvm.x86.avx512fp16.mask.vfmul.csh" => "__builtin_ia32_vfmulcsh_mask_round",
-        "llvm.x86.avx512fp16.mask.vfcmul.cph.512" => "__builtin_ia32_vfcmulcph512_mask_round",
-        "llvm.x86.avx512fp16.mask.vfcmul.csh" => "__builtin_ia32_vfcmulcsh_mask_round",
-        "llvm.x86.avx512fp16.mask.vfmadd.cph.512" => "__builtin_ia32_vfmaddcph512_mask3_round",
-        "llvm.x86.avx512fp16.maskz.vfmadd.cph.512" => "__builtin_ia32_vfmaddcph512_maskz_round",
-        "llvm.x86.avx512fp16.mask.vfmadd.csh" => "__builtin_ia32_vfmaddcsh_mask3_round",
-        "llvm.x86.avx512fp16.maskz.vfmadd.csh" => "__builtin_ia32_vfmaddcsh_maskz_round",
-        "llvm.x86.avx512fp16.mask.vfcmadd.cph.512" => "__builtin_ia32_vfcmaddcph512_mask3_round",
-        "llvm.x86.avx512fp16.maskz.vfcmadd.cph.512" => "__builtin_ia32_vfcmaddcph512_maskz_round",
-        "llvm.x86.avx512fp16.mask.vfcmadd.csh" => "__builtin_ia32_vfcmaddcsh_mask3_round",
-        "llvm.x86.avx512fp16.maskz.vfcmadd.csh" => "__builtin_ia32_vfcmaddcsh_maskz_round",
-        "llvm.x86.avx512fp16.vfmadd.ph.512" => "__builtin_ia32_vfmaddph512_mask",
-        "llvm.x86.avx512fp16.vcvtsi642sh" => "__builtin_ia32_vcvtsi2sh64_round",
-        "llvm.x86.avx512fp16.vcvtusi642sh" => "__builtin_ia32_vcvtusi2sh64_round",
-        "llvm.x86.avx512fp16.vcvtsh2si64" => "__builtin_ia32_vcvtsh2si64_round",
-        "llvm.x86.avx512fp16.vcvtsh2usi64" => "__builtin_ia32_vcvtsh2usi64_round",
-        "llvm.x86.avx512fp16.vcvttsh2si64" => "__builtin_ia32_vcvttsh2si64_round",
-        "llvm.x86.avx512fp16.vcvttsh2usi64" => "__builtin_ia32_vcvttsh2usi64_round",
-        "llvm.x86.avx512.mask.load.ps.256" => "__builtin_ia32_loadaps256_mask",
-        "llvm.x86.avx512.mask.load.pd.256" => "__builtin_ia32_loadapd256_mask",
-        "llvm.x86.avx512.mask.load.d.128" => "__builtin_ia32_movdqa32load128_mask",
-        "llvm.x86.avx512.mask.load.q.128" => "__builtin_ia32_movdqa64load128_mask",
-        "llvm.x86.avx512.mask.load.ps.128" => "__builtin_ia32_loadaps128_mask",
-        "llvm.x86.avx512.mask.load.pd.128" => "__builtin_ia32_loadapd128_mask",
-        "llvm.x86.avx512.mask.storeu.d.256" => "__builtin_ia32_storedqusi256_mask",
-        "llvm.x86.avx512.mask.storeu.q.256" => "__builtin_ia32_storedqudi256_mask",
-        "llvm.x86.avx512.mask.storeu.ps.256" => "__builtin_ia32_storeups256_mask",
-        "llvm.x86.avx512.mask.storeu.pd.256" => "__builtin_ia32_storeupd256_mask",
-        "llvm.x86.avx512.mask.storeu.d.128" => "__builtin_ia32_storedqusi128_mask",
-        "llvm.x86.avx512.mask.storeu.q.128" => "__builtin_ia32_storedqudi128_mask",
-        "llvm.x86.avx512.mask.storeu.ps.128" => "__builtin_ia32_storeups128_mask",
-        "llvm.x86.avx512.mask.storeu.pd.128" => "__builtin_ia32_storeupd128_mask",
-        "llvm.x86.avx512.mask.store.d.512" => "__builtin_ia32_movdqa32store512_mask",
-        "llvm.x86.avx512.mask.store.q.512" => "__builtin_ia32_movdqa64store512_mask",
-        "llvm.x86.avx512.mask.store.ps.512" => "__builtin_ia32_storeaps512_mask",
-        "llvm.x86.avx512.mask.store.pd.512" => "__builtin_ia32_storeapd512_mask",
-        "llvm.x86.avx512.mask.store.d.256" => "__builtin_ia32_movdqa32store256_mask",
-        "llvm.x86.avx512.mask.store.q.256" => "__builtin_ia32_movdqa64store256_mask",
-        "llvm.x86.avx512.mask.store.ps.256" => "__builtin_ia32_storeaps256_mask",
-        "llvm.x86.avx512.mask.store.pd.256" => "__builtin_ia32_storeapd256_mask",
-        "llvm.x86.avx512.mask.store.d.128" => "__builtin_ia32_movdqa32store128_mask",
-        "llvm.x86.avx512.mask.store.q.128" => "__builtin_ia32_movdqa64store128_mask",
-        "llvm.x86.avx512.mask.store.ps.128" => "__builtin_ia32_storeaps128_mask",
-        "llvm.x86.avx512.mask.store.pd.128" => "__builtin_ia32_storeapd128_mask",
-        "llvm.x86.avx512fp16.vfmadd.f16" => "__builtin_ia32_vfmaddsh3_mask",
-        "llvm.x86.avx512fp16.vfmaddsub.ph.128" => "__builtin_ia32_vfmaddsubph128_mask",
-        "llvm.x86.avx512fp16.vfmaddsub.ph.256" => "__builtin_ia32_vfmaddsubph256_mask",
-        "llvm.x86.avx512fp16.vfmaddsub.ph.512" => "__builtin_ia32_vfmaddsubph512_mask",
-        "llvm.x86.avx512fp16.sqrt.ph.512" => "__builtin_ia32_sqrtph512_mask_round",
-        "llvm.x86.avx512fp16.mask.sqrt.sh" => "__builtin_ia32_sqrtsh_mask_round",
-        "llvm.x86.avx512fp16.max.ph.128" => "__builtin_ia32_maxph128_mask",
-        "llvm.x86.avx512fp16.max.ph.256" => "__builtin_ia32_maxph256_mask",
-        "llvm.x86.avx512fp16.max.ph.512" => "__builtin_ia32_maxph512_mask_round",
-        "llvm.x86.avx512fp16.min.ph.128" => "__builtin_ia32_minph128_mask",
-        "llvm.x86.avx512fp16.min.ph.256" => "__builtin_ia32_minph256_mask",
-        "llvm.x86.avx512fp16.min.ph.512" => "__builtin_ia32_minph512_mask_round",
-        "llvm.x86.avx512fp16.mask.getexp.sh" => "__builtin_ia32_getexpsh_mask_round",
-        "llvm.x86.avx512fp16.mask.rndscale.ph.128" => "__builtin_ia32_rndscaleph128_mask",
-        "llvm.x86.avx512fp16.mask.rndscale.ph.256" => "__builtin_ia32_rndscaleph256_mask",
-        "llvm.x86.avx512fp16.mask.rndscale.ph.512" => "__builtin_ia32_rndscaleph512_mask_round",
-        "llvm.x86.avx512fp16.mask.scalef.ph.512" => "__builtin_ia32_scalefph512_mask_round",
-        "llvm.x86.avx512fp16.mask.reduce.ph.512" => "__builtin_ia32_reduceph512_mask_round",
-        "llvm.x86.avx512fp16.mask.reduce.sh" => "__builtin_ia32_reducesh_mask_round",
-        "llvm.x86.avx512.sitofp.round.v8f16.v8i16" => "__builtin_ia32_vcvtw2ph128_mask",
-        "llvm.x86.avx512.sitofp.round.v16f16.v16i16" => "__builtin_ia32_vcvtw2ph256_mask",
-        "llvm.x86.avx512.sitofp.round.v32f16.v32i16" => "__builtin_ia32_vcvtw2ph512_mask_round",
-        "llvm.x86.avx512.uitofp.round.v8f16.v8u16" => "__builtin_ia32_vcvtuw2ph128_mask",
-        "llvm.x86.avx512.uitofp.round.v16f16.v16u16" => "__builtin_ia32_vcvtuw2ph256_mask",
-        "llvm.x86.avx512.uitofp.round.v32f16.v32u16" => "__builtin_ia32_vcvtuw2ph512_mask_round",
-        "llvm.x86.avx512.sitofp.round.v8f16.v8i32" => "__builtin_ia32_vcvtdq2ph256_mask",
-        "llvm.x86.avx512.sitofp.round.v16f16.v16i32" => "__builtin_ia32_vcvtdq2ph512_mask_round",
-        "llvm.x86.avx512fp16.vcvtsi2sh" => "__builtin_ia32_vcvtsi2sh32_round",
-        "llvm.x86.avx512.uitofp.round.v8f16.v8u32" => "__builtin_ia32_vcvtudq2ph256_mask",
-        "llvm.x86.avx512.uitofp.round.v16f16.v16u32" => "__builtin_ia32_vcvtudq2ph512_mask_round",
-        "llvm.x86.avx512fp16.vcvtusi2sh" => "__builtin_ia32_vcvtusi2sh32_round",
-        "llvm.x86.avx512.sitofp.round.v8f16.v8i64" => "__builtin_ia32_vcvtqq2ph512_mask_round",
-        "llvm.x86.avx512.uitofp.round.v8f16.v8u64" => "__builtin_ia32_vcvtuqq2ph512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtps2phx.512" => "__builtin_ia32_vcvtps2phx512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtpd2ph.512" => "__builtin_ia32_vcvtpd2ph512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2uw.512" => "__builtin_ia32_vcvtph2uw512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2w.512" => "__builtin_ia32_vcvttph2w512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2uw.512" => "__builtin_ia32_vcvttph2uw512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2dq.512" => "__builtin_ia32_vcvtph2dq512_mask_round",
-        "llvm.x86.avx512fp16.vcvtsh2si32" => "__builtin_ia32_vcvtsh2si32_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2udq.512" => "__builtin_ia32_vcvtph2udq512_mask_round",
-        "llvm.x86.avx512fp16.vcvtsh2usi32" => "__builtin_ia32_vcvtsh2usi32_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2dq.512" => "__builtin_ia32_vcvttph2dq512_mask_round",
-        "llvm.x86.avx512fp16.vcvttsh2si32" => "__builtin_ia32_vcvttsh2si32_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2udq.512" => "__builtin_ia32_vcvttph2udq512_mask_round",
-        "llvm.x86.avx512fp16.vcvttsh2usi32" => "__builtin_ia32_vcvttsh2usi32_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2qq.512" => "__builtin_ia32_vcvtph2qq512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2uqq.512" => "__builtin_ia32_vcvtph2uqq512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2qq.512" => "__builtin_ia32_vcvttph2qq512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvttph2uqq.512" => "__builtin_ia32_vcvttph2uqq512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2psx.512" => "__builtin_ia32_vcvtph2psx512_mask_round",
-        "llvm.x86.avx512fp16.mask.vcvtph2pd.512" => "__builtin_ia32_vcvtph2pd512_mask_round",
-        "llvm.x86.avx512fp16.mask.vfcmadd.cph.256" => "__builtin_ia32_vfcmaddcph256_mask3",
-        "llvm.x86.avx512fp16.mask.vfmadd.cph.256" => "__builtin_ia32_vfmaddcph256_mask3",
-        "llvm.x86.avx512fp16.mask.vfcmadd.cph.128" => "__builtin_ia32_vfcmaddcph128_mask3",
-        "llvm.x86.avx512fp16.mask.vfmadd.cph.128" => "__builtin_ia32_vfmaddcph128_mask3",
         "llvm.x86.encodekey128" => "__builtin_ia32_encodekey128_u32",
         "llvm.x86.encodekey256" => "__builtin_ia32_encodekey256_u32",
         "llvm.x86.aesenc128kl" => "__builtin_ia32_aesenc128kl_u8",
@@ -1529,7 +1110,6 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.aesdecwide128kl" => "__builtin_ia32_aesdecwide128kl_u8",
         "llvm.x86.aesencwide256kl" => "__builtin_ia32_aesencwide256kl_u8",
         "llvm.x86.aesdecwide256kl" => "__builtin_ia32_aesdecwide256kl_u8",
-
         // TODO: support the tile builtins:
         "llvm.x86.ldtilecfg" => "__builtin_trap",
         "llvm.x86.sttilecfg" => "__builtin_trap",
@@ -1546,12 +1126,433 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.tdpfp16ps" => "__builtin_trap",
         "llvm.x86.tcmmimfp16ps" => "__builtin_trap",
         "llvm.x86.tcmmrlfp16ps" => "__builtin_trap",
-
-        // NOTE: this file is generated by https://github.com/GuillaumeGomez/llvmint/blob/master/generate_list.py
-        _ => include!("archs.rs"),
+        _ => {
+            // AVX intrinsics are handled by a separate function, to achieave better compile times.
+            if let Some(name) = name
+                .strip_prefix("llvm.x86.avx512")
+                .iter()
+                .flat_map(|name| avx::avx512(name))
+                .next()
+            {
+                name
+            } else {
+                map_arch_intrinsic(name)
+            }
+        }
     };
-
     let func = cx.context.get_target_builtin_function(gcc_name);
     cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
     func
+}
+// NOTE: this file is generated by https://github.com/GuillaumeGomez/llvmint/blob/master/generate_list.py
+include!("archs.rs");
+// We separate all of those intrinsics into functions, because if we do not, the sheer amount of them causes GCC to crash trying
+// to optimize this function. AVX truly is something, huh?
+mod avx {
+    /// Maps an LLVM intrinsic name, stripped of the `llvm.x86.avx512` prefix.
+    pub fn avx512(name: &str) -> Option<&'static str> {
+        let name = name.trim_start_matches(".");
+        Some(match name {
+            "add.pd.512" => "__builtin_ia32_addpd512_mask",
+            "add.ps.512" => "__builtin_ia32_addps512_mask",
+            "conflict.d.128" => "__builtin_ia32_vpconflictsi_128_mask",
+            "conflict.d.256" => "__builtin_ia32_vpconflictsi_256_mask",
+            "conflict.d.512" => "__builtin_ia32_vpconflictsi_512_mask",
+            "conflict.q.128" => "__builtin_ia32_vpconflictdi_128_mask",
+            "conflict.q.256" => "__builtin_ia32_vpconflictdi_256_mask",
+            "conflict.q.512" => "__builtin_ia32_vpconflictdi_512_mask",
+            "dbpsadbw.128" => "__builtin_ia32_dbpsadbw128_mask",
+            "dbpsadbw.256" => "__builtin_ia32_dbpsadbw256_mask",
+            "dbpsadbw.512" => "__builtin_ia32_dbpsadbw512_mask",
+            "div.pd.512" => "__builtin_ia32_divpd512_mask",
+            "div.ps.512" => "__builtin_ia32_divps512_mask",
+            "f16.cvtne2ps2bf16.128" => "__builtin_ia32_cvtne2ps2bf16_v8bf",
+            "f16.cvtne2ps2bf16.256" => "__builtin_ia32_cvtne2ps2bf16_v16bf",
+            "f16.cvtne2ps2bf16.512" => "__builtin_ia32_cvtne2ps2bf16_v32bf",
+            "f16.cvtneps2bf16.256" => "__builtin_ia32_cvtneps2bf16_v8sf",
+            "f16.cvtneps2bf16.512" => "__builtin_ia32_cvtneps2bf16_v16sf",
+            "f16.dpbf16ps.128" => "__builtin_ia32_dpbf16ps_v4sf",
+            "f16.dpbf16ps.256" => "__builtin_ia32_dpbf16ps_v8sf",
+            "f16.dpbf16ps.512" => "__builtin_ia32_dpbf16ps_v16sf",
+            "mask.add.sd.round" => "__builtin_ia32_addsd_mask_round",
+            "mask.add.ss.round" => "__builtin_ia32_addss_mask_round",
+            "mask.cmp.b.128" => "__builtin_ia32_cmpb128_mask",
+            "mask.cmp.b.256" => "__builtin_ia32_cmpb256_mask",
+            "mask.cmp.b.512" => "__builtin_ia32_cmpb512_mask",
+            "mask.cmp.d.128" => "__builtin_ia32_cmpd128_mask",
+            "mask.cmp.d.256" => "__builtin_ia32_cmpd256_mask",
+            "mask.cmp.d.512" => "__builtin_ia32_cmpd512_mask",
+            "mask.cmp.q.128" => "__builtin_ia32_cmpq128_mask",
+            "mask.cmp.q.256" => "__builtin_ia32_cmpq256_mask",
+            "mask.cmp.q.512" => "__builtin_ia32_cmpq512_mask",
+            "mask.cmp.w.128" => "__builtin_ia32_cmpw128_mask",
+            "mask.cmp.w.256" => "__builtin_ia32_cmpw256_mask",
+            "mask.cmp.w.512" => "__builtin_ia32_cmpw512_mask",
+            "mask.compress.b.128" => "__builtin_ia32_compressqi128_mask",
+            "mask.compress.b.256" => "__builtin_ia32_compressqi256_mask",
+            "mask.compress.b.512" => "__builtin_ia32_compressqi512_mask",
+            "mask.compress.store.b.128" => "__builtin_ia32_compressstoreuqi128_mask",
+            "mask.compress.store.b.256" => "__builtin_ia32_compressstoreuqi256_mask",
+            "mask.compress.store.b.512" => "__builtin_ia32_compressstoreuqi512_mask",
+            "mask.compress.store.w.128" => "__builtin_ia32_compressstoreuhi128_mask",
+            "mask.compress.store.w.256" => "__builtin_ia32_compressstoreuhi256_mask",
+            "mask.compress.store.w.512" => "__builtin_ia32_compressstoreuhi512_mask",
+            "mask.compress.w.128" => "__builtin_ia32_compresshi128_mask",
+            "mask.compress.w.256" => "__builtin_ia32_compresshi256_mask",
+            "mask.compress.w.512" => "__builtin_ia32_compresshi512_mask",
+            "mask.cvtsd2ss.round" => "__builtin_ia32_cvtsd2ss_mask_round",
+            "mask.cvtss2sd.round" => "__builtin_ia32_cvtss2sd_mask_round",
+            "mask.div.sd.round" => "__builtin_ia32_divsd_mask_round",
+            "mask.div.ss.round" => "__builtin_ia32_divss_mask_round",
+            "mask.expand.b.128" => "__builtin_ia32_expandqi128_mask",
+            "mask.expand.b.256" => "__builtin_ia32_expandqi256_mask",
+            "mask.expand.b.512" => "__builtin_ia32_expandqi512_mask",
+            "mask.expand.load.b.128" => "__builtin_ia32_expandloadqi128_mask",
+            "mask.expand.load.b.256" => "__builtin_ia32_expandloadqi256_mask",
+            "mask.expand.load.b.512" => "__builtin_ia32_expandloadqi512_mask",
+            "mask.expand.load.w.128" => "__builtin_ia32_expandloadhi128_mask",
+            "mask.expand.load.w.256" => "__builtin_ia32_expandloadhi256_mask",
+            "mask.expand.load.w.512" => "__builtin_ia32_expandloadhi512_mask",
+            "mask.expand.w.128" => "__builtin_ia32_expandhi128_mask",
+            "mask.expand.w.256" => "__builtin_ia32_expandhi256_mask",
+            "mask.expand.w.512" => "__builtin_ia32_expandhi512_mask",
+            "mask.getexp.sd" => "__builtin_ia32_getexpsd_mask_round",
+            "mask.getexp.ss" => "__builtin_ia32_getexpss_mask_round",
+            "mask.getmant.sd" => "__builtin_ia32_getmantsd_mask_round",
+            "mask.getmant.ss" => "__builtin_ia32_getmantss_mask_round",
+            "mask.load.d.128" => "__builtin_ia32_movdqa32load128_mask",
+            "mask.load.d.256" => "__builtin_ia32_movdqa32load256_mask",
+            "mask.load.d.512" => "__builtin_ia32_movdqa32load512_mask",
+            "mask.load.pd.128" => "__builtin_ia32_loadapd128_mask",
+            "mask.load.pd.256" => "__builtin_ia32_loadapd256_mask",
+            "mask.load.pd.512" => "__builtin_ia32_loadapd512_mask",
+            "mask.load.ps.128" => "__builtin_ia32_loadaps128_mask",
+            "mask.load.ps.256" => "__builtin_ia32_loadaps256_mask",
+            "mask.load.ps.512" => "__builtin_ia32_loadaps512_mask",
+            "mask.load.q.128" => "__builtin_ia32_movdqa64load128_mask",
+            "mask.load.q.256" => "__builtin_ia32_movdqa64load256_mask",
+            "mask.load.q.512" => "__builtin_ia32_movdqa64load512_mask",
+            "mask.loadu.b.128" => "__builtin_ia32_loaddquqi128_mask",
+            "mask.loadu.b.256" => "__builtin_ia32_loaddquqi256_mask",
+            "mask.loadu.b.512" => "__builtin_ia32_loaddquqi512_mask",
+            "mask.loadu.d.128" => "__builtin_ia32_loaddqusi128_mask",
+            "mask.loadu.d.256" => "__builtin_ia32_loaddqusi256_mask",
+            "mask.loadu.pd.128" => "__builtin_ia32_loadupd128_mask",
+            "mask.loadu.pd.256" => "__builtin_ia32_loadupd256_mask",
+            "mask.loadu.ps.128" => "__builtin_ia32_loadups128_mask",
+            "mask.loadu.ps.256" => "__builtin_ia32_loadups256_mask",
+            "mask.loadu.q.128" => "__builtin_ia32_loaddqudi128_mask",
+            "mask.loadu.q.256" => "__builtin_ia32_loaddqudi256_mask",
+            "mask.loadu.w.128" => "__builtin_ia32_loaddquhi128_mask",
+            "mask.loadu.w.256" => "__builtin_ia32_loaddquhi256_mask",
+            "mask.loadu.w.512" => "__builtin_ia32_loaddquhi512_mask",
+            "mask.max.sd.round" => "__builtin_ia32_maxsd_mask_round",
+            "mask.max.ss.round" => "__builtin_ia32_maxss_mask_round",
+            "mask.min.sd.round" => "__builtin_ia32_minsd_mask_round",
+            "mask.min.ss.round" => "__builtin_ia32_minss_mask_round",
+            "mask.mul.sd.round" => "__builtin_ia32_mulsd_mask_round",
+            "mask.mul.ss.round" => "__builtin_ia32_mulss_mask_round",
+            "mask.range.sd" => "__builtin_ia32_rangesd128_mask_round",
+            "mask.range.ss" => "__builtin_ia32_rangess128_mask_round",
+            "mask.reduce.pd.512" => "__builtin_ia32_reducepd512_mask_round",
+            "mask.reduce.ps.512" => "__builtin_ia32_reduceps512_mask_round",
+            "mask.reduce.sd" => "__builtin_ia32_reducesd_mask_round",
+            "mask.reduce.ss" => "__builtin_ia32_reducess_mask_round",
+            "mask.rndscale.sd" => "__builtin_ia32_rndscalesd_mask_round",
+            "mask.rndscale.ss" => "__builtin_ia32_rndscaless_mask_round",
+            "mask.scalef.sd" => "__builtin_ia32_scalefsd_mask_round",
+            "mask.scalef.ss" => "__builtin_ia32_scalefss_mask_round",
+            "mask.sqrt.sd" => "__builtin_ia32_sqrtsd_mask_round",
+            "mask.sqrt.ss" => "__builtin_ia32_sqrtss_mask_round",
+            "mask.store.d.128" => "__builtin_ia32_movdqa32store128_mask",
+            "mask.store.d.256" => "__builtin_ia32_movdqa32store256_mask",
+            "mask.store.d.512" => "__builtin_ia32_movdqa32store512_mask",
+            "mask.store.pd.128" => "__builtin_ia32_storeapd128_mask",
+            "mask.store.pd.256" => "__builtin_ia32_storeapd256_mask",
+            "mask.store.pd.512" => "__builtin_ia32_storeapd512_mask",
+            "mask.store.ps.128" => "__builtin_ia32_storeaps128_mask",
+            "mask.store.ps.256" => "__builtin_ia32_storeaps256_mask",
+            "mask.store.ps.512" => "__builtin_ia32_storeaps512_mask",
+            "mask.store.q.128" => "__builtin_ia32_movdqa64store128_mask",
+            "mask.store.q.256" => "__builtin_ia32_movdqa64store256_mask",
+            "mask.store.q.512" => "__builtin_ia32_movdqa64store512_mask",
+            "mask.storeu.b.128" => "__builtin_ia32_storedquqi128_mask",
+            "mask.storeu.b.256" => "__builtin_ia32_storedquqi256_mask",
+            "mask.storeu.b.512" => "__builtin_ia32_storedquqi512_mask",
+            "mask.storeu.d.128" => "__builtin_ia32_storedqusi128_mask",
+            "mask.storeu.d.256" => "__builtin_ia32_storedqusi256_mask",
+            "mask.storeu.pd.128" => "__builtin_ia32_storeupd128_mask",
+            "mask.storeu.pd.256" => "__builtin_ia32_storeupd256_mask",
+            "mask.storeu.ps.128" => "__builtin_ia32_storeups128_mask",
+            "mask.storeu.ps.256" => "__builtin_ia32_storeups256_mask",
+            "mask.storeu.q.128" => "__builtin_ia32_storedqudi128_mask",
+            "mask.storeu.q.256" => "__builtin_ia32_storedqudi256_mask",
+            "mask.storeu.w.128" => "__builtin_ia32_storedquhi128_mask",
+            "mask.storeu.w.256" => "__builtin_ia32_storedquhi256_mask",
+            "mask.storeu.w.512" => "__builtin_ia32_storedquhi512_mask",
+            "mask.sub.sd.round" => "__builtin_ia32_subsd_mask_round",
+            "mask.sub.ss.round" => "__builtin_ia32_subss_mask_round",
+            "mask.ucmp.b.128" => "__builtin_ia32_ucmpb128_mask",
+            "mask.ucmp.b.256" => "__builtin_ia32_ucmpb256_mask",
+            "mask.ucmp.b.512" => "__builtin_ia32_ucmpb512_mask",
+            "mask.ucmp.d.128" => "__builtin_ia32_ucmpd128_mask",
+            "mask.ucmp.d.256" => "__builtin_ia32_ucmpd256_mask",
+            "mask.ucmp.d.512" => "__builtin_ia32_ucmpd512_mask",
+            "mask.ucmp.q.128" => "__builtin_ia32_ucmpq128_mask",
+            "mask.ucmp.q.256" => "__builtin_ia32_ucmpq256_mask",
+            "mask.ucmp.q.512" => "__builtin_ia32_ucmpq512_mask",
+            "mask.ucmp.w.128" => "__builtin_ia32_ucmpw128_mask",
+            "mask.ucmp.w.256" => "__builtin_ia32_ucmpw256_mask",
+            "mask.ucmp.w.512" => "__builtin_ia32_ucmpw512_mask",
+            "mask.vpshufbitqmb.128" => "__builtin_ia32_vpshufbitqmb128_mask",
+            "mask.vpshufbitqmb.256" => "__builtin_ia32_vpshufbitqmb256_mask",
+            "mask.vpshufbitqmb.512" => "__builtin_ia32_vpshufbitqmb512_mask",
+            "max.pd.512" => "__builtin_ia32_maxpd512_mask",
+            "max.ps.512" => "__builtin_ia32_maxps512_mask",
+            "min.pd.512" => "__builtin_ia32_minpd512_mask",
+            "min.ps.512" => "__builtin_ia32_minps512_mask",
+            "mul.pd.512" => "__builtin_ia32_mulpd512_mask",
+            "mul.ps.512" => "__builtin_ia32_mulps512_mask",
+            "packssdw.512" => "__builtin_ia32_packssdw512_mask",
+            "packsswb.512" => "__builtin_ia32_packsswb512_mask",
+            "packusdw.512" => "__builtin_ia32_packusdw512_mask",
+            "packuswb.512" => "__builtin_ia32_packuswb512_mask",
+            "pavg.b.512" => "__builtin_ia32_pavgb512_mask",
+            "pavg.w.512" => "__builtin_ia32_pavgw512_mask",
+            "permvar.df.256" => "__builtin_ia32_permvardf256_mask",
+            "permvar.df.512" => "__builtin_ia32_permvardf512_mask",
+            "permvar.di.256" => "__builtin_ia32_permvardi256_mask",
+            "permvar.di.512" => "__builtin_ia32_permvardi512_mask",
+            "permvar.hi.128" => "__builtin_ia32_permvarhi128_mask",
+            "permvar.hi.256" => "__builtin_ia32_permvarhi256_mask",
+            "permvar.hi.512" => "__builtin_ia32_permvarhi512_mask",
+            "permvar.qi.128" => "__builtin_ia32_permvarqi128_mask",
+            "permvar.qi.256" => "__builtin_ia32_permvarqi256_mask",
+            "permvar.qi.512" => "__builtin_ia32_permvarqi512_mask",
+            "permvar.sf.512" => "__builtin_ia32_permvarsf512_mask",
+            "permvar.si.512" => "__builtin_ia32_permvarsi512_mask",
+            "pmaddubs.w.512" => "__builtin_ia32_pmaddubsw512_mask",
+            "pmaddw.d.512" => "__builtin_ia32_pmaddwd512_mask",
+            "pmul.dq.512" => "__builtin_ia32_pmuldq512_mask",
+            "pmul.hr.sw.512" => "__builtin_ia32_pmulhrsw512_mask",
+            "pmulh.w.512" => "__builtin_ia32_pmulhw512_mask",
+            "pmulhu.w.512" => "__builtin_ia32_pmulhuw512_mask",
+            "pmultishift.qb.128" => "__builtin_ia32_vpmultishiftqb128_mask",
+            "pmultishift.qb.256" => "__builtin_ia32_vpmultishiftqb256_mask",
+            "pmultishift.qb.512" => "__builtin_ia32_vpmultishiftqb512_mask",
+            "pmulu.dq.512" => "__builtin_ia32_pmuludq512_mask",
+            "pshuf.b.512" => "__builtin_ia32_pshufb512_mask",
+            "psll.d.512" => "__builtin_ia32_pslld512_mask",
+            "psll.q.512" => "__builtin_ia32_psllq512_mask",
+            "psll.w.512" => "__builtin_ia32_psllw512_mask",
+            "pslli.d.512" => "__builtin_ia32_pslldi512_mask",
+            "pslli.q.512" => "__builtin_ia32_psllqi512_mask",
+            "pslli.w.512" => "__builtin_ia32_psllwi512_mask",
+            "psllv.d.512" => "__builtin_ia32_psllv16si_mask",
+            "psllv.q.512" => "__builtin_ia32_psllv8di_mask",
+            "psllv.w.128" => "__builtin_ia32_psllv8hi_mask",
+            "psllv.w.256" => "__builtin_ia32_psllv16hi_mask",
+            "psllv.w.512" => "__builtin_ia32_psllv32hi_mask",
+            "psra.d.512" => "__builtin_ia32_psrad512_mask",
+            "psra.q.128" => "__builtin_ia32_psraq128_mask",
+            "psra.q.256" => "__builtin_ia32_psraq256_mask",
+            "psra.q.512" => "__builtin_ia32_psraq512_mask",
+            "psra.w.512" => "__builtin_ia32_psraw512_mask",
+            "psrai.d.512" => "__builtin_ia32_psradi512_mask",
+            "psrai.q.128" => "__builtin_ia32_psraqi128_mask",
+            "psrai.q.256" => "__builtin_ia32_psraqi256_mask",
+            "psrai.q.512" => "__builtin_ia32_psraqi512_mask",
+            "psrai.w.512" => "__builtin_ia32_psrawi512_mask",
+            "psrav.d.512" => "__builtin_ia32_psrav16si_mask",
+            "psrav.q.128" => "__builtin_ia32_psravq128_mask",
+            "psrav.q.256" => "__builtin_ia32_psravq256_mask",
+            "psrav.q.512" => "__builtin_ia32_psrav8di_mask",
+            "psrav.w.128" => "__builtin_ia32_psrav8hi_mask",
+            "psrav.w.256" => "__builtin_ia32_psrav16hi_mask",
+            "psrav.w.512" => "__builtin_ia32_psrav32hi_mask",
+            "psrl.d.512" => "__builtin_ia32_psrld512_mask",
+            "psrl.q.512" => "__builtin_ia32_psrlq512_mask",
+            "psrl.w.512" => "__builtin_ia32_psrlw512_mask",
+            "psrli.d.512" => "__builtin_ia32_psrldi512_mask",
+            "psrli.q.512" => "__builtin_ia32_psrlqi512_mask",
+            "psrli.w.512" => "__builtin_ia32_psrlwi512_mask",
+            "psrlv.d.512" => "__builtin_ia32_psrlv16si_mask",
+            "psrlv.q.512" => "__builtin_ia32_psrlv8di_mask",
+            "psrlv.w.128" => "__builtin_ia32_psrlv8hi_mask",
+            "psrlv.w.256" => "__builtin_ia32_psrlv16hi_mask",
+            "psrlv.w.512" => "__builtin_ia32_psrlv32hi_mask",
+            "pternlog.d.128" => "__builtin_ia32_pternlogd128_mask",
+            "pternlog.d.256" => "__builtin_ia32_pternlogd256_mask",
+            "pternlog.d.512" => "__builtin_ia32_pternlogd512_mask",
+            "pternlog.q.128" => "__builtin_ia32_pternlogq128_mask",
+            "pternlog.q.256" => "__builtin_ia32_pternlogq256_mask",
+            "pternlog.q.512" => "__builtin_ia32_pternlogq512_mask",
+            "rcp28.sd" => "__builtin_ia32_rcp28sd_mask_round",
+            "rcp28.ss" => "__builtin_ia32_rcp28ss_mask_round",
+            "rsqrt28.sd" => "__builtin_ia32_rsqrt28sd_mask_round",
+            "rsqrt28.ss" => "__builtin_ia32_rsqrt28ss_mask_round",
+            "sitofp.round.v2f64.v2i64" => "__builtin_ia32_cvtqq2pd128_mask",
+            "sitofp.round.v4f32.v4i64" => "__builtin_ia32_cvtqq2ps256_mask",
+            "sitofp.round.v4f64.v4i64" => "__builtin_ia32_cvtqq2pd256_mask",
+            "sitofp.round.v8f16.v8i16" => "__builtin_ia32_vcvtw2ph128_mask",
+            "sitofp.round.v8f16.v8i32" => "__builtin_ia32_vcvtdq2ph256_mask",
+            "sitofp.round.v8f16.v8i64" => "__builtin_ia32_vcvtqq2ph512_mask_round",
+            "sitofp.round.v8f32.v8i64" => "__builtin_ia32_cvtqq2ps512_mask",
+            "sitofp.round.v8f64.v8i64" => "__builtin_ia32_cvtqq2pd512_mask",
+            "sitofp.round.v16f16.v16i16" => "__builtin_ia32_vcvtw2ph256_mask",
+            "sitofp.round.v16f16.v16i32" => "__builtin_ia32_vcvtdq2ph512_mask_round",
+            "sitofp.round.v16f32.v16i32" => "__builtin_ia32_cvtdq2ps512_mask",
+            "sitofp.round.v32f16.v32i16" => "__builtin_ia32_vcvtw2ph512_mask_round",
+            "sub.pd.512" => "__builtin_ia32_subpd512_mask",
+            "sub.ps.512" => "__builtin_ia32_subps512_mask",
+            "uitofp.round.v2f64.v2u64" => "__builtin_ia32_cvtuqq2pd128_mask",
+            "uitofp.round.v4f32.v4u64" => "__builtin_ia32_cvtuqq2ps256_mask",
+            "uitofp.round.v4f64.v4u64" => "__builtin_ia32_cvtuqq2pd256_mask",
+            "uitofp.round.v8f16.v8u16" => "__builtin_ia32_vcvtuw2ph128_mask",
+            "uitofp.round.v8f16.v8u32" => "__builtin_ia32_vcvtudq2ph256_mask",
+            "uitofp.round.v8f16.v8u64" => "__builtin_ia32_vcvtuqq2ph512_mask_round",
+            "uitofp.round.v8f32.v8u64" => "__builtin_ia32_cvtuqq2ps512_mask",
+            "uitofp.round.v8f64.v8u64" => "__builtin_ia32_cvtuqq2pd512_mask",
+            "uitofp.round.v16f16.v16u16" => "__builtin_ia32_vcvtuw2ph256_mask",
+            "uitofp.round.v16f16.v16u32" => "__builtin_ia32_vcvtudq2ph512_mask_round",
+            "uitofp.round.v16f32.v16i32" => "__builtin_ia32_cvtudq2ps512_mask",
+            "uitofp.round.v32f16.v32u16" => "__builtin_ia32_vcvtuw2ph512_mask_round",
+            "vfmadd.f32" => "__builtin_ia32_vfmaddss3_round",
+            "vfmadd.f64" => "__builtin_ia32_vfmaddsd3_round",
+            "vfmadd.pd.512" => "__builtin_ia32_vfmaddpd512_mask",
+            "vfmadd.ps.512" => "__builtin_ia32_vfmaddps512_mask",
+            "vfmaddsub.pd.512" => "__builtin_ia32_vfmaddsubpd512_mask",
+            "vfmaddsub.ps.512" => "__builtin_ia32_vfmaddsubps512_mask",
+            "vpdpbusd.128" => "__builtin_ia32_vpdpbusd_v4si",
+            "vpdpbusd.256" => "__builtin_ia32_vpdpbusd_v8si",
+            "vpdpbusd.512" => "__builtin_ia32_vpdpbusd_v16si",
+            "vpdpbusds.128" => "__builtin_ia32_vpdpbusds_v4si",
+            "vpdpbusds.256" => "__builtin_ia32_vpdpbusds_v8si",
+            "vpdpbusds.512" => "__builtin_ia32_vpdpbusds_v16si",
+            "vpdpwssd.128" => "__builtin_ia32_vpdpwssd_v4si",
+            "vpdpwssd.256" => "__builtin_ia32_vpdpwssd_v8si",
+            "vpdpwssd.512" => "__builtin_ia32_vpdpwssd_v16si",
+            "vpdpwssds.128" => "__builtin_ia32_vpdpwssds_v4si",
+            "vpdpwssds.256" => "__builtin_ia32_vpdpwssds_v8si",
+            "vpdpwssds.512" => "__builtin_ia32_vpdpwssds_v16si",
+            "vpermi2var.d.128" => "__builtin_ia32_vpermi2vard128_mask",
+            "vpermi2var.d.256" => "__builtin_ia32_vpermi2vard256_mask",
+            "vpermi2var.d.512" => "__builtin_ia32_vpermi2vard512_mask",
+            "vpermi2var.hi.128" => "__builtin_ia32_vpermt2varhi128_mask",
+            "vpermi2var.hi.256" => "__builtin_ia32_vpermt2varhi256_mask",
+            "vpermi2var.hi.512" => "__builtin_ia32_vpermt2varhi512_mask",
+            "vpermi2var.pd.128" => "__builtin_ia32_vpermi2varpd128_mask",
+            "vpermi2var.pd.256" => "__builtin_ia32_vpermi2varpd256_mask",
+            "vpermi2var.pd.512" => "__builtin_ia32_vpermi2varpd512_mask",
+            "vpermi2var.ps.128" => "__builtin_ia32_vpermi2varps128_mask",
+            "vpermi2var.ps.256" => "__builtin_ia32_vpermi2varps256_mask",
+            "vpermi2var.ps.512" => "__builtin_ia32_vpermi2varps512_mask",
+            "vpermi2var.q.128" => "__builtin_ia32_vpermi2varq128_mask",
+            "vpermi2var.q.256" => "__builtin_ia32_vpermi2varq256_mask",
+            "vpermi2var.q.512" => "__builtin_ia32_vpermi2varq512_mask",
+            "vpermi2var.qi.128" => "__builtin_ia32_vpermt2varqi128_mask",
+            "vpermi2var.qi.256" => "__builtin_ia32_vpermt2varqi256_mask",
+            "vpermi2var.qi.512" => "__builtin_ia32_vpermt2varqi512_mask",
+            "vpermilvar.pd.512" => "__builtin_ia32_vpermilvarpd512_mask",
+            "vpermilvar.ps.512" => "__builtin_ia32_vpermilvarps512_mask",
+            "vpmadd52h.uq.128" => "__builtin_ia32_vpmadd52huq128",
+            "vpmadd52h.uq.256" => "__builtin_ia32_vpmadd52huq256",
+            "vpmadd52h.uq.512" => "__builtin_ia32_vpmadd52huq512_mask",
+            "vpmadd52l.uq.256" => "__builtin_ia32_vpmadd52luq256",
+            "vpmadd52l.uq.512" => "__builtin_ia32_vpmadd52luq512_mask",
+
+            _ => {
+                let name = name.strip_prefix("fp16")?;
+                return avx512fp16(name.trim_start_matches("."));
+            }
+        })
+    }
+    /// Maps an LLVM intrinsic name, stripped of the `llvm.x86.avx512fp16` prefix.
+    fn avx512fp16(name: &str) -> Option<&'static str> {
+        Some(match name {
+            "mask.vcvtps2phx.512" => "__builtin_ia32_vcvtps2phx512_mask_round",
+            "mask.vcvtpd2ph.512" => "__builtin_ia32_vcvtpd2ph512_mask_round",
+            "mask.vcvtph2uw.512" => "__builtin_ia32_vcvtph2uw512_mask_round",
+            "mask.vcvttph2w.512" => "__builtin_ia32_vcvttph2w512_mask_round",
+            "mask.vcvttph2uw.512" => "__builtin_ia32_vcvttph2uw512_mask_round",
+            "mask.vcvtph2dq.512" => "__builtin_ia32_vcvtph2dq512_mask_round",
+            "vcvtsh2si32" => "__builtin_ia32_vcvtsh2si32_round",
+            "mask.vcvtph2udq.512" => "__builtin_ia32_vcvtph2udq512_mask_round",
+            "vcvtsh2usi32" => "__builtin_ia32_vcvtsh2usi32_round",
+            "mask.vcvttph2dq.512" => "__builtin_ia32_vcvttph2dq512_mask_round",
+            "vcvttsh2si32" => "__builtin_ia32_vcvttsh2si32_round",
+            "mask.vcvttph2udq.512" => "__builtin_ia32_vcvttph2udq512_mask_round",
+            "vcvttsh2usi32" => "__builtin_ia32_vcvttsh2usi32_round",
+            "mask.vcvtph2qq.512" => "__builtin_ia32_vcvtph2qq512_mask_round",
+            "mask.vcvtph2uqq.512" => "__builtin_ia32_vcvtph2uqq512_mask_round",
+            "mask.vcvttph2qq.512" => "__builtin_ia32_vcvttph2qq512_mask_round",
+            "mask.vcvttph2uqq.512" => "__builtin_ia32_vcvttph2uqq512_mask_round",
+            "mask.vcvtph2psx.512" => "__builtin_ia32_vcvtph2psx512_mask_round",
+            "mask.vcvtph2pd.512" => "__builtin_ia32_vcvtph2pd512_mask_round",
+            "mask.vfcmadd.cph.256" => "__builtin_ia32_vfcmaddcph256_mask3",
+            "mask.vfmadd.cph.256" => "__builtin_ia32_vfmaddcph256_mask3",
+            "mask.vfcmadd.cph.128" => "__builtin_ia32_vfcmaddcph128_mask3",
+            "mask.vfmadd.cph.128" => "__builtin_ia32_vfmaddcph128_mask3",
+            "vfmadd.f16" => "__builtin_ia32_vfmaddsh3_mask",
+            "vfmaddsub.ph.128" => "__builtin_ia32_vfmaddsubph128_mask",
+            "vfmaddsub.ph.256" => "__builtin_ia32_vfmaddsubph256_mask",
+            "vfmaddsub.ph.512" => "__builtin_ia32_vfmaddsubph512_mask",
+            "sqrt.ph.512" => "__builtin_ia32_sqrtph512_mask_round",
+            "mask.sqrt.sh" => "__builtin_ia32_sqrtsh_mask_round",
+            "max.ph.128" => "__builtin_ia32_maxph128_mask",
+            "max.ph.256" => "__builtin_ia32_maxph256_mask",
+            "max.ph.512" => "__builtin_ia32_maxph512_mask_round",
+            "min.ph.128" => "__builtin_ia32_minph128_mask",
+            "min.ph.256" => "__builtin_ia32_minph256_mask",
+            "min.ph.512" => "__builtin_ia32_minph512_mask_round",
+            "mask.getexp.sh" => "__builtin_ia32_getexpsh_mask_round",
+            "mask.rndscale.ph.128" => "__builtin_ia32_rndscaleph128_mask",
+            "mask.rndscale.ph.256" => "__builtin_ia32_rndscaleph256_mask",
+            "mask.rndscale.ph.512" => "__builtin_ia32_rndscaleph512_mask_round",
+            "mask.scalef.ph.512" => "__builtin_ia32_scalefph512_mask_round",
+            "mask.reduce.ph.512" => "__builtin_ia32_reduceph512_mask_round",
+            "mask.reduce.sh" => "__builtin_ia32_reducesh_mask_round",
+            "vcvtsi2sh" => "__builtin_ia32_vcvtsi2sh32_round",
+            "vcvtusi2sh" => "__builtin_ia32_vcvtusi2sh32_round",
+            "mask.cmp.sh" => "__builtin_ia32_cmpsh_mask_round",
+            "vcomi.sh" => "__builtin_ia32_cmpsh_mask_round",
+            "add.ph.512" => "__builtin_ia32_addph512_mask_round",
+            "sub.ph.512" => "__builtin_ia32_subph512_mask_round",
+            "mul.ph.512" => "__builtin_ia32_mulph512_mask_round",
+            "div.ph.512" => "__builtin_ia32_divph512_mask_round",
+            "mask.vfmul.cph.512" => "__builtin_ia32_vfmulcph512_mask_round",
+            "mask.vfmul.csh" => "__builtin_ia32_vfmulcsh_mask_round",
+            "mask.vfcmul.cph.512" => "__builtin_ia32_vfcmulcph512_mask_round",
+            "mask.vfcmul.csh" => "__builtin_ia32_vfcmulcsh_mask_round",
+            "mask.vfmadd.cph.512" => "__builtin_ia32_vfmaddcph512_mask3_round",
+            "maskz.vfmadd.cph.512" => "__builtin_ia32_vfmaddcph512_maskz_round",
+            "mask.vfmadd.csh" => "__builtin_ia32_vfmaddcsh_mask3_round",
+            "maskz.vfmadd.csh" => "__builtin_ia32_vfmaddcsh_maskz_round",
+            "mask.vfcmadd.cph.512" => "__builtin_ia32_vfcmaddcph512_mask3_round",
+            "maskz.vfcmadd.cph.512" => "__builtin_ia32_vfcmaddcph512_maskz_round",
+            "mask.vfcmadd.csh" => "__builtin_ia32_vfcmaddcsh_mask3_round",
+            "maskz.vfcmadd.csh" => "__builtin_ia32_vfcmaddcsh_maskz_round",
+            "vfmadd.ph.512" => "__builtin_ia32_vfmaddph512_mask",
+            "vcvtsi642sh" => "__builtin_ia32_vcvtsi2sh64_round",
+            "vcvtusi642sh" => "__builtin_ia32_vcvtusi2sh64_round",
+            "vcvtsh2si64" => "__builtin_ia32_vcvtsh2si64_round",
+            "vcvtsh2usi64" => "__builtin_ia32_vcvtsh2usi64_round",
+            "vcvttsh2si64" => "__builtin_ia32_vcvttsh2si64_round",
+            "vcvttsh2usi64" => "__builtin_ia32_vcvttsh2usi64_round",
+            "mask.add.sh.round" => "__builtin_ia32_addsh_mask_round",
+            "mask.div.sh.round" => "__builtin_ia32_divsh_mask_round",
+            "mask.getmant.sh" => "__builtin_ia32_getmantsh_mask_round",
+            "mask.max.sh.round" => "__builtin_ia32_maxsh_mask_round",
+            "mask.min.sh.round" => "__builtin_ia32_minsh_mask_round",
+            "mask.mul.sh.round" => "__builtin_ia32_mulsh_mask_round",
+            "mask.rndscale.sh" => "__builtin_ia32_rndscalesh_mask_round",
+            "mask.scalef.sh" => "__builtin_ia32_scalefsh_mask_round",
+            "mask.sub.sh.round" => "__builtin_ia32_subsh_mask_round",
+            "mask.vcvtsd2sh.round" => "__builtin_ia32_vcvtsd2sh_mask_round",
+            "mask.vcvtsh2sd.round" => "__builtin_ia32_vcvtsh2sd_mask_round",
+            "mask.vcvtsh2ss.round" => "__builtin_ia32_vcvtsh2ss_mask_round",
+            "mask.vcvtss2sh.round" => "__builtin_ia32_vcvtss2sh_mask_round",
+            _ => return None,
+        })
+    }
 }
