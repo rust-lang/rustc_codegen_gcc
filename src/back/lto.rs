@@ -21,7 +21,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gccjit::{Context, OutputKind};
+use gccjit::{Context, FnAttribute, FunctionType, GlobalKind, OutputKind};
 use object::read::archive::ArchiveFile;
 use rustc_codegen_ssa::back::lto::{LtoModuleCodegen, SerializedModule, ThinModule, ThinShared};
 use rustc_codegen_ssa::back::symbol_export;
@@ -54,8 +54,7 @@ pub fn crate_type_allows_lto(crate_type: CrateType) -> bool {
 }
 
 struct LtoData {
-    // TODO(antoyo): use symbols_below_threshold.
-    //symbols_below_threshold: Vec<String>,
+    symbols_below_threshold: Vec<String>,
     upstream_modules: Vec<(SerializedModule<ModuleBuffer>, CString)>,
     tmp_path: TempDir,
 }
@@ -160,7 +159,11 @@ fn prepare_lto(
         }
     }
 
-    Ok(LtoData { upstream_modules, tmp_path })
+    Ok(LtoData {
+        upstream_modules,
+        symbols_below_threshold,
+        tmp_path,
+    })
 }
 
 fn save_as_file(obj: &[u8], path: &Path) -> Result<(), LtoBitcodeFromRlib> {
@@ -179,8 +182,6 @@ pub(crate) fn run_fat(
     let dcx = cgcx.create_dcx();
     let dcx = dcx.handle();
     let lto_data = prepare_lto(cgcx, dcx)?;
-    /*let symbols_below_threshold =
-    lto_data.symbols_below_threshold.iter().map(|c| c.as_ptr()).collect::<Vec<_>>();*/
     fat_lto(
         cgcx,
         dcx,
@@ -188,7 +189,7 @@ pub(crate) fn run_fat(
         cached_modules,
         lto_data.upstream_modules,
         lto_data.tmp_path,
-        //&lto_data.symbols_below_threshold,
+        &lto_data.symbols_below_threshold,
     )
 }
 
@@ -199,7 +200,7 @@ fn fat_lto(
     cached_modules: Vec<(SerializedModule<ModuleBuffer>, WorkProduct)>,
     mut serialized_modules: Vec<(SerializedModule<ModuleBuffer>, CString)>,
     tmp_path: TempDir,
-    //symbols_below_threshold: &[String],
+    symbols_below_threshold: &[String],
 ) -> Result<LtoModuleCodegen<GccCodegenBackend>, FatalError> {
     let _timer = cgcx.prof.generic_activity("GCC_fat_lto_build_monolithic_module");
     info!("going for a fat lto");
@@ -275,6 +276,7 @@ fn fat_lto(
         // We cannot load and merge GCC contexts in memory like cg_llvm is doing.
         // Instead, we combine the object files into a single object file.
         for module in in_memory {
+            println!("Adding -flto for {}", module.name);
             let path = tmp_path.path().to_path_buf().join(&module.name);
             let path = path.to_str().expect("path");
             let context = &module.module_llvm.context;
@@ -283,6 +285,15 @@ fn fat_lto(
             context.set_optimization_level(to_gcc_opt_level(config.opt_level));
             context.add_command_line_option("-flto=auto");
             context.add_command_line_option("-flto-partition=one");
+            context.add_driver_option("-flto=auto");
+            context.add_driver_option("-flto-partition=one");
+            // FIXME: we apparently generate fat objects since we had trouble with a sync:
+            // https://blog.antoyo.xyz/rustc_codegen_gcc-progress-report-33
+            // TODO: Maybe fix this before removing -fuse-linker-plugin.
+            context.add_command_line_option("-fno-fat-lto-objects");
+            context.add_driver_option("-fno-fat-lto-objects");
+            context.add_command_line_option("-fno-use-linker-plugin");
+            context.add_driver_option("-fno-use-linker-plugin");
             context.compile_to_file(OutputKind::ObjectFile, path);
             let buffer = ModuleBuffer::new(PathBuf::from(path));
             let llmod_id = CString::new(&module.name[..]).unwrap();
@@ -315,6 +326,45 @@ fn fat_lto(
             }
         }
         save_temp_bitcode(cgcx, &module, "lto.input");
+
+        let int_type = module.module_llvm.context.new_type::<i32>();
+        /*
+         * TODO: Preserve the symbols via a linker script instead?
+         * TODO TODO: use the symbols in inline asm to keep them?
+         * ===> This seems to work and is easy.
+         *
+         * FIXME: main is not genarated in GIMPLE IR; it is generated as asm.
+         * ===> seems now fixed since I commented this line in libgccjit:
+         * ADD_ARG ("-fno-use-linker-plugin");
+         * FIXME: it seems "make install" doesn't copy liblto_plugin.so.
+         * ===> seems now fixed after a rebuild.
+         *
+         * TODO TODO TODO: add -fno-use-linker-plugin because:
+         * This option is enabled by default when LTO support in GCC is enabled and GCC was configured for use with a linker supporting plugins (GNU ld 2.21 or newer or gold).
+         */
+        for symbol in symbols_below_threshold {
+            println!("*** Keeping symbol: {}", symbol);
+            module.module_llvm.context.new_global(None, GlobalKind::Imported, int_type, symbol);
+            // TODO: Create a function that is always_inline and that calls the symbol here (e.g.
+            // main)?
+        }
+        let void_type = module.module_llvm.context.new_type::<()>();
+        let main_func = module.module_llvm.context.new_function(None, FunctionType::Extern, void_type, &[], "main", false);
+        //main_func.add_attribute(FnAttribute::Used);
+
+        // NOTE: look at the code from 64b30d344ce54f8ee496cb3590b4c7cf3cb30447 to see previous
+        // attemps.
+        let func = module.module_llvm.context.new_function(None, FunctionType::Exported, void_type, &[], "__my_call_main", false);
+        //func.add_attribute(FnAttribute::AlwaysInline);
+        //func.add_attribute(FnAttribute::Inline);
+        func.add_attribute(FnAttribute::Used);
+        let block = func.new_block("start");
+        let main_func_address = main_func.get_address(None);
+        /*let asm = block.add_extended_asm(None, "");
+        asm.add_input_operand(None, "X", main_func_address);*/
+        //let call = module.module_llvm.context.new_call(None, main_func, &[]);
+        //block.add_eval(None, call);
+        block.end_with_void_return(None);
 
         // Internalize everything below threshold to help strip out more modules and such.
         /*unsafe {
@@ -480,8 +530,9 @@ fn thin_lto(
         });*/
 
         match module {
-            SerializedModule::Local(_) => {
-                //let path = module_buffer.0.to_str().expect("path");
+            SerializedModule::Local(ref module) => {
+                let path = module.0.to_str().expect("path");
+                println!("??? Should we add -flto for: {:?}", path);
                 //let my_path = PathBuf::from(path);
                 //let exists = my_path.exists();
                 /*module.module_llvm.should_combine_object_files = true;
@@ -615,6 +666,14 @@ pub fn optimize_thin_module(
         Some(thin_buffer) => Arc::clone(&thin_buffer.context),
         None => {
             let context = Context::default();
+            context.add_command_line_option("-flto=auto");
+            context.add_command_line_option("-flto-partition=one");
+            context.add_driver_option("-flto=auto");
+            context.add_driver_option("-flto-partition=one");
+            context.add_command_line_option("-fno-fat-lto-objects");
+            context.add_driver_option("-fno-fat-lto-objects");
+            context.add_command_line_option("-fno-use-linker-plugin");
+            context.add_driver_option("-fno-use-linker-plugin");
             let len = thin_module.shared.thin_buffers.len();
             let module = &thin_module.shared.serialized_modules[thin_module.idx - len];
             match *module {
