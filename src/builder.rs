@@ -444,6 +444,55 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         );
         result.to_rvalue()
     }
+    /// Performs a *bitcount* intrinsic on a given arg, properly handling the zero case.  
+    pub fn checked_bitcount_intrinsic(
+        &mut self,
+        name: rustc_span::Symbol,
+        arg: RValue<'gcc>,
+        width: u64,
+    ) -> RValue<'gcc> {
+        // For u/i128, the algorithm implementing `ctlz`/`cttz` already handles the 0 case, by handling it for each half.
+        if width == 128 {
+            return match name {
+                sym::ctlz => self.count_leading_zeroes(width, arg),
+                sym::cttz => self.count_trailing_zeroes(width, arg),
+                _ => unreachable!(),
+            };
+        }
+        use rustc_span::sym;
+        let func = self.current_func.borrow().expect("func");
+        let then_block = func.new_block("then");
+        let else_block = func.new_block("else");
+        let after_block = func.new_block("after");
+
+        let result = func.new_local(None, self.u32_type, "zeros");
+        let zero = self.cx.gcc_zero(arg.get_type());
+        let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
+        self.llbb().end_with_conditional(None, cond, then_block, else_block);
+
+        let zero_result = self.cx.gcc_uint(self.u32_type, width);
+        then_block.add_assignment(None, result, zero_result);
+        then_block.end_with_jump(None, after_block);
+
+        // NOTE: since jumps were added in a place
+        // count_leading_zeroes() does not expect, the current block
+        // in the state need to be updated.
+        self.switch_to_block(else_block);
+
+        let zeros = match name {
+            sym::ctlz => self.count_leading_zeroes(width, arg),
+            sym::cttz => self.count_trailing_zeroes(width, arg),
+            _ => unreachable!(),
+        };
+        self.llbb().add_assignment(None, result, zeros);
+        self.llbb().end_with_jump(None, after_block);
+
+        // NOTE: since jumps were added in a place rustc does not
+        // expect, the current block in the state need to be updated.
+        self.switch_to_block(after_block);
+
+        result.to_rvalue()
+    }
 }
 
 impl<'tcx> HasTyCtxt<'tcx> for Builder<'_, '_, 'tcx> {
