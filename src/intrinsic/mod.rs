@@ -931,51 +931,43 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 "__builtin_clzll"
             }
             else if width == 128 {
-                // Algorithm from: https://stackoverflow.com/a/28433850/389119
-                let array_type = self.context.new_array_type(None, arg_type, 3);
-                let result = self.current_func()
-                    .new_local(None, array_type, "count_loading_zeroes_results");
-
+                // Algorithm from: https://stackoverflow.com/a/28433850/389119 updated to check for high 64bits being 0
+                let result = self.current_func().new_local(None, result_type, "zeros");
+                let ctlz_then_block = self.current_func().new_block("ctlz_then");
+                let ctlz_else_block = self.current_func().new_block("ctlz_else");
+                let ctlz_after_block = self.current_func().new_block("ctlz_after");
                 let sixty_four = self.const_uint(arg_type, 64);
                 let shift = self.lshr(arg, sixty_four);
                 let high = self.gcc_int_cast(shift, self.u64_type);
-                let low = self.gcc_int_cast(arg, self.u64_type);
-
-                let zero = self.context.new_rvalue_zero(self.usize_type);
-                let one = self.context.new_rvalue_one(self.usize_type);
-                let two = self.context.new_rvalue_from_long(self.usize_type, 2);
 
                 let clzll = self.context.get_builtin_function("__builtin_clzll");
 
-                let first_elem = self.context.new_array_access(None, result, zero);
-                let first_value = self.gcc_int_cast(self.context.new_call(None, clzll, &[high]), arg_type);
-                self.llbb()
-                    .add_assignment(self.location, first_elem, first_value);
+                let zero = self.const_uint(high.get_type(), 0);
+                let cond = self.gcc_icmp(IntPredicate::IntNE, high, zero);
+                self.llbb().end_with_conditional(
+                    self.location,
+                    cond,
+                    ctlz_then_block,
+                    ctlz_else_block,
+                );
 
-                let second_elem = self.context.new_array_access(self.location, result, one);
-                let cast = self.gcc_int_cast(self.context.new_call(self.location, clzll, &[low]), arg_type);
-                let second_value = self.add(cast, sixty_four);
-                self.llbb()
-                    .add_assignment(self.location, second_elem, second_value);
+                let leading_zeroes =
+                    self.gcc_int_cast(self.context.new_call(None, clzll, &[high]), result_type);
 
-                let third_elem = self.context.new_array_access(self.location, result, two);
-                let third_value = self.const_uint(arg_type, 128);
-                self.llbb()
-                    .add_assignment(self.location, third_elem, third_value);
+                ctlz_then_block.add_assignment(None, result, leading_zeroes);
+                ctlz_then_block.end_with_jump(None, ctlz_after_block);
 
-                let not_high = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, high);
-                let not_low = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, low);
-                let not_low_and_not_high = not_low & not_high;
-                let index = not_high + not_low_and_not_high;
-                // NOTE: the following cast is necessary to avoid a GIMPLE verification failure in
-                // gcc.
-                // TODO(antoyo): do the correct verification in libgccjit to avoid an error at the
-                // compilation stage.
-                let index = self.context.new_cast(self.location, index, self.i32_type);
+                let low = self.gcc_int_cast(arg, self.u64_type);
+                let low_leading_zeroes =
+                    self.gcc_int_cast(self.context.new_call(None, clzll, &[low]), result_type);
+                let sixty_four_u32 = self.const_uint(result_type, 64);
+                let leading_zeroes = self.add(low_leading_zeroes, sixty_four_u32);
+                ctlz_else_block.add_assignment(None, result, leading_zeroes);
+                ctlz_else_block.end_with_jump(None, ctlz_after_block);
 
-                let res = self.context.new_array_access(self.location, result, index);
+                self.switch_to_block(ctlz_after_block);
 
-                return self.gcc_int_cast(res.to_rvalue(), result_type);
+                return result.to_rvalue();
             }
             else {
                 let count_leading_zeroes = self.context.get_builtin_function("__builtin_clzll");
