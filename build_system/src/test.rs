@@ -70,7 +70,8 @@ fn show_usage() {
     --use-system-gcc       : Use system installed libgccjit
     --build-only           : Only build rustc_codegen_gcc then exits
     --nb-parts             : Used to split rustc_tests (for CI needs)
-    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test"#
+    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test
+    --toolchain [arg]      : The (rustc) toolchain to be used"#
     );
     ConfigInfo::show_usage();
     for (option, (doc, _)) in get_runners() {
@@ -95,6 +96,7 @@ struct TestArg {
     sysroot_panic_abort: bool,
     config_info: ConfigInfo,
     sysroot_features: Vec<String>,
+    toolchain_name: Option<String>,
     keep_lto_tests: bool,
 }
 
@@ -142,6 +144,18 @@ impl TestArg {
                         return Err(format!("Expected an argument after `{}`, found nothing", arg));
                     }
                 },
+                "--toolchain" => match args.next() {
+                    Some(toolchain_name) if !toolchain_name.is_empty() => {
+                        if !toolchain_name.starts_with('+') {
+                            test_arg.toolchain_name = Some(format!("+{toolchain_name}"));
+                        } else {
+                            test_arg.toolchain_name = Some(toolchain_name);
+                        }
+                    }
+                    _ => {
+                        return Err(format!("Expected an argument after `{}`, found nothing", arg));
+                    }
+                },
                 "--help" => {
                     show_usage();
                     return Ok(None);
@@ -181,7 +195,7 @@ impl TestArg {
 }
 
 fn build_if_no_backend(env: &Env, args: &TestArg) -> Result<(), String> {
-    if args.config_info.backend.is_some() {
+    if args.config_info.backend.is_some() || args.toolchain_name.is_some() {
         return Ok(());
     }
     let mut command: Vec<&dyn AsRef<OsStr>> = vec![&"cargo", &"rustc"];
@@ -459,6 +473,15 @@ fn std_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     Ok(())
 }
 
+fn get_rustc_path_for_toolchain(toolchain: &str, cwd: Option<&Path>) -> Result<String, String> {
+    String::from_utf8(run_command(&[&"rustup", &toolchain, &"which", &"rustc"], cwd)?.stdout)
+        .map_err(|error| format!("Failed to retrieve rustc path: {:?}", error))
+        .and_then(|rustc| {
+            let rustc = rustc.trim().to_owned();
+            if rustc.is_empty() { Err(format!("`rustc` path is empty")) } else { Ok(rustc) }
+        })
+}
+
 fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
     let toolchain = format!(
         "+{channel}-{host}",
@@ -517,15 +540,7 @@ fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
         let cargo = cargo.trim().to_owned();
         if cargo.is_empty() { Err(format!("`cargo` path is empty")) } else { Ok(cargo) }
     })?;
-    let rustc = String::from_utf8(
-        run_command_with_env(&[&"rustup", &toolchain, &"which", &"rustc"], rust_dir, Some(env))?
-            .stdout,
-    )
-    .map_err(|error| format!("Failed to retrieve rustc path: {:?}", error))
-    .and_then(|rustc| {
-        let rustc = rustc.trim().to_owned();
-        if rustc.is_empty() { Err(format!("`rustc` path is empty")) } else { Ok(rustc) }
-    })?;
+    let rustc = get_rustc_path_for_toolchain(&toolchain, rust_dir)?;
     let llvm_filecheck = match run_command_with_env(
         &[
             &"bash",
@@ -644,8 +659,10 @@ fn run_cargo_command_with_callback<F>(
 where
     F: Fn(&[&dyn AsRef<OsStr>], Option<&Path>, &Env) -> Result<(), String>,
 {
-    let toolchain = get_toolchain()?;
-    let toolchain_arg = format!("+{}", toolchain);
+    let toolchain_arg = match args.toolchain_name {
+        Some(ref toolchain) => toolchain.clone(),
+        None => format!("+{}", get_toolchain()?),
+    };
     let rustc_version = String::from_utf8(
         run_command_with_env(&[&args.config_info.rustc_command[0], &"-V"], cwd, Some(env))?.stdout,
     )
@@ -1098,21 +1115,19 @@ where
 
     env.get_mut("RUSTFLAGS").unwrap().clear();
 
-    run_command_with_output_and_env(
-        &[
-            &"./x.py",
-            &"test",
-            &"--run",
-            &"always",
-            &"--stage",
-            &"0",
-            &format!("tests/{}", test_type),
-            &"--compiletest-rustc-args",
-            &rustc_args,
-        ],
-        Some(&rust_path),
-        Some(&env),
-    )?;
+    let test_type = format!("tests/{}", test_type);
+    let mut command: Vec<&dyn AsRef<OsStr>> =
+        vec![&"./x.py", &"test", &"--run", &"always", &"--stage", &"0", &test_type];
+    let rustc;
+    if let Some(ref toolchain) = args.toolchain_name {
+        env.insert("COMPILETEST_FORCE_STAGE0=1".to_string(), "1".to_string());
+        command.push(&"--set");
+        rustc = format!("build.rustc={}", get_rustc_path_for_toolchain(toolchain, None)?);
+        command.push(&rustc);
+    }
+    command.push(&"--compiletest-rustc-args");
+    command.push(&rustc_args);
+    run_command_with_output_and_env(&command, Some(&rust_path), Some(&env))?;
     Ok(())
 }
 
