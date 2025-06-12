@@ -57,13 +57,26 @@ pub(crate) fn codegen(
                     );
                 }*/
 
+                // TODO: make this work to make it easier to debug GCC-related issue within
+                // rustc_codegen_gcc:
+                //context.add_driver_option("-wrapper gdb,--args");
                 if config.emit_bc || config.emit_obj == EmitObj::Bitcode {
                     let _timer = cgcx.prof.generic_activity_with_arg(
                         "GCC_module_codegen_emit_bitcode",
                         &*module.name,
                     );
+                    println!("Adding -flto for {}", bc_out.to_str().unwrap());
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    context.add_driver_option("-flto=auto");
+                    context.add_driver_option("-flto-partition=one");
+                    context.add_command_line_option("-fno-fat-lto-objects");
+                    context.add_driver_option("-fno-fat-lto-objects");
+                    // FIXME FIXME FIXME: it seems that uncommenting "ADD_ARG ("-fno-use-linker-plugin")" in libgccjit
+                    // make the test fail (undefined symbol main).
+                    // TODO: Perhaps we're not sending this flag somewhere?
+                    context.add_command_line_option("-fno-use-linker-plugin");
+                    //context.add_driver_option("-fno-use-linker-plugin");
                     // TODO(antoyo): remove since we don't want fat objects when it is for Bitcode only.
                     context.add_command_line_option("-ffat-lto-objects");
                     context.compile_to_file(
@@ -80,8 +93,15 @@ pub(crate) fn codegen(
                     // TODO(antoyo): maybe we should call embed_bitcode to have the proper iOS fixes?
                     //embed_bitcode(cgcx, llcx, llmod, &config.bc_cmdline, data);
 
+                    println!("Adding -flto for {}", bc_out.to_str().unwrap());
                     context.add_command_line_option("-flto=auto");
                     context.add_command_line_option("-flto-partition=one");
+                    context.add_driver_option("-flto=auto");
+                    context.add_driver_option("-flto-partition=one");
+                    context.add_command_line_option("-fno-fat-lto-objects");
+                    context.add_driver_option("-fno-fat-lto-objects");
+                    context.add_command_line_option("-fno-use-linker-plugin");
+                    //context.add_driver_option("-fno-use-linker-plugin");
                     context.add_command_line_option("-ffat-lto-objects");
                     // TODO(antoyo): Send -plugin/usr/lib/gcc/x86_64-pc-linux-gnu/11.1.0/liblto_plugin.so to linker (this should be done when specifying the appropriate rustc cli argument).
                     context.compile_to_file(
@@ -169,18 +189,32 @@ pub(crate) fn codegen(
                     if fat_lto {
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
+                        context.add_driver_option("-flto=auto");
+                        context.add_driver_option("-flto-partition=one");
+                        context.add_command_line_option("-fno-fat-lto-objects");
+                        context.add_driver_option("-fno-fat-lto-objects");
+                        //context.add_command_line_option("-ffat-lto-objects");
+                        context.add_command_line_option("-fno-use-linker-plugin");
+                        //context.add_driver_option("-fno-use-linker-plugin");
 
-                        // NOTE: without -fuse-linker-plugin, we get the following error:
-                        // lto1: internal compiler error: decompressed stream: Destination buffer is too small
-                        // TODO(antoyo): since we do not do LTO when the linker is invoked anymore, perhaps
-                        // the following flag is not necessary anymore.
-                        context.add_driver_option("-fuse-linker-plugin");
+                        // FIXME:
+                        // /usr/bin/ld: warning: incremental linking of LTO and non-LTO objects; using -flinker-output=nolto-rel which will bypass whole program optimization
+                        // => So I'm probably missing -flto somewhere.
+                        // ====> That was caused because I didn't build the sysroot with LTO.
+
+                        println!("Adding -flto to {:?}", obj_out.to_str().expect("path to str"));
+
+                        // FIXME: the problem is probably that the code is only in GIMPLE IR while
+                        // we would want to get the optimized asm done from LTO.
+                        // ===> But we call "gcc -x lto" later, so that should be asm and not
+                        // GIMPLE IR.
                     }
 
                     context.add_driver_option("-Wl,-r");
                     // NOTE: we need -nostdlib, otherwise, we get the following error:
                     // /usr/bin/ld: cannot find -lgcc_s: No such file or directory
                     context.add_driver_option("-nostdlib");
+                    //context.add_driver_option("-v");
 
                     let path = obj_out.to_str().expect("path to str");
 
@@ -194,11 +228,22 @@ pub(crate) fn codegen(
                         //
                         // This option is to mute it to make the UI tests pass with LTO enabled.
                         context.add_driver_option("-Wno-lto-type-mismatch");
+                        //context.add_driver_option("-v");
                         // NOTE: this doesn't actually generate an executable. With the above
                         // flags, it combines the .o files together in another .o.
+                        println!("Lto path: {:?}", lto_path);
                         context.compile_to_file(OutputKind::Executable, &lto_path);
+                        println!("****************************************************************************************************");
 
                         let context = Context::default();
+                        context.add_command_line_option("-flto=auto");
+                        context.add_command_line_option("-flto-partition=one");
+                        context.add_driver_option("-flto=auto");
+                        context.add_driver_option("-flto-partition=one");
+                        context.add_command_line_option("-fno-fat-lto-objects");
+                        context.add_driver_option("-fno-fat-lto-objects");
+                        context.add_command_line_option("-fno-use-linker-plugin");
+                        //context.add_driver_option("-fno-use-linker-plugin");
                         if cgcx.target_arch == "x86" || cgcx.target_arch == "x86_64" {
                             // NOTE: it seems we need to use add_driver_option instead of
                             // add_command_line_option here because we use the LTO frontend via gcc.
@@ -210,8 +255,11 @@ pub(crate) fn codegen(
                         // needs to be at the very beginning.
                         context.add_driver_option("-x");
                         context.add_driver_option("lto");
+                        //context.add_driver_option("-v");
                         add_pic_option(&context, module.module_llvm.relocation_model);
                         context.add_driver_option(lto_path);
+                        // TODO TODO: inspect the resulting file to see if it contains the GIMPLE IR or
+                        // the asm.
 
                         context.compile_to_file(OutputKind::ObjectFile, path);
                     } else {
