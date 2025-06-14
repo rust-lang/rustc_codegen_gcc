@@ -52,9 +52,11 @@ jobs:
       # `llvm-14-tools` is needed to install the `FileCheck` binary which is used for asm tests.
       run: sudo apt-get install ninja-build ripgrep llvm-14-tools llvm libstdc++6
 
-    - run: g++ -v
+    - run: find / -name libstdc++.so 2> /dev/null | true
 
-    - run: find / -name libstdc++.so | true
+    - run: |
+      cc tests/main.cpp -o main -lstdc++
+      ldd main
 
     - name: Install rustfmt & clippy
       run: rustup component add rustfmt clippy
@@ -66,6 +68,16 @@ jobs:
       run: |
           sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}
           echo 'gcc-path = "/usr/lib/"' > config.toml
+
+    - name: Install libstdc++
+      run: sudo apt-get --reinstall install libstdc++6
+
+    - run: find / -name libstdc++.so 2> /dev/null | true
+
+    - run: g++ -v
+
+    - run: cc tests/main.cpp -o main -lstdc++
+    - run: cc tests/main.cpp -o main
 
     - name: Set env
       run: |
