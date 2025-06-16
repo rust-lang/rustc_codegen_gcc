@@ -70,7 +70,8 @@ fn show_usage() {
     --use-system-gcc       : Use system installed libgccjit
     --build-only           : Only build rustc_codegen_gcc then exits
     --nb-parts             : Used to split rustc_tests (for CI needs)
-    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test"#
+    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test
+    --toolchain [arg]      : The (rustc) toolchain to be used"#
     );
     ConfigInfo::show_usage();
     for (option, (doc, _)) in get_runners() {
@@ -95,6 +96,7 @@ struct TestArg {
     sysroot_panic_abort: bool,
     config_info: ConfigInfo,
     sysroot_features: Vec<String>,
+    toolchain_name: Option<String>,
     keep_lto_tests: bool,
 }
 
@@ -142,6 +144,18 @@ impl TestArg {
                         return Err(format!("Expected an argument after `{arg}`, found nothing"));
                     }
                 },
+                "--toolchain" => match args.next() {
+                    Some(toolchain_name) if !toolchain_name.is_empty() => {
+                        if !toolchain_name.starts_with('+') {
+                            test_arg.toolchain_name = Some(format!("+{toolchain_name}"));
+                        } else {
+                            test_arg.toolchain_name = Some(toolchain_name);
+                        }
+                    }
+                    _ => {
+                        return Err(format!("Expected an argument after `{}`, found nothing", arg));
+                    }
+                },
                 "--help" => {
                     show_usage();
                     return Ok(None);
@@ -181,7 +195,7 @@ impl TestArg {
 }
 
 fn build_if_no_backend(env: &Env, args: &TestArg) -> Result<(), String> {
-    if args.config_info.backend.is_some() {
+    if args.config_info.backend.is_some() || args.toolchain_name.is_some() {
         return Ok(());
     }
     let mut command: Vec<&dyn AsRef<OsStr>> = vec![&"cargo", &"rustc"];
@@ -460,11 +474,14 @@ fn std_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 }
 
 fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
-    let toolchain = format!(
-        "+{channel}-{host}",
-        channel = get_toolchain()?, // May also include date
-        host = args.config_info.host_triple
-    );
+    let toolchain = match args.toolchain_name {
+        Some(ref toolchain_name) => toolchain_name.clone(),
+        None => format!(
+            "+{channel}-{host}",
+            channel = get_toolchain()?, // May also include date
+            host = args.config_info.host_triple
+        ),
+    };
     let rust_dir_path = Path::new(crate::BUILD_DIR).join("rust");
     // If the repository was already cloned, command will fail, so doesn't matter.
     let _ = git_clone("https://github.com/rust-lang/rust.git", Some(&rust_dir_path), false);
