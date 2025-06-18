@@ -270,18 +270,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                             actual_val.dereference(self.location).to_rvalue()
                         }
                     } else {
-                        // FIXME: this condition seems wrong: it will pass when both types are not
-                        // a vector.
+                        // Check that the types are not "known to mismatch" or are vectors
                         assert!(
-                            (!expected_ty.is_vector() || actual_ty.is_vector())
-                                && (expected_ty.is_vector() || !actual_ty.is_vector()),
-                            "{:?} (is vector: {}) -> {:?} (is vector: {}), Function: {:?}[{}]",
-                            actual_ty,
-                            actual_ty.is_vector(),
-                            expected_ty,
-                            expected_ty.is_vector(),
-                            func_ptr,
-                            index
+                            expected_ty.known_eq(&actual_ty, self.cx).unwrap_or(true)
+                                || expected_ty.is_vector() && actual_ty.is_vector(),
+                            "{actual_ty:?} -> {expected_ty:?}, Function: {func_ptr:?}[{index}]"
                         );
                         // TODO(antoyo): perhaps use __builtin_convertvector for vector casting.
                         // TODO: remove bitcast now that vector types can be compared?
