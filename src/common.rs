@@ -425,6 +425,10 @@ pub trait TypeReflection<'gcc, 'tcx> {
     fn is_u128(&self, cx: &CodegenCx<'gcc, 'tcx>) -> bool;
 
     fn is_vector(&self) -> bool;
+    /// Checks if 2 types are "known to be equal". Returns Some(true) if types are equal(e.g. bool and bool),
+    /// Some(false) if they can't possibly be equal(e.g. a struct and a float), and None if there is no way
+    /// to check for their equality(struct and struct)
+    fn known_eq(&self, rhs: &Self, cx: &CodegenCx<'gcc, 'tcx>) -> Option<bool>;
 }
 
 impl<'gcc, 'tcx> TypeReflection<'gcc, 'tcx> for Type<'gcc> {
@@ -523,5 +527,107 @@ impl<'gcc, 'tcx> TypeReflection<'gcc, 'tcx> for Type<'gcc> {
         }
 
         false
+    }
+    fn known_eq(&self, other: &Self, cx: &CodegenCx<'gcc, 'tcx>) -> Option<bool> {
+        // "Happy" path: types represented using the same pointer
+        if self == other {
+            return Some(true);
+        }
+        if self.is_bool() {
+            return Some(other.is_bool());
+        } else if self.is_integral() {
+            // Int and.. something? Not equal.
+            if !other.is_integral() {
+                return Some(false);
+            }
+            // Do the intigers have the same size and sign?
+            return Some(
+                (self.get_size() == other.get_size())
+                    && (self.is_signed(cx) == other.is_signed(cx)),
+            );
+        } else if self.is_vector() {
+            // Vector and.. something? Different types.
+            if !other.is_vector() {
+                return Some(false);
+            }
+            // Both are vectors - try to get them directly
+            let (Some(lhs), Some(rhs)) = (self.dyncast_vector(), other.dyncast_vector()) else {
+                return None;
+            };
+            // Different element count - different types.
+            if lhs.get_num_units() != rhs.get_num_units() {
+                return Some(false);
+            }
+            // Same element - same type.
+            return lhs.get_element_type().known_eq(&rhs.get_element_type(), cx);
+        } else if let Some(lhs) = self.is_struct() {
+            // Struct and a not-struct? Different types.
+            let Some(rhs) = other.is_struct() else {
+                return Some(false);
+            };
+            // Different *field count*? Different types.
+            if lhs.get_field_count() != rhs.get_field_count() {
+                return Some(false);
+            }
+            // We can't get the type of a filed quite yet. So, we will say that we don't know if the structs are equal.
+            return None;
+        } else if let Some(s_ptr) = self.get_pointee() {
+            let Some(other_ptr) = other.get_pointee() else {
+                return Some(false);
+            };
+            return s_ptr.known_eq(&other_ptr, cx);
+        } else if let Some(lhs_elem) = self.dyncast_array() {
+            // Array and not an array - not equal.
+            let Some(rhs_elem) = other.dyncast_array() else {
+                return Some(false);
+            };
+            // Mismatched elements - not equal
+            if !lhs_elem.known_eq(&rhs_elem, cx)? {
+                return Some(false);
+            }
+            return None;
+        } else if let Some(lhs_ptr) = self.dyncast_function_ptr_type() {
+            // Fn ptr and not fn ptr - not equal.
+            let Some(rhs_ptr) = other.dyncast_function_ptr_type() else {
+                return Some(false);
+            };
+            // Wrong argc
+            if lhs_ptr.get_param_count() != rhs_ptr.get_param_count() {
+                return Some(false);
+            }
+            // Wrong ret
+            if !lhs_ptr.get_return_type().known_eq(&rhs_ptr.get_return_type(), cx)? {
+                return Some(false);
+            }
+            // Wrong param count.
+            for idx in 0..lhs_ptr.get_param_count() {
+                if !lhs_ptr.get_param_type(idx).known_eq(&rhs_ptr.get_param_type(idx), cx)? {
+                    return Some(false);
+                }
+            }
+            return None;
+        }
+        #[cfg(feature = "master")]
+        if self.is_floating_point() {
+            if !other.is_floating_point() {
+                return Some(false);
+            }
+            return Some(self.get_size() == other.get_size());
+        }
+        #[cfg(not(feature = "master"))]
+        {
+            fn is_floating_point<'gcc>(ty: &Type<'gcc>, cx: &CodegenCx<'gcc, '_>) -> bool {
+                ty.is_compatible_with(cx.context.new_type::<f32>())
+                    || ty.is_compatible_with(cx.context.new_type::<f64>())
+            }
+            if is_floating_point(self, cx) {
+                if !is_floating_point(self, cx) {
+                    return Some(false);
+                }
+                return Some(self.get_size() == other.get_size());
+            }
+        }
+        // Unknown type...
+        None
     }
 }
