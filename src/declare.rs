@@ -189,6 +189,10 @@ fn declare_raw_fn<'gcc>(
             .collect();
         #[cfg(not(feature = "master"))]
         let name = &mangle_name(name);
+        if name == "main" {
+            //cx.context.add_driver_option("-v");
+            println!("**** Main function in {}", cx.codegen_unit.name());
+        }
         let func =
             cx.context.new_function(None, cx.linkage.get(), return_type, &params, name, variadic);
         #[cfg(feature = "master")]

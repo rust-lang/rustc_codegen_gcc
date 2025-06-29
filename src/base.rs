@@ -100,6 +100,8 @@ pub fn compile_codegen_unit(
         let cgu = tcx.codegen_unit(cgu_name);
         // Instantiate monomorphizations without filling out definitions yet...
         let context = new_context(tcx);
+        println!("==== Module codegen: {}", cgu_name);
+        context.add_driver_option("-fno-use-linker-plugin");
 
         if tcx.sess.panic_strategy() == PanicStrategy::Unwind {
             context.add_command_line_option("-fexceptions");
