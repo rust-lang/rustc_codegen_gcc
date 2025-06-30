@@ -539,9 +539,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn ret(&mut self, mut value: RValue<'gcc>) {
         if self.structs_as_pointer.borrow().contains(&value) {
+            panic!();
             // NOTE: hack to workaround a limitation of the rustc API: see comment on
             // CodegenCx.structs_as_pointer
-            value = value.dereference(self.location).to_rvalue();
+            //value = value.dereference(self.location).to_rvalue();
         }
         let expected_return_type = self.current_func().get_return_type();
         if !expected_return_type.is_compatible_with(value.get_type()) {
@@ -1119,11 +1120,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // TODO(antoyo)
     }
 
-    fn store(&mut self, mut val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align) -> RValue<'gcc> {
+    fn store(&mut self, val: RValue<'gcc>, ptr: RValue<'gcc>, align: Align) -> RValue<'gcc> {
         if self.structs_as_pointer.borrow().contains(&val) {
+            panic!();
             // NOTE: hack to workaround a limitation of the rustc API: see comment on
             // CodegenCx.structs_as_pointer
-            val = val.dereference(self.location).to_rvalue();
+            //val = val.dereference(self.location).to_rvalue();
         }
 
         self.store_with_flags(val, ptr, align, MemFlags::empty())
@@ -1537,26 +1539,44 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         assert_eq!(idx as usize as u64, idx);
         let value_type = aggregate_value.get_type();
 
-        let lvalue = if value_type.dyncast_array().is_some() {
+        if value_type.dyncast_array().is_some() {
             let index = self
                 .context
                 .new_rvalue_from_long(self.u64_type, i64::try_from(idx).expect("i64::try_from"));
             self.context.new_array_access(self.location, aggregate_value, index)
         } else if value_type.dyncast_vector().is_some() {
             panic!();
-        } else if let Some(pointer_type) = value_type.get_pointee() {
-            if let Some(struct_type) = pointer_type.is_struct() {
+        } else if let Some(_pointer_type) = value_type.get_pointee() {
+            unreachable!();
+            /*if let Some(struct_type) = pointer_type.is_struct() {
                 // NOTE: hack to workaround a limitation of the rustc API: see comment on
                 // CodegenCx.structs_as_pointer
                 aggregate_value.dereference_field(self.location, struct_type.get_field(idx as i32))
             } else {
                 panic!("Unexpected type {:?}", value_type);
-            }
+            }*/
+        } else if let Some(struct_type) = value_type.is_struct() {
+            let new_val = self.current_func().new_local(None, value_type, "aggregate_value");
+            self.block.add_assignment(None, new_val, aggregate_value);
+            let lvalue = new_val.access_field(None, struct_type.get_field(idx as i32));
+            let lvalue_type = lvalue.to_rvalue().get_type();
+            let value =
+                // NOTE: sometimes, rustc will create a value with the wrong type.
+                if lvalue_type != value.get_type() {
+                    self.context.new_cast(self.location, value, lvalue_type)
+                }
+                else {
+                    value
+                };
+            self.block.add_assignment(None, lvalue, value);
+            return new_val.to_rvalue();
         } else {
             panic!("Unexpected type {:?}", value_type);
         };
 
-        let lvalue_type = lvalue.to_rvalue().get_type();
+        panic!();
+
+        /*let lvalue_type = lvalue.to_rvalue().get_type();
         let value =
             // NOTE: sometimes, rustc will create a value with the wrong type.
             if lvalue_type != value.get_type() {
@@ -1568,7 +1588,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         self.llbb().add_assignment(self.location, lvalue, value);
 
-        aggregate_value
+        aggregate_value*/
     }
 
     fn set_personality_fn(&mut self, _personality: Function<'gcc>) {
