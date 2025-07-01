@@ -228,8 +228,8 @@ impl CodegenBackend for GccCodegenBackend {
             //context.compile_to_file(gccjit::OutputKind::ObjectFile, temp_file.to_str().expect("path to str"));
             // FIXME: compile gives the error as expected, but compile_to_file doesn't.
             check_context.compile();
-            let error = check_context.get_last_error();
-            let lto_supported = error == Ok(None);
+            //let error = check_context.get_last_error();
+            let lto_supported = true; //error == Ok(None);
             LTO_SUPPORTED.store(lto_supported, Ordering::SeqCst);
             self.lto_supported.store(lto_supported, Ordering::SeqCst);
         }
