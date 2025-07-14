@@ -656,8 +656,20 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.block.add_eval(self.location, self.context.new_call(self.location, func, &[]));
         let return_type = self.block.get_function().get_return_type();
         let void_type = self.context.new_type::<()>();
+        #[cfg(feature = "master")]
+        let is_float = return_type.is_floating_point();
+        #[cfg(not(feature = "master"))]
+        let is_float = false;
         if return_type == void_type {
             self.block.end_with_void_return(self.location)
+        }
+        // For ints, floats and pointers, we can avoid creating the temporary local, and just return 0 / null.
+        // This should have no effect on runtime: GCC already knows that everything after __builtin_unreachable
+        // is unreachable.
+        else if self.is_native_int_type(return_type) || is_float {
+            self.block.end_with_return(self.location, self.context.new_rvalue_zero(return_type))
+        } else if return_type.get_pointee().is_some() {
+            self.block.end_with_return(self.location, self.context.new_null(return_type))
         } else {
             let return_value =
                 self.current_func().new_local(self.location, return_type, "unreachableReturn");
