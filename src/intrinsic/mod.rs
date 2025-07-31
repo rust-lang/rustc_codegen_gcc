@@ -6,7 +6,7 @@ use std::iter;
 
 #[cfg(feature = "master")]
 use gccjit::Type;
-use gccjit::{ComparisonOp, Function, FunctionType, RValue, ToRValue, UnaryOp};
+use gccjit::{Block, ComparisonOp, Function, FunctionType, LValue, RValue, ToRValue, UnaryOp};
 #[cfg(feature = "master")]
 use rustc_abi::ExternAbi;
 use rustc_abi::{BackendRepr, HasDataLayout};
@@ -410,43 +410,14 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             | sym::saturating_sub => {
                 match int_type_width_signed(args[0].layout.ty, self) {
                     Some((width, signed)) => match name {
-                        sym::ctlz | sym::cttz => {
-                            let func = self.current_func();
-                            let then_block = func.new_block("then");
-                            let else_block = func.new_block("else");
-                            let after_block = func.new_block("after");
-
-                            let arg = args[0].immediate();
-                            let result = func.new_local(None, self.u32_type, "zeros");
-                            let zero = self.cx.gcc_zero(arg.get_type());
-                            let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
-                            self.llbb().end_with_conditional(None, cond, then_block, else_block);
-
-                            let zero_result = self.cx.gcc_uint(self.u32_type, width);
-                            then_block.add_assignment(None, result, zero_result);
-                            then_block.end_with_jump(None, after_block);
-
-                            // NOTE: since jumps were added in a place
-                            // count_leading_zeroes() does not expect, the current block
-                            // in the state need to be updated.
-                            self.switch_to_block(else_block);
-
-                            let zeros = match name {
-                                sym::ctlz => self.count_leading_zeroes(width, arg),
-                                sym::cttz => self.count_trailing_zeroes(width, arg),
-                                _ => unreachable!(),
-                            };
-                            self.llbb().add_assignment(None, result, zeros);
-                            self.llbb().end_with_jump(None, after_block);
-
-                            // NOTE: since jumps were added in a place rustc does not
-                            // expect, the current block in the state need to be updated.
-                            self.switch_to_block(after_block);
-
-                            result.to_rvalue()
+                        sym::ctlz => self.count_leading_zeroes(width, args[0].immediate()),
+                        sym::ctlz_nonzero => {
+                            self.count_leading_zeroes_nonzero(width, args[0].immediate())
                         }
-                        sym::ctlz_nonzero => self.count_leading_zeroes(width, args[0].immediate()),
-                        sym::cttz_nonzero => self.count_trailing_zeroes(width, args[0].immediate()),
+                        sym::cttz => self.count_trailing_zeroes(width, args[0].immediate()),
+                        sym::cttz_nonzero => {
+                            self.count_trailing_zeroes_nonzero(width, args[0].immediate())
+                        }
                         sym::ctpop => self.pop_count(args[0].immediate()),
                         sym::bswap => {
                             if width == 8 {
@@ -886,82 +857,159 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     fn count_leading_zeroes(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        // __buildin_clz* functions are UB when called with 0, handle that special case before using them
+
+        // TODO(antoyo): use width?
+        let result_type = self.u32_type;
+        let result = self.current_func().new_local(None, result_type, "zeros");
+
+        let then_block = self.current_func().new_block("then");
+        let else_block = self.current_func().new_block("else");
+        let after_block = self.current_func().new_block("after");
+
+        let zero = self.cx.const_uint(arg.get_type(), 0);
+        let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
+        self.llbb().end_with_conditional(None, cond, then_block, else_block);
+
+        let zero_result = self.cx.gcc_uint(self.u32_type, width);
+        then_block.add_assignment(None, result, zero_result);
+        then_block.end_with_jump(None, after_block);
+        self.switch_to_block(else_block);
+
+        self.count_leading_zeroes_nonzero_impl(width, arg, Some((result, else_block, after_block)));
+        self.switch_to_block(after_block);
+        result.to_rvalue()
+    }
+
+    fn count_leading_zeroes_nonzero(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        self.count_leading_zeroes_nonzero_impl(width, arg, None)
+    }
+    fn count_leading_zeroes_nonzero_impl(
+        &mut self,
+        width: u64,
+        arg: RValue<'gcc>,
+        block: Option<(LValue<'gcc>, Block<'gcc>, Block<'gcc>)>,
+    ) -> RValue<'gcc> {
         // TODO(antoyo): use width?
         let arg_type = arg.get_type();
         let result_type = self.u32_type;
-        let count_leading_zeroes =
-            // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
-            // instead of using is_uint().
-            if arg_type.is_uint(self.cx) {
-                "__builtin_clz"
+        // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
+        // instead of using is_uint().
+        let func_name = if arg_type.is_uint(self.cx) {
+            Some("__builtin_clz")
+        } else if arg_type.is_ulong(self.cx) {
+            Some("__builtin_clzl")
+        } else if arg_type.is_ulonglong(self.cx) {
+            Some("__builtin_clzll")
+        } else {
+            None
+        };
+        if let Some(func_name) = func_name {
+            let count_leading_zeroes = self.context.get_builtin_function(func_name);
+            let res = self.context.new_call(self.location, count_leading_zeroes, &[arg]);
+            let res = self.context.new_cast(self.location, res, result_type);
+            if let Some((result, else_block, after_block)) = block {
+                else_block.add_assignment(None, result, res);
+                else_block.end_with_jump(None, after_block);
             }
-            else if arg_type.is_ulong(self.cx) {
-                "__builtin_clzl"
-            }
-            else if arg_type.is_ulonglong(self.cx) {
-                "__builtin_clzll"
-            }
-            else if width == 128 {
-                // Algorithm from: https://stackoverflow.com/a/28433850/389119
-                let array_type = self.context.new_array_type(None, arg_type, 3);
-                let result = self.current_func()
-                    .new_local(None, array_type, "count_loading_zeroes_results");
+            res
+        } else if width == 128 {
+            // __buildin_clzll is UB when called with 0, call it on the 64 high bits if they are not 0,
+            // else call it on the 64 low bits and add 64. In the else case, 64 low bits can't be 0 because arg is not 0.
 
-                let sixty_four = self.const_uint(arg_type, 64);
-                let shift = self.lshr(arg, sixty_four);
-                let high = self.gcc_int_cast(shift, self.u64_type);
-                let low = self.gcc_int_cast(arg, self.u64_type);
-
-                let zero = self.context.new_rvalue_zero(self.usize_type);
-                let one = self.context.new_rvalue_one(self.usize_type);
-                let two = self.context.new_rvalue_from_long(self.usize_type, 2);
-
-                let clzll = self.context.get_builtin_function("__builtin_clzll");
-
-                let first_elem = self.context.new_array_access(None, result, zero);
-                let first_value = self.gcc_int_cast(self.context.new_call(None, clzll, &[high]), arg_type);
-                self.llbb()
-                    .add_assignment(self.location, first_elem, first_value);
-
-                let second_elem = self.context.new_array_access(self.location, result, one);
-                let cast = self.gcc_int_cast(self.context.new_call(self.location, clzll, &[low]), arg_type);
-                let second_value = self.add(cast, sixty_four);
-                self.llbb()
-                    .add_assignment(self.location, second_elem, second_value);
-
-                let third_elem = self.context.new_array_access(self.location, result, two);
-                let third_value = self.const_uint(arg_type, 128);
-                self.llbb()
-                    .add_assignment(self.location, third_elem, third_value);
-
-                let not_high = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, high);
-                let not_low = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, low);
-                let not_low_and_not_high = not_low & not_high;
-                let index = not_high + not_low_and_not_high;
-                // NOTE: the following cast is necessary to avoid a GIMPLE verification failure in
-                // gcc.
-                // TODO(antoyo): do the correct verification in libgccjit to avoid an error at the
-                // compilation stage.
-                let index = self.context.new_cast(self.location, index, self.i32_type);
-
-                let res = self.context.new_array_access(self.location, result, index);
-
-                return self.gcc_int_cast(res.to_rvalue(), result_type);
-            }
-            else {
-                let count_leading_zeroes = self.context.get_builtin_function("__builtin_clzll");
-                let arg = self.context.new_cast(self.location, arg, self.ulonglong_type);
-                let diff = self.ulonglong_type.get_size() as i64 - arg_type.get_size() as i64;
-                let diff = self.context.new_rvalue_from_long(self.int_type, diff * 8);
-                let res = self.context.new_call(self.location, count_leading_zeroes, &[arg]) - diff;
-                return self.context.new_cast(self.location, res, result_type);
+            let ctlz_then_block = self.current_func().new_block("ctlz_then");
+            let ctlz_else_block = self.current_func().new_block("ctlz_else");
+            let (result, block, after_block) = if let Some(block) = block {
+                block
+            } else {
+                (
+                    self.current_func().new_local(None, result_type, "zeros"),
+                    self.llbb(),
+                    self.current_func().new_block("ctlz_after"),
+                )
             };
-        let count_leading_zeroes = self.context.get_builtin_function(count_leading_zeroes);
-        let res = self.context.new_call(self.location, count_leading_zeroes, &[arg]);
-        self.context.new_cast(self.location, res, result_type)
+            let sixty_four = self.const_uint(arg_type, 64);
+            let shift = self.lshr(arg, sixty_four);
+            let high = self.gcc_int_cast(shift, self.u64_type);
+
+            let clzll = self.context.get_builtin_function("__builtin_clzll");
+
+            let zero_hi = self.const_uint(high.get_type(), 0);
+            let cond = self.gcc_icmp(IntPredicate::IntNE, high, zero_hi);
+            block.end_with_conditional(self.location, cond, ctlz_then_block, ctlz_else_block);
+
+            let leading_zeroes =
+                self.gcc_int_cast(self.context.new_call(None, clzll, &[high]), result_type);
+
+            ctlz_then_block.add_assignment(None, result, leading_zeroes);
+            ctlz_then_block.end_with_jump(None, after_block);
+            self.switch_to_block(ctlz_else_block);
+
+            let low = self.gcc_int_cast(arg, self.u64_type);
+            let low_leading_zeroes =
+                self.gcc_int_cast(self.context.new_call(None, clzll, &[low]), result_type);
+            let sixty_four_result_type = self.const_uint(result_type, 64);
+            let leading_zeroes = self.add(low_leading_zeroes, sixty_four_result_type);
+            ctlz_else_block.add_assignment(None, result, leading_zeroes);
+            ctlz_else_block.end_with_jump(None, after_block);
+            self.switch_to_block(after_block);
+
+            result.to_rvalue()
+        } else {
+            let count_leading_zeroes = self.context.get_builtin_function("__builtin_clzll");
+            let arg = self.context.new_cast(self.location, arg, self.ulonglong_type);
+            let diff = self.ulonglong_type.get_size() as i64 - arg_type.get_size() as i64;
+            let diff = self.context.new_rvalue_from_long(self.int_type, diff * 8);
+            let res = self.context.new_call(self.location, count_leading_zeroes, &[arg]) - diff;
+            let res = self.context.new_cast(self.location, res, result_type);
+            if let Some((result, else_block, after_block)) = block {
+                else_block.add_assignment(None, result, res);
+                else_block.end_with_jump(None, after_block);
+            }
+            res
+        }
     }
 
-    fn count_trailing_zeroes(&mut self, _width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+    fn count_trailing_zeroes(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        // __buildin_ctz* functions are UB when called with 0, handle that special case before using them
+
+        // TODO(antoyo): use width?
+        let result_type = self.u32_type;
+        let result = self.current_func().new_local(None, result_type, "zeros");
+
+        let then_block = self.current_func().new_block("then");
+        let else_block = self.current_func().new_block("else");
+        let after_block = self.current_func().new_block("after");
+
+        let zero = self.cx.const_uint(arg.get_type(), 0);
+        let cond = self.gcc_icmp(IntPredicate::IntEQ, arg, zero);
+        self.llbb().end_with_conditional(None, cond, then_block, else_block);
+
+        let zero_result = self.cx.gcc_uint(self.u32_type, width);
+        then_block.add_assignment(None, result, zero_result);
+        then_block.end_with_jump(None, after_block);
+        self.switch_to_block(else_block);
+
+        self.count_trailing_zeroes_nonzero_impl(
+            width,
+            arg,
+            Some((result, else_block, after_block)),
+        );
+        // else_block.end_with_jump(None, after_block);
+        self.switch_to_block(after_block);
+        result.to_rvalue()
+    }
+
+    fn count_trailing_zeroes_nonzero(&mut self, width: u64, arg: RValue<'gcc>) -> RValue<'gcc> {
+        self.count_trailing_zeroes_nonzero_impl(width, arg, None)
+    }
+
+    fn count_trailing_zeroes_nonzero_impl(
+        &mut self,
+        _width: u64,
+        arg: RValue<'gcc>,
+        block: Option<(LValue<'gcc>, Block<'gcc>, Block<'gcc>)>,
+    ) -> RValue<'gcc> {
         let arg_type = arg.get_type();
         let result_type = self.u32_type;
         let arg = if arg_type.is_signed(self.cx) {
@@ -971,86 +1019,98 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             arg
         };
         let arg_type = arg.get_type();
-        let (count_trailing_zeroes, expected_type) =
-            // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
-            // instead of using is_uint().
-            if arg_type.is_uchar(self.cx) || arg_type.is_ushort(self.cx) || arg_type.is_uint(self.cx) {
-                // NOTE: we don't need to & 0xFF for uchar because the result is undefined on zero.
-                ("__builtin_ctz", self.cx.uint_type)
-            }
-            else if arg_type.is_ulong(self.cx) {
-                ("__builtin_ctzl", self.cx.ulong_type)
-            }
-            else if arg_type.is_ulonglong(self.cx) {
-                ("__builtin_ctzll", self.cx.ulonglong_type)
-            }
-            else if arg_type.is_u128(self.cx) {
-                // Adapted from the algorithm to count leading zeroes from: https://stackoverflow.com/a/28433850/389119
-                let array_type = self.context.new_array_type(None, arg_type, 3);
-                let result = self.current_func()
-                    .new_local(None, array_type, "count_loading_zeroes_results");
-
-                let sixty_four = self.gcc_int(arg_type, 64);
-                let shift = self.gcc_lshr(arg, sixty_four);
-                let high = self.gcc_int_cast(shift, self.u64_type);
-                let low = self.gcc_int_cast(arg, self.u64_type);
-
-                let zero = self.context.new_rvalue_zero(self.usize_type);
-                let one = self.context.new_rvalue_one(self.usize_type);
-                let two = self.context.new_rvalue_from_long(self.usize_type, 2);
-
-                let ctzll = self.context.get_builtin_function("__builtin_ctzll");
-
-                let first_elem = self.context.new_array_access(self.location, result, zero);
-                let first_value = self.gcc_int_cast(self.context.new_call(self.location, ctzll, &[low]), arg_type);
-                self.llbb()
-                    .add_assignment(self.location, first_elem, first_value);
-
-                let second_elem = self.context.new_array_access(self.location, result, one);
-                let second_value = self.gcc_add(self.gcc_int_cast(self.context.new_call(self.location, ctzll, &[high]), arg_type), sixty_four);
-                self.llbb()
-                    .add_assignment(self.location, second_elem, second_value);
-
-                let third_elem = self.context.new_array_access(self.location, result, two);
-                let third_value = self.gcc_int(arg_type, 128);
-                self.llbb()
-                    .add_assignment(self.location, third_elem, third_value);
-
-                let not_low = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, low);
-                let not_high = self.context.new_unary_op(self.location, UnaryOp::LogicalNegate, self.u64_type, high);
-                let not_low_and_not_high = not_low & not_high;
-                let index = not_low + not_low_and_not_high;
-                // NOTE: the following cast is necessary to avoid a GIMPLE verification failure in
-                // gcc.
-                // TODO(antoyo): do the correct verification in libgccjit to avoid an error at the
-                // compilation stage.
-                let index = self.context.new_cast(self.location, index, self.i32_type);
-
-                let res = self.context.new_array_access(self.location, result, index);
-
-                return self.gcc_int_cast(res.to_rvalue(), result_type);
-            }
-            else {
-                let count_trailing_zeroes = self.context.get_builtin_function("__builtin_ctzll");
-                let arg_size = arg_type.get_size();
-                let casted_arg = self.context.new_cast(self.location, arg, self.ulonglong_type);
-                let byte_diff = self.ulonglong_type.get_size() as i64 - arg_size as i64;
-                let diff = self.context.new_rvalue_from_long(self.int_type, byte_diff * 8);
-                let mask = self.context.new_rvalue_from_long(arg_type, -1); // To get the value with all bits set.
-                let masked = mask & self.context.new_unary_op(self.location, UnaryOp::BitwiseNegate, arg_type, arg);
-                let cond = self.context.new_comparison(self.location, ComparisonOp::Equals, masked, mask);
-                let diff = diff * self.context.new_cast(self.location, cond, self.int_type);
-                let res = self.context.new_call(self.location, count_trailing_zeroes, &[casted_arg]) - diff;
-                return self.context.new_cast(self.location, res, result_type);
-            };
-        let count_trailing_zeroes = self.context.get_builtin_function(count_trailing_zeroes);
-        let arg = if arg_type != expected_type {
-            self.context.new_cast(self.location, arg, expected_type)
+        // TODO(antoyo): write a new function Type::is_compatible_with(&Type) and use it here
+        // instead of using is_uint().
+        let func_params = if arg_type.is_uchar(self.cx)
+            || arg_type.is_ushort(self.cx)
+            || arg_type.is_uint(self.cx)
+        {
+            // NOTE: we don't need to & 0xFF for uchar because the result is undefined on zero.
+            Some(("__builtin_ctz", self.cx.uint_type))
+        } else if arg_type.is_ulong(self.cx) {
+            Some(("__builtin_ctzl", self.cx.ulong_type))
+        } else if arg_type.is_ulonglong(self.cx) {
+            Some(("__builtin_ctzll", self.cx.ulonglong_type))
         } else {
-            arg
+            None
         };
-        let res = self.context.new_call(self.location, count_trailing_zeroes, &[arg]);
-        self.context.new_cast(self.location, res, result_type)
+        if let Some((count_trailing_zeroes, expected_type)) = func_params {
+            let count_trailing_zeroes = self.context.get_builtin_function(count_trailing_zeroes);
+            let arg = if arg_type != expected_type {
+                self.context.new_cast(self.location, arg, expected_type)
+            } else {
+                arg
+            };
+            let res = self.context.new_call(self.location, count_trailing_zeroes, &[arg]);
+            let res = self.context.new_cast(self.location, res, result_type);
+            if let Some((result, else_block, after_block)) = block {
+                else_block.add_assignment(None, result, res);
+                else_block.end_with_jump(None, after_block);
+            }
+            res
+        } else if arg_type.is_u128(self.cx) {
+            // __buildin_ctzll is UB when called with 0, call it on the 64 low bits if they are not 0,
+            // else call it on the 64 high bits and add 64. In the else case, 64 high bits can't be 0 because arg is not 0.
+
+            let cttz_then_block = self.current_func().new_block("cttz_then");
+            let cttz_else_block = self.current_func().new_block("cttz_else");
+            let (result, block, after_block) = if let Some(block) = block {
+                block
+            } else {
+                (
+                    self.current_func().new_local(None, result_type, "zeros"),
+                    self.llbb(),
+                    self.current_func().new_block("cttz_after"),
+                )
+            };
+            let low = self.gcc_int_cast(arg, self.u64_type);
+
+            let ctzll = self.context.get_builtin_function("__builtin_ctzll");
+
+            let zero = self.const_uint(low.get_type(), 0);
+            let cond = self.gcc_icmp(IntPredicate::IntNE, low, zero);
+            block.end_with_conditional(self.location, cond, cttz_then_block, cttz_else_block);
+
+            let trailing_zeroes =
+                self.gcc_int_cast(self.context.new_call(None, ctzll, &[low]), result_type);
+
+            cttz_then_block.add_assignment(None, result, trailing_zeroes);
+            cttz_then_block.end_with_jump(None, after_block);
+            self.switch_to_block(cttz_else_block);
+
+            let sixty_four = self.const_uint(arg_type, 64);
+            let shift = self.lshr(arg, sixty_four);
+            let high = self.gcc_int_cast(shift, self.u64_type);
+            let high_trailing_zeroes =
+                self.gcc_int_cast(self.context.new_call(None, ctzll, &[high]), result_type);
+            let sixty_four_result_type = self.const_uint(result_type, 64);
+            let trailing_zeroes = self.add(high_trailing_zeroes, sixty_four_result_type);
+            cttz_else_block.add_assignment(None, result, trailing_zeroes);
+            cttz_else_block.end_with_jump(None, after_block);
+            self.switch_to_block(after_block);
+
+            result.to_rvalue()
+        } else {
+            let count_trailing_zeroes = self.context.get_builtin_function("__builtin_ctzll");
+            let arg_size = arg_type.get_size();
+            let casted_arg = self.context.new_cast(self.location, arg, self.ulonglong_type);
+            let byte_diff = self.ulonglong_type.get_size() as i64 - arg_size as i64;
+            let diff = self.context.new_rvalue_from_long(self.int_type, byte_diff * 8);
+            let mask = self.context.new_rvalue_from_long(arg_type, -1); // To get the value with all bits set.
+            let masked = mask
+                & self.context.new_unary_op(self.location, UnaryOp::BitwiseNegate, arg_type, arg);
+            let cond =
+                self.context.new_comparison(self.location, ComparisonOp::Equals, masked, mask);
+            let diff = diff * self.context.new_cast(self.location, cond, self.int_type);
+            let res =
+                self.context.new_call(self.location, count_trailing_zeroes, &[casted_arg]) - diff;
+            let res = self.context.new_cast(self.location, res, result_type);
+            if let Some((result, else_block, after_block)) = block {
+                else_block.add_assignment(None, result, res);
+                else_block.end_with_jump(None, after_block);
+            }
+            res
+        }
     }
 
     fn pop_count(&mut self, value: RValue<'gcc>) -> RValue<'gcc> {
