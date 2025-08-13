@@ -33,7 +33,6 @@ use rustc_errors::{DiagCtxtHandle, FatalError};
 use rustc_middle::bug;
 use rustc_middle::dep_graph::WorkProduct;
 use rustc_session::config::Lto;
-use rustc_target::spec::RelocModel;
 use tempfile::{TempDir, tempdir};
 
 use crate::back::write::save_temp_bitcode;
@@ -566,13 +565,7 @@ pub fn optimize_thin_module(
     };
     let module = ModuleCodegen::new_regular(
         thin_module.name().to_string(),
-        GccContext {
-            context,
-            should_combine_object_files,
-            // TODO(antoyo): use the correct relocation model here.
-            relocation_model: RelocModel::Pic,
-            temp_dir: None,
-        },
+        GccContext { context, should_combine_object_files, temp_dir: None },
     );
     /*{
         let target = &*module.module_llvm.tm;
