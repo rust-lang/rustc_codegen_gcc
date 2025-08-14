@@ -246,7 +246,6 @@ pub fn compile_codegen_unit(
             cgu_name.to_string(),
             GccContext {
                 context: Arc::new(SyncContext::new(context)),
-                relocation_model: tcx.sess.relocation_model(),
                 should_combine_object_files: false,
                 temp_dir: None,
             },

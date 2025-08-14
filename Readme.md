@@ -137,13 +137,7 @@ If you compiled cg_gccjit in debug mode (aka you didn't pass `--release` to `./y
 
 ### LTO
 
-To use LTO, you need to set the variable `EMBED_LTO_BITCODE=1` in addition to setting `lto = "fat"` in the `Cargo.toml`.
-
-Failing to set `EMBED_LTO_BITCODE` will give you the following error:
-
-```
-error: failed to copy bitcode to object file: No such file or directory (os error 2)
-```
+To use LTO, you need to set `lto = "fat"` in the `Cargo.toml`.
 
 ### Rustc
 
