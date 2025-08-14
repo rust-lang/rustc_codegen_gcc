@@ -40,11 +40,13 @@ use crate::type_of::LayoutGccExt;
 
 // TODO(antoyo)
 type Funclet = ();
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShiftKind {
     Logical,
     Arithmetic,
 }
+
 enum ExtremumOperation {
     Max,
     Min,
