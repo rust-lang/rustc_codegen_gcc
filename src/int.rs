@@ -14,7 +14,7 @@ use rustc_middle::ty::{self, Ty};
 use rustc_target::callconv::{ArgAbi, ArgAttributes, FnAbi, PassMode};
 use rustc_type_ir::{Interner, TyKind};
 
-use crate::builder::{Builder, ToGccComp};
+use crate::builder::{Builder, ShiftKind, ToGccComp};
 use crate::common::{SignType, TypeReflection};
 use crate::context::CodegenCx;
 
@@ -68,36 +68,59 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.cx.bitwise_operation(BinaryOp::BitwiseAnd, a, b, self.location)
     }
 
-    pub fn gcc_lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+    pub fn gcc_shr(
+        &mut self,
+        a: RValue<'gcc>,
+        b: RValue<'gcc>,
+        shift_kind: ShiftKind,
+    ) -> RValue<'gcc> {
         let a_type = a.get_type();
         let b_type = b.get_type();
         let a_native = self.is_native_int_type(a_type);
         let b_native = self.is_native_int_type(b_type);
         if a_native && b_native {
-            // FIXME(antoyo): remove the casts when libgccjit can shift an unsigned number by a signed number.
-            // TODO(antoyo): cast to unsigned to do a logical shift if that does not work.
-            if a_type.is_signed(self) != b_type.is_signed(self) {
-                let b = self.context.new_cast(self.location, b, a_type);
-                a >> b
-            } else {
-                let a_size = a_type.get_size();
-                let b_size = b_type.get_size();
-                match a_size.cmp(&b_size) {
-                    std::cmp::Ordering::Less => {
-                        let a = self.context.new_cast(self.location, a, b_type);
-                        a >> b
-                    }
-                    std::cmp::Ordering::Equal => a >> b,
-                    std::cmp::Ordering::Greater => {
-                        let b = self.context.new_cast(self.location, b, a_type);
-                        a >> b
-                    }
+            let (a, a_type) = match (shift_kind, a_type.is_signed(self.cx)) {
+                (ShiftKind::Logical, true) => {
+                    let a_type = a_type.to_unsigned(self.cx);
+                    (self.gcc_int_cast(a, a_type), a_type)
+                }
+                (ShiftKind::Logical, false) => (a, a_type),
+                (ShiftKind::Arithmetic, true) => (a, a_type),
+                (ShiftKind::Arithmetic, false) => {
+                    let a_type = a_type.to_signed(self.cx);
+                    (self.gcc_int_cast(a, a_type), a_type)
+                }
+            };
+            let (b, b_type) = match (shift_kind, b_type.is_signed(self.cx)) {
+                (ShiftKind::Logical, true) => {
+                    let b_type = b_type.to_unsigned(self.cx);
+                    (self.gcc_int_cast(b, b_type), b_type)
+                }
+                (ShiftKind::Logical, false) => (b, b_type),
+                (ShiftKind::Arithmetic, true) => (b, b_type),
+                (ShiftKind::Arithmetic, false) => {
+                    let b_type = b_type.to_signed(self.cx);
+                    (self.gcc_int_cast(b, b_type), b_type)
+                }
+            };
+
+            let a_size = a_type.get_size();
+            let b_size = b_type.get_size();
+            match a_size.cmp(&b_size) {
+                std::cmp::Ordering::Less => {
+                    let a = self.context.new_cast(self.location, a, b_type);
+                    a >> b
+                }
+                std::cmp::Ordering::Equal => a >> b,
+                std::cmp::Ordering::Greater => {
+                    let b = self.context.new_cast(self.location, b, a_type);
+                    a >> b
                 }
             }
         } else if a_type.is_vector() && b_type.is_vector() {
             a >> b
         } else if a_native && !b_native {
-            self.gcc_lshr(a, self.gcc_int_cast(b, a_type))
+            self.gcc_shr(a, self.gcc_int_cast(b, a_type), shift_kind)
         } else {
             // NOTE: we cannot use the lshr builtin because it's calling hi() (to get the most
             // significant half of the number) which uses lshr.
@@ -122,7 +145,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
             let shift_value = self.gcc_sub(b, sixty_four);
             let high = self.high(a);
-            let sign = if a_type.is_signed(self) { high >> sixty_three } else { zero };
+            let sign = match shift_kind {
+                ShiftKind::Logical => zero,
+                ShiftKind::Arithmetic => high >> sixty_three,
+            };
             let array_value = self.concat_low_high_rvalues(a_type, high >> shift_value, sign);
             then_block.add_assignment(self.location, result, array_value);
             then_block.end_with_jump(self.location, after_block);
