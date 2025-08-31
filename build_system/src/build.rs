@@ -44,9 +44,7 @@ impl BuildArg {
     fn usage() {
         println!(
             r#"
-`build` command help:
-
-    --sysroot              : Build with sysroot"#
+`build` command help:"#
         );
         ConfigInfo::show_usage();
         println!("    --help                 : Show this help");
