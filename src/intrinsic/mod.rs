@@ -865,7 +865,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             128 => {
                 // TODO(antoyo): find a more efficient implementation?
                 let sixty_four = self.gcc_int(typ, 64);
-                let right_shift = self.gcc_lshr(value, sixty_four);
+                let right_shift = self.lshr(value, sixty_four);
                 let high = self.gcc_int_cast(right_shift, self.u64_type);
                 let low = self.gcc_int_cast(value, self.u64_type);
 
@@ -998,7 +998,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     .new_local(None, array_type, "count_loading_zeroes_results");
 
                 let sixty_four = self.gcc_int(arg_type, 64);
-                let shift = self.gcc_lshr(arg, sixty_four);
+                let shift = self.lshr(arg, sixty_four);
                 let high = self.gcc_int_cast(shift, self.u64_type);
                 let low = self.gcc_int_cast(arg, self.u64_type);
 
@@ -1073,7 +1073,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         // TODO(antoyo): remove this if/when native 128-bit integers land in libgccjit
         if value_type.is_u128(self.cx) && !self.cx.supports_128bit_integers {
             let sixty_four = self.gcc_int(value_type, 64);
-            let right_shift = self.gcc_lshr(value, sixty_four);
+            let right_shift = self.lshr(value, sixty_four);
             let high = self.gcc_int_cast(right_shift, self.cx.ulonglong_type);
             let high = self.pop_count(high);
             let low = self.gcc_int_cast(value, self.cx.ulonglong_type);
@@ -1196,12 +1196,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // Return `result_type`'s maximum or minimum value on overflow
             // NOTE: convert the type to unsigned to have an unsigned shift.
             let unsigned_type = result_type.to_unsigned(self.cx);
-            let shifted = self.gcc_lshr(
+            let shifted = self.lshr(
                 self.gcc_int_cast(lhs, unsigned_type),
                 self.gcc_int(unsigned_type, width as i64 - 1),
             );
             let uint_max = self.gcc_not(self.gcc_int(unsigned_type, 0));
-            let int_max = self.gcc_lshr(uint_max, self.gcc_int(unsigned_type, 1));
+            let int_max = self.lshr(uint_max, self.gcc_int(unsigned_type, 1));
             then_block.add_assignment(
                 self.location,
                 res,
@@ -1267,12 +1267,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             // Return `result_type`'s maximum or minimum value on overflow
             // NOTE: convert the type to unsigned to have an unsigned shift.
             let unsigned_type = result_type.to_unsigned(self.cx);
-            let shifted = self.gcc_lshr(
+            let shifted = self.lshr(
                 self.gcc_int_cast(lhs, unsigned_type),
                 self.gcc_int(unsigned_type, width as i64 - 1),
             );
             let uint_max = self.gcc_not(self.gcc_int(unsigned_type, 0));
-            let int_max = self.gcc_lshr(uint_max, self.gcc_int(unsigned_type, 1));
+            let int_max = self.lshr(uint_max, self.gcc_int(unsigned_type, 1));
             then_block.add_assignment(
                 self.location,
                 res,

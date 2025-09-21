@@ -41,6 +41,12 @@ use crate::type_of::LayoutGccExt;
 // TODO(antoyo)
 type Funclet = ();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShiftKind {
+    Logical,
+    Arithmetic,
+}
+
 enum ExtremumOperation {
     Max,
     Min,
@@ -827,13 +833,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn lshr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        self.gcc_lshr(a, b)
+        self.gcc_shr(a, b, ShiftKind::Logical)
     }
 
     fn ashr(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // TODO(antoyo): check whether behavior is an arithmetic shift for >> .
         // It seems to be if the value is signed.
-        self.gcc_lshr(a, b)
+        self.gcc_shr(a, b, ShiftKind::Arithmetic)
     }
 
     fn and(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
