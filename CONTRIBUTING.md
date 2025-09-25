@@ -34,9 +34,7 @@ The **sysroot** is the directory that stores the compiled standard
 library (`core`, `alloc`, `std`, `test`, …) and compiler built-ins.
 Rustup ships these libraries **pre-compiled with LLVM**.
 
-Because **rustc_codegen_gcc** replaces LLVM with the GCC backend, the shipped
-LLVM artefacts are **incompatible**.
-Therefore the standard library must be **rebuilt with GCC** before ordinary Rust crates can be compiled.
+**rustc_codegen_gcc** replaces LLVM with the GCC backend.
 
 The freshly compiled sysroot ends up in
 `build/build_sysroot/...`.
@@ -47,21 +45,21 @@ A rebuild of sysroot is needed when
 * the user switches toolchains / updates submodules.
 
 Both backend and sysroot can be built using different [profiles](https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles).
-That is exactly what the `--sysroot`, `--release-sysroot` and `--release` flag supported by the frontend script `y.sh` take care of.
+That is exactly what the `--sysroot`, `--release-sysroot` and `--release` flag supported by the build system script `y.sh` take care of.
 
 
 #### Typical flag combinations
 
 | Command                                   | Backend Profile               | Sysroot Profile                  | Usage Scenario                                              |
 |--------------------------------------------|-------------------------------|----------------------------------|------------------------------------------------------------|
-| `./y.sh build`                            | &nbsp;dev (optimized + debuginfo)   | &nbsp;X                                | &nbsp;Optimize backend with debug capabilities                    |
-| `./y.sh build --release`                  | &nbsp;release (optimized)           | &nbsp;X                                | &nbsp;Optimize backend without rebuilding sysroot                 |
-| `./y.sh build --release --release-sysroot`| &nbsp;release (optimized)           | &nbsp;X                                | &nbsp;Same as --release                                           |
-| `./y.sh build --release --sysroot`        | &nbsp;release (optimized)           | &nbsp;dev (unoptimized + debuginfo)    | &nbsp;Optimize backend for release without full sysroot rebuild   |
-| `./y.sh build --sysroot`                  | &nbsp;dev (optimized + debuginfo)   | &nbsp;dev (unoptimized + debuginfo)    | &nbsp;Full debug capabilities with optimized backend              |
-| `./y.sh build --release-sysroot`          | &nbsp;dev (optimized + debuginfo)   | &nbsp;X                                | &nbsp;Build only optimized backend with debug capabilities                    |
-| `./y.sh build --release-sysroot --sysroot`| &nbsp;dev (optimized + debuginfo)   | &nbsp;release (optimized)              | &nbsp;Build optimized backend and sysroot for debugging and release, respectively                        |
+| `./y.sh build`                            | &nbsp;dev (optimized + debuginfo)   | &nbsp;X                                | &nbsp;Build backend in dev. mode with optimized dependencies without rebuilding sysroot                |
+| `./y.sh build --release`                  | &nbsp;release (optimized)           | &nbsp;X                                | &nbsp;Build backend in release mode with optimized dependencies without rebuilding sysroot                 |
+| `./y.sh build --release --sysroot`        | &nbsp;release (optimized)           | &nbsp;dev (unoptimized + debuginfo)    | &nbsp;Build backend in release mode with optimized dependencies and sysroot in dev. mode (unoptimized)              |
+| `./y.sh build --sysroot`                  | &nbsp;dev (optimized + debuginfo)   | &nbsp;dev (unoptimized + debuginfo)    | &nbsp;Build backend in dev. mode with optimized dependencies and sysroot in dev. mode (unoptimized)              |
+| `./y.sh build --release-sysroot --sysroot`| &nbsp;dev (optimized + debuginfo)   | &nbsp;release (optimized)              | &nbsp;Build backend in dev. mode and sysroot in release mode, both with optimized dependencies             |
 
+
+Note: `--release-sysroot` should not be used without `--sysroot`.
 
 
 ### Common Development Tasks
