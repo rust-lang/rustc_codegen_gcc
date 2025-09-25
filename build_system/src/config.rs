@@ -472,8 +472,7 @@ impl ConfigInfo {
 
     pub fn show_usage() {
         println!(
-            "
-    --features [arg]       : Add a new feature [arg]
+            "    --features [arg]       : Add a new feature [arg]
     --target-triple [arg]  : Set the target triple to [arg]
     --target [arg]         : Set the target to [arg]
     --out-dir              : Location where the files will be generated
