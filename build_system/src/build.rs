@@ -54,7 +54,7 @@ impl BuildArg {
     --release-sysroot      : When combined with --sysroot, additionally
                              build the sysroot in release mode with optimized dependencies.
                              When combined with --release, it has no effect.
-                             It should not be used on itw own."#
+                             It should not be used on its own."#
         );
         ConfigInfo::show_usage();
         println!("    --help                 : Show this help");
