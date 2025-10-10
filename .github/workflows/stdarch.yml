@@ -89,7 +89,7 @@ jobs:
     - name: Run tests
       if: ${{ !matrix.cargo_runner }}
       run: |
-        ./y.sh test --release --clean --release-sysroot --build-sysroot --mini-tests --std-tests --test-libcore
+        CG_RUSTFLAGS="-Cembed-bitcode=yes" ./y.sh test --release --clean --release-sysroot --build-sysroot --mini-tests --std-tests --test-libcore
         ./y.sh test --cargo-tests
 
     - name: Run stdarch tests
