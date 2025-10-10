@@ -134,12 +134,6 @@ pub(crate) fn codegen(
                     if fat_lto {
                         context.add_command_line_option("-flto=auto");
                         context.add_command_line_option("-flto-partition=one");
-
-                        // NOTE: without -fuse-linker-plugin, we get the following error:
-                        // lto1: internal compiler error: decompressed stream: Destination buffer is too small
-                        // TODO(antoyo): since we do not do LTO when the linker is invoked anymore, perhaps
-                        // the following flag is not necessary anymore.
-                        context.add_driver_option("-fuse-linker-plugin");
                     }
 
                     context.add_driver_option("-Wl,-r");
