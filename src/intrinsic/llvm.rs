@@ -1567,6 +1567,8 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.avx512.uitofp.round.v8f32.v8i64" => "__builtin_ia32_cvtuqq2ps512_mask",
         "llvm.x86.avx512.uitofp.round.v4f32.v4i64" => "__builtin_ia32_cvtuqq2ps256_mask",
 
+        "llvm.aarch64.neon.umaxp.v16i8" => "__builtin_aarch64_umaxpv16qi",
+
         // TODO: support the tile builtins:
         "llvm.x86.ldtilecfg" => "__builtin_trap",
         "llvm.x86.sttilecfg" => "__builtin_trap",
