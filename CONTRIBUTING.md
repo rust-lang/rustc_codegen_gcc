@@ -25,8 +25,6 @@ We encourage new contributors to join our communication channels and introduce t
 
 ## Understanding Core Concepts
 
-
-
 ### Sysroot & compilation flags
 
 #### What *is* the sysroot?

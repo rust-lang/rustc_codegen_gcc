@@ -45,7 +45,7 @@ impl BuildArg {
         println!(
             r#"
 `build` command help:
-    --release              : Build backend in release mode with optimized dependencies without rebuilding sysroot
+    --release              : Build backend in release mode with optimized dependencies
     --sysroot              : When used on its own, build backend in dev. mode with optimized dependencies
                              and sysroot in dev. mode (unoptimized)
                              When used together with --release, build backend in release mode with optimized dependencies
@@ -53,7 +53,7 @@ impl BuildArg {
                              build the sysroot in release mode with optimized dependencies instead of in dev. mode
     --release-sysroot      : When combined with --sysroot, additionally
                              build the sysroot in release mode with optimized dependencies.
-                             When combined with --release, it has no effect.
+                             It has no effect if `--sysroot` is not specified.
                              It should not be used on its own."#
         );
         ConfigInfo::show_usage();
