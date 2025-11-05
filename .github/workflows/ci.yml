@@ -17,14 +17,17 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os.image }}
 
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - { image: ubuntu-24.04, asset_name_suffix: "" }
+          - { image: ubuntu-24.04-arm, asset_name_suffix: "-aarch64" }
         libgccjit_version:
-          - { gcc: "gcc-15.deb" }
-          - { gcc: "gcc-15-without-int128.deb" }
+          - { gcc: "gcc-15" }
+          - { gcc: "gcc-15-without-int128" }
         commands: [
           "--std-tests",
           # FIXME: re-enable asm tests when GCC can emit in the right syntax.
@@ -56,17 +59,18 @@ jobs:
       run: rustup component add rustfmt clippy
 
     - name: Download artifact
-      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${{ matrix.libgccjit_version.gcc }}
+      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${{ matrix.libgccjit_version.gcc }}${{ matrix.os.asset_name_suffix }}.deb
 
     - name: Setup path to libgccjit
       run: |
-          sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}
+          sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}${{ matrix.os.asset_name_suffix }}.deb
           echo 'gcc-path = "/usr/lib/"' > config.toml
 
     # Some run-make tests fail if we use our forked GCC because it doesn't
     # bundle libstdc++, so we switch to gcc-14 to have a GCC that has
     # libstdc++.
     - name: Set default GCC to gcc-14
+      if: ${{ matrix.os.image == 'ubuntu-24.04' }} # TODO: check why this breaks the CI on Aarch64.
       run: sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-14 30
 
     - name: Set env
