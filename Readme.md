@@ -127,11 +127,38 @@ You have to run these commands, in the corresponding order:
 $ ./y.sh prepare
 $ ./y.sh build --sysroot
 ```
-To check if all is  working correctly, run:
+
+To check if all is working correctly, run:
 
  ```bash
 $ ./y.sh cargo build --manifest-path tests/hello-world/Cargo.toml
 ```
+
+### What is the Sysroot?
+
+A "sysroot" (system root) is a directory containing the compiled standard libraries (`core`, `alloc`, `std`, etc.) that `rustc` needs to build any Rust program.
+
+Because `rustc_codegen_gcc` replaces Rust's default LLVM backend, it cannot use the standard libraries that ship with Rust, as those are already compiled with LLVM. Instead, this project must re-compile the standard libraries from source using the GCC backend. This freshly-built set of libraries becomes our custom sysroot.
+
+The sysroot only needs to be built once and will be reused for subsequent builds of your own crates.
+
+### Building the Sysroot
+
+The `y.sh` script provides several flags to control how the sysroot and the codegen itself are built. Understanding these flags is important for both development and performance tuning.
+
+*   `--sysroot`: This flag tells the build script to compile the sysroot. If you don't provide this, the standard libraries will not be built.
+*   `--release`: This flag compiles the **codegen itself** (`librustc_codegen_gcc.so`) with optimizations. It does **not** affect the sysroot.
+*   `--release-sysroot`: This flag compiles the **sysroot libraries** (`std`, `core`, etc.) with optimizations.
+
+Here are the most common combinations and what they do:
+
+| Command                                                       | Codegen Mode | Sysroot Mode | Use Case                                                                              |
+| ------------------------------------------------------------- | ------------ | ------------ | ------------------------------------------------------------------------------------- |
+| `./y.sh build --sysroot`                                      | Debug        | Debug        | Fastest build time. Ideal for quick checks and development on the codegen itself.     |
+| `./y.sh build --sysroot --release`                            | **Release**  | Debug        | Build an optimized codegen, but link it against un-optimized standard libraries.      |
+| `./y.sh build --sysroot --release-sysroot`                    | Debug        | **Release**  | Useful for debugging the codegen when the issue might be related to optimized `std`.    |
+| `./y.sh build --sysroot --release --release-sysroot`          | **Release**  | **Release**  | Slowest build time, but produces a fully optimized codegen and standard libraries.      |
+
 
 ### Cargo
 
@@ -175,6 +202,7 @@ $ LIBRARY_PATH="[gcc-path value]" LD_LIBRARY_PATH="[gcc-path value]" rustc +$(ca
 
 More specific documentation is available in the [`doc`](./doc) folder:
 
+ * [Architectural Overview](./doc/architecture.md)
  * [Common errors](./doc/errors.md)
  * [Debugging GCC LTO](./doc/debugging-gcc-lto.md)
  * [Debugging libgccjit](./doc/debugging-libgccjit.md)
