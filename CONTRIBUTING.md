@@ -50,16 +50,16 @@ That is exactly what the `--sysroot`, `--release-sysroot` and `--release` flag s
 
 | Command                                   | Backend Profile               | Sysroot Profile                  | Usage Scenario                                              |
 |--------------------------------------------|-------------------------------|----------------------------------|------------------------------------------------------------|
-| `./y.sh build`                            | &nbsp;dev*                          | &nbsp;X                                | &nbsp;Build backend in dev mode with optimized dependencies without rebuilding sysroot                |
-| `./y.sh build --release`                  | &nbsp;release (optimized)           | &nbsp;X                                | &nbsp;Build backend in release mode with optimized dependencies without rebuilding sysroot                 |
-| `./y.sh build --release --sysroot`        | &nbsp;release (optimized)           | &nbsp;dev*                         | &nbsp;Build backend in release mode with optimized dependencies and sysroot in dev mode (unoptimized)              |
-| `./y.sh build --sysroot`                  | &nbsp;dev*                          | &nbsp;dev*                         | &nbsp;Build backend in dev mode with optimized dependencies and sysroot in dev mode (unoptimized)              |
+| `./y.sh build`                            | &nbsp;dev*                          | &nbsp;n/a                                | &nbsp;Build backend in dev mode with optimized dependencies without rebuilding sysroot                |
+| `./y.sh build --release`                  | &nbsp;release (optimized)           | &nbsp;n/a                                | &nbsp;Build backend in release mode with optimized dependencies without rebuilding sysroot                 |
+| `./y.sh build --release --sysroot`        | &nbsp;release (optimized)           | &nbsp;dev                          | &nbsp;Build backend in release mode with optimized dependencies and sysroot in dev mode (unoptimized)              |
+| `./y.sh build --sysroot`                  | &nbsp;dev*                          | &nbsp;dev                          | &nbsp;Build backend in dev mode with optimized dependencies and sysroot in dev mode (unoptimized)              |
 | `./y.sh build --release-sysroot --sysroot`| &nbsp;dev*                          | &nbsp;release (optimized)              | &nbsp;Build backend in dev mode and sysroot in release mode, both with optimized dependencies             |
 
 \* In `dev` mode, dependencies are compiled with optimizations, while the code of the backend itself is not.
 
 
-Note: `--release-sysroot` should not be used without `--sysroot`.
+Note: `--release-sysroot` must be used together with `--sysroot`.
 
 
 ### Common Development Tasks

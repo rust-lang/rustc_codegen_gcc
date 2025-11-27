@@ -45,11 +45,11 @@ impl BuildArg {
         println!(
             r#"
 `build` command help:
-    --sysroot              : When used on its own, build backend in dev. mode with optimized dependencies
-                             and sysroot in dev. mode (unoptimized)
+    --sysroot              : When used on its own, build backend in dev mode with optimized dependencies
+                             and sysroot in dev mode (unoptimized)
                              When used together with --release, build backend in release mode with optimized dependencies
                              When used together with --release-sysroot,
-                             build the sysroot in release mode with optimized dependencies instead of in dev. mode
+                             build the sysroot in release mode with optimized dependencies instead of in dev mode
     --release-sysroot      : When combined with --sysroot, additionally
                              build the sysroot in release mode with optimized dependencies.
                              It has no effect if `--sysroot` is not specified.
