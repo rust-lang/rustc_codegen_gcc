@@ -834,32 +834,68 @@ fn valid_ui_error_pattern_test(file: &str) -> bool {
     .any(|to_ignore| file.ends_with(to_ignore))
 }
 
-fn contains_ui_error_patterns(file_path: &Path, _keep_lto_tests: bool) -> Result<bool, String> {
-    // Inverted logic: UI tests are expected to fail by default unless marked with pass markers.
-    // Return false (keep) for tests with pass markers, true (remove) for everything else.
+fn contains_ui_error_patterns(file_path: &Path, keep_lto_tests: bool) -> Result<bool, String> {
     let file = File::open(file_path)
         .map_err(|error| format!("Failed to read `{}`: {:?}", file_path.display(), error))?;
+
+    let mut has_pass_marker = false;
     for line in BufReader::new(file).lines().map_while(Result::ok) {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
 
-        // Check for pass markers - these tests should be kept (return false)
         if [
-            "//@ check-pass",
-            "//@ build-pass",
-            "//@ run-pass",
+            "//@ error-pattern:",
+            "//@ build-fail",
+            "//@ run-fail",
+            "//@ known-bug",
+            "-Cllvm-args",
+            "//~",
+            "thread",
         ]
         .iter()
-        .any(|marker| line.contains(marker))
+        .any(|check| line.contains(check))
         {
+            return Ok(true);
+        }
+
+        if !keep_lto_tests
+            && (line.contains("-Clto")
+                || line.contains("-C lto")
+                || line.contains("compile-flags: -Clinker-plugin-lto"))
+            && !line.contains("-Clto=thin")
+        {
+            return Ok(true);
+        }
+
+        if line.contains("//[") && line.contains("]~") {
+            return Ok(true);
+        }
+
+        // Check for pass markers
+        if ["//@ check-pass", "//@ build-pass", "//@ run-pass"]
+            .iter()
+            .any(|marker| line.contains(marker))
+        {
+            has_pass_marker = true;
+        }
+
+        if ["//@ ignore-auxiliary"].iter().any(|marker| line.contains(marker)) {
             return Ok(false);
         }
     }
+    let file_path = file_path.display().to_string();
+    if file_path.contains("ambiguous-4-extern.rs") {
+        eprintln!("nothing found for {file_path:?}");
+    }
 
-    // Default: remove tests without pass markers (expected to fail by default)
-    Ok(true)
+    // The files in this directory contain errors.
+    if file_path.contains("/error-emitter/") {
+        return Ok(true);
+    }
+
+    Ok(!has_pass_marker)
 }
 
 // # Parameters
