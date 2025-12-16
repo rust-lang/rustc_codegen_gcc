@@ -17,12 +17,13 @@ jobs:
       matrix:
         arch:
           - host_target: "x86_64-unknown-linux-gnu"
+            cross_target: ""
             gcc_urls: >
               https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
           - host_target: "m68k-unknown-linux-gnu"
+            cross_target: "m68k"
             gcc_urls: >
               https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
-              https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-m68k-15.deb
 
     steps:
     - uses: actions/checkout@v4
@@ -36,6 +37,8 @@ jobs:
         fetch-depth: 10
 
     - run: |
+        echo $HOME
+        echo "*****"
         ls
         echo "*****"
         ls ..
@@ -59,9 +62,32 @@ jobs:
         done
 
     # TODO: patch linux-raw-sys and rustix.
+    - name: Move libgccjit.so in libgccjit-libs-dir
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-${{ matrix.arch.cross_target }}-15.deb
+
+        sudo dpkg-deb -x gcc-${{ matrix.arch.cross_target }}-15.deb cross-gcc
+        echo ****
+        ls cross-gcc
+        echo ****
+        ls cross-gcc/usr/lib
+        echo ****
+        ls -R
+        dir=$HOME/libgccjit-libs-dir/x86_64-unknown-linux-gnu/${{ matrix.arch.host_target }}
+        mkdir -p $dir
+        # TODO: create a symlink instead of a copy.
+        cp cross-gcc/usr/lib/libgccjit.so.0.0.1 $dir/libgccjit.so
+
+        echo "$(pwd)/cross-gcc/usr/bin" >> $GITHUB_PATH
+
+        ls /home/runner/libgccjit-libs-dir/x86_64-unknown-linux-gnu/m68k-unknown-linux-gnu/libgccjit.so
+        echo ****
+        ls -R /home/runner/libgccjit-libs-dir
 
     - name: Compile rustc
       run: |
+        echo $PATH
         cd rust
         ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
 
