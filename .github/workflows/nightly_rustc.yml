@@ -66,7 +66,14 @@ jobs:
         ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
 
     - name: Link toolchain
-      run: rustup toolchain link my-toolchain build/${{ matrix.arch.host_target }}/stage2
+      run: |
+        cd rust
+        ls
+        echo ****
+        ls build
+        echo ****
+        ls build/${{ matrix.arch.host_target }}
+        rustup toolchain link my-toolchain build/${{ matrix.arch.host_target }}/stage2
 
     - name: Smoke test
       run: |
