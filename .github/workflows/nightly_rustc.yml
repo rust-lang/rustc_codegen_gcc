@@ -68,6 +68,11 @@ jobs:
     - name: Link toolchain
       run: rustup toolchain link my-toolchain build/${{ matrix.arch.host_target }}/stage2
 
+    - name: Smoke test
+      run: |
+        rustc +my-toolchain -V > output
+        grep rustc output
+
     - name: Compile test program
       run: |
         cd rustc_codegen_gcc/tests/hello-world
