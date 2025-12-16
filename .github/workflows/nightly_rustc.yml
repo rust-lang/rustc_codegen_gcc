@@ -1,0 +1,66 @@
+name: Nightly compilation of rustc with rustc_codegen_gcc
+
+on:
+  pull_request:
+  # TODO: remove pull_request and add schedule to run during the night.
+
+env:
+  # Enable backtraces for easier debugging
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - host_target: "x86_64-unknown-linux-gnu"
+            gcc_urls: >
+              https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
+          - host_target: "m68k-unknown-linux-gnu"
+            gcc_urls: >
+              https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
+              https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-m68k-15.deb
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: "rustc_codegen_gcc"
+
+    - uses: actions/checkout@v4
+      with:
+        repository: "rust-lang/rust"
+        path: "rust"
+        fetch-depth: 10
+
+    - run: |
+        ls
+        echo "*****"
+        ls ..
+        echo "*****"
+        ls rust
+        echo "*****"
+
+    # `rustup show` installs from rust-toolchain.toml
+    - name: Setup rust toolchain
+      run: rustup show
+
+    - name: Setup rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Download and install artifacts
+      run: |
+        urls=(${{ matrix.arch.gcc_urls }})
+        for url in "${urls[@]}"; do
+            curl -L -o package.deb $url
+            sudo dpkg --force-overwrite -i package.deb
+        done
+
+    # TODO: patch linux-raw-sys and rustix.
+
+    - name: Compile rustc
+      run: |
+        cd rust
+        ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
