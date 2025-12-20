@@ -61,19 +61,12 @@ jobs:
             sudo dpkg --force-overwrite -i package.deb
         done
 
-    # TODO: patch linux-raw-sys and rustix.
-    - name: Move libgccjit.so in libgccjit-libs-dir
+    - name: Download cross-compiling libgccjit.so and move it in libgccjit-libs-dir
       if: ${{ matrix.arch.cross_target != '' }}
       run: |
         curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-${{ matrix.arch.cross_target }}-15.deb
 
         sudo dpkg-deb -x gcc-${{ matrix.arch.cross_target }}-15.deb cross-gcc
-        echo ****
-        ls cross-gcc
-        echo ****
-        ls cross-gcc/usr/lib
-        echo ****
-        ls -R
         dir=$HOME/libgccjit-libs-dir/x86_64-unknown-linux-gnu/${{ matrix.arch.host_target }}
         mkdir -p $dir
         # TODO: create a symlink instead of a copy.
@@ -81,9 +74,16 @@ jobs:
 
         echo "$(pwd)/cross-gcc/usr/bin" >> $GITHUB_PATH
 
-        ls /home/runner/libgccjit-libs-dir/x86_64-unknown-linux-gnu/m68k-unknown-linux-gnu/libgccjit.so
-        echo ****
-        ls -R /home/runner/libgccjit-libs-dir
+    - name: Download native libgccjit.so and move it in libgccjit-libs-dir
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        curl -LO https://github.com/cross-cg-gcc-tools/native-gcc/releases/latest/download/libgccjit-${{ matrix.arch.cross_target }}.so
+
+        dir=$HOME/libgccjit-libs-dir/${{ matrix.arch.host_target }}/${{ matrix.arch.host_target }}
+        mkdir -p $dir
+        mv libgccjit-${{ matrix.arch.cross_target }}.so $dir/libgccjit.so
+
+    # TODO: patch linux-raw-sys and rustix.
 
     - name: Compile rustc
       run: |
