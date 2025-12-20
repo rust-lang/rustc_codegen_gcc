@@ -48,6 +48,12 @@ jobs:
         remove_packages_one_command: true
         remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle"
 
+    - name: Install packages
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install qemu-system qemu-user-static
+
     # `rustup show` installs from rust-toolchain.toml
     - name: Setup rust toolchain
       run: rustup show
@@ -62,6 +68,10 @@ jobs:
             curl -L -o package.deb $url
             sudo dpkg --force-overwrite -i package.deb
         done
+
+    - name: Download VM artifact
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: curl -LO https://github.com/cross-cg-gcc-tools/vms/releases/latest/download/debian-${{ matrix.arch.cross_target }}.img
 
     - name: Download cross-compiling libgccjit.so and move it in libgccjit-libs-dir
       if: ${{ matrix.arch.cross_target != '' }}
@@ -83,6 +93,13 @@ jobs:
         dir=$HOME/libgccjit-libs-dir/${{ matrix.arch.host_target }}/${{ matrix.arch.host_target }}
         mkdir -p $dir
         mv libgccjit-${{ matrix.arch.cross_target }}.so $dir/libgccjit.so
+
+    - name: Prepare VM
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        mkdir vm
+        sudo mount debian-${{ matrix.arch.cross_target }}.img vm
+        sudo cp $(which qemu-${{ matrix.arch.cross_target }}-static) vm/usr/bin/
 
     - name: Patch linux-raw-sys and rustix.
       if: ${{ matrix.arch.cross_target != '' }}
@@ -115,13 +132,33 @@ jobs:
         ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
 
     - name: Link toolchain
+      if: ${{ matrix.arch.cross_target == '' }}
       run: |
         cd rust
         rustup toolchain link my-toolchain build/${{ matrix.arch.host_target }}/stage2
 
     - name: Smoke test
+      if: ${{ matrix.arch.cross_target == '' }}
       run: |
         rustc +my-toolchain -V > output
+        grep rustc output
+
+    - name: Copy toolchain in VM
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        echo 1 .
+        ls
+        echo 2 vm
+        ls vm
+        echo 3 vm/home
+        ls vm/home
+        echo ****
+        sudo rsync -a --exclude=stage2/lib/rustlib/src --exclude=stage2/lib/rustlib/rustc-src/ rust/build/m68k-unknown-linux-gnu/stage2 vm/home/stage2
+
+    - name: Smoke test
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        sudo chroot vm qemu-m68k-static /home/stage2/rustc > output
         grep rustc output
 
     - name: Compile test program
