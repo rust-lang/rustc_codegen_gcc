@@ -69,8 +69,7 @@ jobs:
         sudo dpkg-deb -x gcc-${{ matrix.arch.cross_target }}-15.deb cross-gcc
         dir=$HOME/libgccjit-libs-dir/x86_64-unknown-linux-gnu/${{ matrix.arch.host_target }}
         mkdir -p $dir
-        # TODO: create a symlink instead of a copy.
-        cp cross-gcc/usr/lib/libgccjit.so.0.0.1 $dir/libgccjit.so
+        sudo mv cross-gcc/usr/lib/libgccjit.so.0.0.1 $dir/libgccjit.so
 
         echo "$(pwd)/cross-gcc/usr/bin" >> $GITHUB_PATH
 
