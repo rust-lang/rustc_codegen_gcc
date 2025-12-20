@@ -83,7 +83,29 @@ jobs:
         mkdir -p $dir
         mv libgccjit-${{ matrix.arch.cross_target }}.so $dir/libgccjit.so
 
-    # TODO: patch linux-raw-sys and rustix.
+    - name: Patch linux-raw-sys and rustix.
+      if: ${{ matrix.arch.cross_target != '' }}
+      run: |
+        cd rust
+
+        cat <<'EOF' > patch.toml
+        [patch.crates-io]
+        linux-raw-sys = { git = "https://github.com/antoyo/linux-raw-sys", branch = "m68k-support" }
+        rustix = { git = "https://github.com/antoyo/rustix", branch = "m68k-support" }
+        EOF
+
+        cat patch.toml >> Cargo.toml
+        cat patch.toml >> compiler/rustc_codegen_gcc/Cargo.toml
+
+        cargo update -p rustix
+        cd compiler/rustc_codegen_gcc/
+        cargo update -p rustix
+
+        echo Checking Rust
+        cargo tree -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
+
+        echo Checking rustc_codegen_gcc
+        cargo tree --manifest-path compiler/rustc_codegen_gcc/Cargo.toml -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
 
     - name: Compile rustc
       run: |
