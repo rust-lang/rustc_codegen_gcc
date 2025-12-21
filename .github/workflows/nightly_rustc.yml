@@ -150,15 +150,22 @@ jobs:
         ls
         echo 2 vm
         ls vm
+        sudo rsync -a --exclude=stage2/lib/rustlib/src --exclude=stage2/lib/rustlib/rustc-src/ rust/build/${{ matrix.arch.host_target }}/stage2/ vm/home/stage2
         echo 3 vm/home
         ls vm/home
-        echo ****
-        sudo rsync -a --exclude=stage2/lib/rustlib/src --exclude=stage2/lib/rustlib/rustc-src/ rust/build/m68k-unknown-linux-gnu/stage2 vm/home/stage2
+        echo 4 vm/home/stage2
+        ls -l vm/home/stage2
+        echo 5 vm/home/stage2/stage2
+        ls vm/home/stage2/stage2 || true
+        echo 6 vm/home/stage2/bin
+        ls vm/home/stage2/bin
+        echo 7
 
     - name: Smoke test
       if: ${{ matrix.arch.cross_target != '' }}
       run: |
-        sudo chroot vm qemu-m68k-static /home/stage2/rustc > output
+        sudo chroot vm qemu-${{ matrix.arch.cross_target }}-static /bin/sh -c '/home/stage2/bin/rustc' > output
+        echo output
         grep rustc output
 
     - name: Compile test program
