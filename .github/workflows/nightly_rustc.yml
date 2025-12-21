@@ -22,6 +22,7 @@ jobs:
               https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
           - host_target: "m68k-unknown-linux-gnu"
             cross_target: "m68k"
+            debian_url: "http://ftp.ports.debian.org/debian-ports"
             gcc_urls: >
               https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
 
@@ -52,7 +53,7 @@ jobs:
       if: ${{ matrix.arch.cross_target != '' }}
       run: |
         sudo apt-get update
-        sudo apt-get install qemu-system qemu-user-static
+        sudo apt-get install debootstrap qemu-system qemu-user-static
 
     # `rustup show` installs from rust-toolchain.toml
     - name: Setup rust toolchain
@@ -69,9 +70,15 @@ jobs:
             sudo dpkg --force-overwrite -i package.deb
         done
 
-    - name: Download VM artifact
+    - name: Generate Debian qemu image
       if: ${{ matrix.arch.cross_target != '' }}
-      run: curl -LO https://github.com/cross-cg-gcc-tools/vms/releases/latest/download/debian-${{ matrix.arch.cross_target }}.img
+      run: |
+        dd if=/dev/zero of=debian.img bs=1M count=15360
+        mkfs.ext4 debian.img -L root
+        mkdir vm
+        sudo mount debian.img vm
+        sudo debootstrap --no-check-gpg --arch=${{ matrix.arch.cross_target }} --foreign unstable vm ${{ matrix.arch.debian_url }}
+        sudo cp $(which qemu-${{ matrix.arch.cross_target }}-static) vm/usr/bin/
 
     - name: Download cross-compiling libgccjit.so and move it in libgccjit-libs-dir
       if: ${{ matrix.arch.cross_target != '' }}
@@ -93,13 +100,6 @@ jobs:
         dir=$HOME/libgccjit-libs-dir/${{ matrix.arch.host_target }}/${{ matrix.arch.host_target }}
         mkdir -p $dir
         mv libgccjit-${{ matrix.arch.cross_target }}.so $dir/libgccjit.so
-
-    - name: Prepare VM
-      if: ${{ matrix.arch.cross_target != '' }}
-      run: |
-        mkdir vm
-        sudo mount debian-${{ matrix.arch.cross_target }}.img vm
-        sudo cp $(which qemu-${{ matrix.arch.cross_target }}-static) vm/usr/bin/
 
     - name: Patch linux-raw-sys and rustix.
       if: ${{ matrix.arch.cross_target != '' }}
