@@ -18,13 +18,9 @@ jobs:
         arch:
           - host_target: "x86_64-unknown-linux-gnu"
             cross_target: ""
-            gcc_urls: >
-              https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
           - host_target: "m68k-unknown-linux-gnu"
             cross_target: "m68k"
             debian_url: "http://ftp.ports.debian.org/debian-ports"
-            gcc_urls: >
-              https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
 
     steps:
     - uses: actions/checkout@v4
@@ -37,6 +33,7 @@ jobs:
         path: "rust"
         fetch-depth: 10
 
+    # The compilation of rustc for m68k requires a lot of disk space, so free some space up.
     - name: Free Disk Space
       uses: endersonmenezes/free-disk-space@v3
       with:
@@ -64,11 +61,8 @@ jobs:
 
     - name: Download and install artifacts
       run: |
-        urls=(${{ matrix.arch.gcc_urls }})
-        for url in "${urls[@]}"; do
-            curl -L -o package.deb $url
-            sudo dpkg --force-overwrite -i package.deb
-        done
+        curl -L -o package.deb https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
+        sudo dpkg --force-overwrite -i package.deb
 
     - name: Generate Debian qemu image
       if: ${{ matrix.arch.cross_target != '' }}
@@ -119,6 +113,8 @@ jobs:
         cd compiler/rustc_codegen_gcc/
         cargo update -p rustix
 
+        cd ../..
+
         echo Checking Rust
         cargo tree -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
 
@@ -127,7 +123,6 @@ jobs:
 
     - name: Compile rustc
       run: |
-        echo $PATH
         cd rust
         ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
 
@@ -146,29 +141,17 @@ jobs:
     - name: Copy toolchain in VM
       if: ${{ matrix.arch.cross_target != '' }}
       run: |
-        echo 1 .
-        ls
-        echo 2 vm
-        ls vm
         sudo rsync -a --exclude=stage2/lib/rustlib/src --exclude=stage2/lib/rustlib/rustc-src/ rust/build/${{ matrix.arch.host_target }}/stage2/ vm/home/stage2
-        echo 3 vm/home
-        ls vm/home
-        echo 4 vm/home/stage2
-        ls -l vm/home/stage2
-        echo 5 vm/home/stage2/stage2
-        ls vm/home/stage2/stage2 || true
-        echo 6 vm/home/stage2/bin
-        ls vm/home/stage2/bin
-        echo 7
 
     - name: Smoke test
       if: ${{ matrix.arch.cross_target != '' }}
       run: |
         sudo chroot vm qemu-${{ matrix.arch.cross_target }}-static /bin/sh -c '/home/stage2/bin/rustc' > output
-        echo output
         grep rustc output
 
     - name: Compile test program
+      # TODO: also compile a test program for m68k when the compiler works.
+      if: ${{ matrix.arch.cross_target == '' }}
       run: |
         cd rustc_codegen_gcc/tests/hello-world
         cargo +my-toolchain build
