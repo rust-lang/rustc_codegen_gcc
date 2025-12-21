@@ -109,10 +109,10 @@ jobs:
         cd ../..
 
         echo Checking Rust
-        cargo tree -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
+        cargo tree -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && { cargo tree; echo "Error: Unused patches found"; exit 1; } || exit 0
 
         echo Checking rustc_codegen_gcc
-        cargo tree --manifest-path compiler/rustc_codegen_gcc/Cargo.toml -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
+        cargo tree --manifest-path compiler/rustc_codegen_gcc/Cargo.toml -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && { cargo tree; echo "Error: Unused patches found"; exit 1; } || exit 0
 
     - name: Compile rustc
       run: |
