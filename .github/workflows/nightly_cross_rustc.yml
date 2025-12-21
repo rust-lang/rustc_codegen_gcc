@@ -1,0 +1,144 @@
+name: Nightly cross-compilation of rustc with rustc_codegen_gcc
+
+on:
+  pull_request:
+  # TODO: remove pull_request and add schedule to run during the night.
+
+env:
+  # Enable backtraces for easier debugging
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - host_target: "m68k-unknown-linux-gnu"
+            cross_target: "m68k"
+            debian_url: "http://ftp.ports.debian.org/debian-ports"
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: "rustc_codegen_gcc"
+
+    - uses: actions/checkout@v4
+      with:
+        repository: "rust-lang/rust"
+        path: "rust"
+        fetch-depth: 10
+
+    # The compilation of rustc for m68k requires a lot of disk space, so free some space up.
+    - name: Free Disk Space
+      uses: endersonmenezes/free-disk-space@v3
+      with:
+        remove_android: true
+        remove_dotnet: true
+        remove_haskell: true
+        remove_tool_cache: true
+        remove_swap: true
+        remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-*"
+        remove_packages_one_command: true
+        remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle"
+
+    - name: Install packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install debootstrap qemu-system qemu-user-static
+
+    # `rustup show` installs from rust-toolchain.toml
+    - name: Setup rust toolchain
+      run: rustup show
+
+    - name: Setup rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Download and install artifacts
+      run: |
+        curl -L -o package.deb https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
+        sudo dpkg --force-overwrite -i package.deb
+
+    - name: Generate Debian qemu image
+      run: |
+        dd if=/dev/zero of=debian.img bs=1M count=15360
+        mkfs.ext4 debian.img -L root
+        mkdir vm
+        sudo mount debian.img vm
+        sudo debootstrap --no-check-gpg --arch=${{ matrix.arch.cross_target }} --foreign unstable vm ${{ matrix.arch.debian_url }}
+        sudo cp $(which qemu-${{ matrix.arch.cross_target }}-static) vm/usr/bin/
+
+    - name: Download cross-compiling libgccjit.so and move it in libgccjit-libs-dir
+      run: |
+        curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-${{ matrix.arch.cross_target }}-15.deb
+
+        sudo dpkg-deb -x gcc-${{ matrix.arch.cross_target }}-15.deb cross-gcc
+        dir=$HOME/libgccjit-libs-dir/x86_64-unknown-linux-gnu/${{ matrix.arch.host_target }}
+        mkdir -p $dir
+        sudo mv cross-gcc/usr/lib/libgccjit.so.0.0.1 $dir/libgccjit.so
+
+        echo "$(pwd)/cross-gcc/usr/bin" >> $GITHUB_PATH
+
+    - name: Download native libgccjit.so and move it in libgccjit-libs-dir
+      run: |
+        curl -LO https://github.com/cross-cg-gcc-tools/native-gcc/releases/latest/download/libgccjit-${{ matrix.arch.cross_target }}.so
+
+        dir=$HOME/libgccjit-libs-dir/${{ matrix.arch.host_target }}/${{ matrix.arch.host_target }}
+        mkdir -p $dir
+        mv libgccjit-${{ matrix.arch.cross_target }}.so $dir/libgccjit.so
+
+    - name: Patch linux-raw-sys and rustix.
+      run: |
+        cd rust
+
+        cat <<'EOF' > patch.toml
+        [patch.crates-io]
+        linux-raw-sys = { git = "https://github.com/antoyo/linux-raw-sys", branch = "m68k-support" }
+        rustix = { git = "https://github.com/antoyo/rustix", branch = "m68k-support" }
+        EOF
+
+        cat patch.toml >> Cargo.toml
+        cat patch.toml >> compiler/rustc_codegen_gcc/Cargo.toml
+
+        cargo update -p rustix
+        cd compiler/rustc_codegen_gcc/
+        cargo update -p rustix
+
+        cd ../..
+
+        echo Checking Rust
+        cargo tree -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
+
+        echo Checking rustc_codegen_gcc
+        cargo tree --manifest-path compiler/rustc_codegen_gcc/Cargo.toml -i linux-raw-sys 2>&1 | grep "was not used in the crate graph" && (echo "Unused patches found"; cargo tree; exit 1) || exit 0
+
+    - name: Compile rustc
+      run: |
+        cd rust
+        ./x build --host=${{ matrix.arch.host_target }} --stage 2 --config ../rustc_codegen_gcc/tests/bootstraps/bootstrap.${{ matrix.arch.host_target }}.toml
+
+    - name: Copy toolchain in VM
+      run: |
+        sudo rsync -a --exclude=stage2/lib/rustlib/src --exclude=stage2/lib/rustlib/rustc-src/ rust/build/${{ matrix.arch.host_target }}/stage2/ vm/home/stage2
+
+    - name: Smoke test
+      run: |
+        sudo chroot vm qemu-${{ matrix.arch.cross_target }}-static /bin/sh -c '/home/stage2/bin/rustc' > output
+        grep rustc output
+
+    # TODO: compile a test program for m68k when the compiler works.
+    #- name: Compile test program
+      #run: |
+        #cd rustc_codegen_gcc/tests/hello-world
+        #cargo +my-toolchain build
+
+        #objcopy --dump-section .comment=comment target/debug/hello_world
+        #grep "rustc version .* with libgccjit" comment
+        #grep 'GCC: ' comment
+
+        #cargo +my-toolchain run > hello_world_stdout
+
+        #expected_output="40"
+        #test $(cat hello_world_stdout) == $expected_output || (echo "Output differs. Actual output: $(cat hello_world_stdout)"; exit 1)
