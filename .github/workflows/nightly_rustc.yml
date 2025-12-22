@@ -1,8 +1,8 @@
 name: Nightly compilation of rustc with rustc_codegen_gcc
 
 on:
-  pull_request:
-  # TODO: remove pull_request and add schedule to run during the night.
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   # Enable backtraces for easier debugging
