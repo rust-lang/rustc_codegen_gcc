@@ -183,10 +183,18 @@ fn main() {
         .test_extract(extract_test)
         .test_cmds(move |path| compile_and_run(path, &tempdir, &current_dir1))
         .run();
+
+    let test_target = std::env::var("CG_GCC_TEST_TARGET").ok();
     let tempdir = TempDir::new().expect("temp dir");
     LangTester::new()
         .test_dir("tests/compile")
-        .test_path_filter(filter)
+        // FIXME: Remove the `smid-ffi.rs` check once we use another test runner which allows
+        // annotations.
+        .test_path_filter(move |path| {
+            filter(path)
+                && (test_target.is_none()
+                    || !path.to_str().is_some_and(|p| p.ends_with("/simd-ffi.rs")))
+        })
         .test_extract(extract_test)
         .test_cmds(move |path| compile(path, &tempdir, &current_dir))
         .run();
