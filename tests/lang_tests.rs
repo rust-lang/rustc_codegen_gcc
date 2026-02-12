@@ -46,11 +46,7 @@ fn compile_and_run_cmds(
     }
 }
 
-fn main() {
-    let tempdir = TempDir::new().expect("temp dir");
-    let current_dir = current_dir().expect("current dir");
-    let current_dir = current_dir.to_str().expect("current dir").to_string();
-
+fn run_tests(tempdir: PathBuf, current_dir: String, is_debug: bool) {
     fn rust_filter(path: &Path) -> bool {
         path.is_file() && path.extension().expect("extension").to_str().expect("to_str") == "rs"
     }
@@ -69,8 +65,12 @@ fn main() {
         }
         rust_filter(filename)
     }
-    // TODO(antoyo): find a way to send this via a cli argument.
-    let test_target = std::env::var("CG_GCC_TEST_TARGET").ok();
+
+    if is_debug {
+        println!("=== [DEBUG] lang tests ===");
+    } else {
+        println!("=== [RELEASE] lang tests ===");
+    }
 
     LangTester::new()
         .test_dir("tests/run")
@@ -102,6 +102,8 @@ fn main() {
                 exe.to_str().expect("to_str").into(),
                 path.to_str().expect("to_str").into(),
             ];
+            // TODO(antoyo): find a way to send this via a cli argument.
+            let test_target = std::env::var("CG_GCC_TEST_TARGET").ok();
 
             if let Some(ref target) = test_target {
                 compiler_args.extend_from_slice(&["--target".into(), target.into()]);
@@ -115,32 +117,34 @@ fn main() {
                     compiler_args.push(flag.into());
                 }
             }
-            let mut debug_args = compiler_args.clone();
-            let mut release_args = compiler_args;
 
-            if test_target.is_some() {
-                // m68k doesn't have lubsan for now
-                debug_args
+            if is_debug {
+                compiler_args
                     .extend_from_slice(&["-C".to_string(), "llvm-args=sanitize-undefined".into()]);
+                if test_target.is_none() {
+                    // m68k doesn't have lubsan for now
+                    compiler_args.extend_from_slice(&["-C".into(), "link-args=-lubsan".into()]);
+                }
             } else {
-                debug_args.extend_from_slice(&[
-                    "-C".to_string(),
-                    "llvm-args=sanitize-undefined".into(),
+                compiler_args.extend_from_slice(&[
                     "-C".into(),
-                    "link-args=-lubsan".into(),
+                    "opt-level=3".into(),
+                    "-C".into(),
+                    "lto=no".into(),
                 ]);
             }
 
-            release_args.extend_from_slice(&[
-                "-C".into(),
-                "opt-level=3".into(),
-                "-C".into(),
-                "lto=no".into(),
-            ]);
-
-            let mut parts = compile_and_run_cmds(debug_args, &test_target, &exe);
-            parts.extend(compile_and_run_cmds(release_args, &test_target, &exe));
-            parts
+            compile_and_run_cmds(compiler_args, &test_target, &exe)
         })
         .run();
+}
+
+fn main() {
+    let tempdir = TempDir::new().expect("temp dir");
+    let current_dir = current_dir().expect("current dir");
+    let current_dir = current_dir.to_str().expect("current dir").to_string();
+
+    let tempdir_path: PathBuf = tempdir.as_ref().into();
+    run_tests(tempdir_path.clone(), current_dir.clone(), true);
+    run_tests(tempdir_path, current_dir, false);
 }
