@@ -1,6 +1,6 @@
 # TODO: check if qemu-user-static-binfmt is needed (perhaps to run some tests since it probably calls exec).
 
-name: m68k CI
+name: Cross-compilation CI
 
 on:
   push:
@@ -22,6 +22,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [
+          {
+            gcc: "aarch64",
+            qemu: "aarch64",
+            triple: "aarch64-unknown-linux-gnu",
+            vm: "arm64",
+          },
+          {
+            gcc: "m68k",
+            qemu: "m68k",
+            triple: "m68k-unknown-linux-gnu",
+            vm: "m68k",
+          },
+        ]
         commands: [
           "--std-tests",
           # TODO(antoyo): fix those on m68k.
@@ -50,14 +64,14 @@ jobs:
         sudo apt-get install qemu-system qemu-user-static
 
     - name: Download artifact
-      run: curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-m68k-15.deb
+      run: curl -LO https://github.com/cross-cg-gcc-tools/cross-gcc/releases/latest/download/gcc-${{ matrix.arch.gcc }}-15.deb
 
     - name: Download VM artifact
-      run: curl -LO https://github.com/cross-cg-gcc-tools/vms/releases/latest/download/debian-m68k.img
+      run: curl -LO https://github.com/cross-cg-gcc-tools/vms/releases/latest/download/debian-${{ matrix.arch.vm }}.img
 
     - name: Setup path to libgccjit
       run: |
-          sudo dpkg --force-overwrite -i gcc-m68k-15.deb
+          sudo dpkg --force-overwrite -i gcc-${{ matrix.arch.gcc }}-15.deb
           echo 'gcc-path = "/usr/lib/"' > config.toml
 
     - name: Set env
@@ -76,22 +90,23 @@ jobs:
     - name: Prepare VM
       run: |
         mkdir vm
-        sudo mount debian-m68k.img vm
-        sudo cp $(which qemu-m68k-static) vm/usr/bin/
+        sudo mount debian-${{ matrix.arch.vm }}.img vm
+        sudo cp $(which qemu-${{ matrix.arch.qemu }}-static) vm/usr/bin/
 
     - name: Build sample project with target defined as JSON spec
+      if: matrix.arch.gcc == 'm68k'
       run: |
         ./y.sh prepare --only-libcore --cross
-        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
+        ./y.sh build --sysroot --target-triple ${{ matrix.arch.triple }} --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
         CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ./y.sh cargo build --manifest-path=./tests/hello-world/Cargo.toml --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
         ./y.sh clean all
 
     - name: Build
       run: |
         ./y.sh prepare --only-libcore --cross
-        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu
-        ./y.sh test --mini-tests --target-triple m68k-unknown-linux-gnu
-        CG_GCC_TEST_TARGET=m68k-unknown-linux-gnu ./y.sh test --cargo-tests --target-triple m68k-unknown-linux-gnu
+        ./y.sh build --sysroot --target-triple ${{ matrix.arch.triple }}
+        ./y.sh test --mini-tests --target-triple ${{ matrix.arch.triple }}
+        CG_GCC_TEST_TARGET=${{ matrix.arch.triple }} ./y.sh test --cargo-tests --target-triple ${{ matrix.arch.triple }}
         ./y.sh clean all
 
     - name: Prepare dependencies
@@ -102,23 +117,23 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --target-triple m68k-unknown-linux-gnu --release --clean --build-sysroot ${{ matrix.commands }}
+        ./y.sh test --target-triple ${{ matrix.arch.triple }} --release --clean --build-sysroot ${{ matrix.commands }}
 
     - name: Run Hello World!
       run: |
-        ./y.sh build --target-triple m68k-unknown-linux-gnu
+        ./y.sh build --target-triple ${{ matrix.arch.triple }}
 
         vm_dir=$(pwd)/vm
         cd tests/hello-world
-        CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ../../y.sh cargo build --target m68k-unknown-linux-gnu
-        sudo cp target/m68k-unknown-linux-gnu/debug/hello_world $vm_dir/home/
-        sudo chroot $vm_dir qemu-m68k-static /home/hello_world > hello_world_stdout
+        CG_RUSTFLAGS="-Clinker=${{ matrix.arch.triple }}-gcc" ../../y.sh cargo build --target ${{ matrix.arch.triple }}
+        sudo cp target/${{ matrix.arch.triple }}/debug/hello_world $vm_dir/home/
+        sudo chroot $vm_dir qemu-${{ matrix.arch.qemu }}-static /home/hello_world > hello_world_stdout
         expected_output="40"
         test $(cat hello_world_stdout) == $expected_output || (echo "Output differs. Actual output: $(cat hello_world_stdout)"; exit 1)
 
   # Summary job for the merge queue.
   # ALL THE PREVIOUS JOBS NEED TO BE ADDED TO THE `needs` SECTION OF THIS JOB!
-  success_m68k:
+  success_cross:
     needs: [build]
     # We need to ensure this job does *not* get skipped if its dependencies fail,
     # because a skipped job is considered a success by GitHub. So we have to
