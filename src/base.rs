@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use gccjit::{CType, Context, FunctionType, GlobalKind};
+use rustc_ast::attr;
 use rustc_codegen_ssa::ModuleCodegen;
 use rustc_codegen_ssa::base::maybe_create_entry_wrapper;
 use rustc_codegen_ssa::mono_item::MonoItemExt;
@@ -14,7 +15,7 @@ use rustc_middle::dep_graph;
 use rustc_middle::mir::mono::Visibility;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::DebugInfo;
-use rustc_span::Symbol;
+use rustc_span::{Symbol, sym};
 #[cfg(feature = "master")]
 use rustc_target::spec::SymbolVisibility;
 use rustc_target::spec::{Arch, RelocModel};
@@ -135,6 +136,15 @@ pub fn compile_codegen_unit(
         context.add_command_line_option("-fno-strict-aliasing");
         // NOTE: Rust relies on LLVM doing wrapping on overflow.
         context.add_command_line_option("-fwrapv");
+
+        // NOTE: We need to honor the `#![no_builtins]` attribute to prevent GCC from
+        // replacing code patterns (like loops) with calls to builtins (like memset).
+        // This is important for crates like `compiler_builtins` that implement these functions.
+        // See https://github.com/rust-lang/rustc_codegen_gcc/issues/570
+        let crate_attrs = tcx.hir_attrs(rustc_hir::CRATE_HIR_ID);
+        if attr::contains_name(crate_attrs, sym::no_builtins) {
+            context.add_command_line_option("-fno-builtin");
+        }
 
         if let Some(model) = tcx.sess.code_model() {
             use rustc_target::spec::CodeModel;
