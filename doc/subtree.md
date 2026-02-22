@@ -14,11 +14,11 @@ Use the following instructions to install it:
 git clone git@github.com:tqc/git.git
 cd git
 git checkout tqc/subtree
-make
-make install
+make prefix=/opt/git
+sudo make install prefix=/opt/git
 cd contrib/subtree
 make
-cp git-subtree ~/bin
+sudo cp git-subtree /opt/git/bin/
 ```
 
 ### Syncing with rust compiler
@@ -26,7 +26,7 @@ cp git-subtree ~/bin
 Do a sync with this command:
 
 ```bash
-PATH="$HOME/bin:$PATH" ~/bin/git-subtree push -P compiler/rustc_codegen_gcc/ ../rustc_codegen_gcc/ sync_branch_name
+PATH="/opt/git/bin:$PATH" git-subtree push -P compiler/rustc_codegen_gcc/ ../rustc_codegen_gcc/ sync_branch_name
 cd ../rustc_codegen_gcc
 git checkout master
 git pull
@@ -40,11 +40,11 @@ To send the changes to the rust repo:
 cd ../rust
 git pull origin master
 git checkout -b subtree-update_cg_gcc_YYYY-MM-DD
-PATH="$HOME/bin:$PATH" ~/bin/git-subtree pull --prefix=compiler/rustc_codegen_gcc/ https://github.com/rust-lang/rustc_codegen_gcc.git master
+PATH="/opt/git/bin:$PATH" git-subtree pull --prefix=compiler/rustc_codegen_gcc/ https://github.com/rust-lang/rustc_codegen_gcc.git master
 git push
 
 # Immediately merge the merge commit into cg_gcc to prevent merge conflicts when syncing from rust-lang/rust later.
-PATH="$HOME/bin:$PATH" ~/bin/git-subtree push -P compiler/rustc_codegen_gcc/ ../rustc_codegen_gcc/ sync_branch_name
+PATH="/opt/git/bin:$PATH" git-subtree push -P compiler/rustc_codegen_gcc/ ../rustc_codegen_gcc/ sync_branch_name
 ```
 
 TODO: write a script that does the above.
