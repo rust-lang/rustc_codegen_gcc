@@ -11,7 +11,7 @@ fn compile_and_run_cmds(
     compiler_args: Vec<String>,
     test_target: &Option<String>,
     exe: &Path,
-    run_binary: bool,
+    test_mode: TestMode,
 ) -> Vec<(&'static str, Command)> {
     let mut compiler = Command::new("rustc");
     compiler.args(compiler_args);
@@ -24,7 +24,7 @@ fn compile_and_run_cmds(
         compiler.env("PATH", env_path);
 
         let mut commands = vec![("Compiler", compiler)];
-        if run_binary {
+        if test_mode.should_run() {
             let vm_parent_dir = std::env::var("CG_GCC_VM_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| std::env::current_dir().unwrap());
@@ -50,7 +50,7 @@ fn compile_and_run_cmds(
         commands
     } else {
         let mut commands = vec![("Compiler", compiler)];
-        if run_binary {
+        if test_mode.should_run() {
             let runtime = Command::new(exe);
             commands.push(("Run-time", runtime));
         }
@@ -58,13 +58,37 @@ fn compile_and_run_cmds(
     }
 }
 
+#[derive(Clone, Copy)]
+enum BuildMode {
+    Debug,
+    Release,
+}
+
+impl BuildMode {
+    fn is_debug(self) -> bool {
+        matches!(self, Self::Debug)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TestMode {
+    Compile,
+    CompileAndRun,
+}
+
+impl TestMode {
+    fn should_run(self) -> bool {
+        matches!(self, Self::CompileAndRun)
+    }
+}
+
 fn build_test_runner(
     tempdir: PathBuf,
     current_dir: String,
-    is_debug: bool,
+    build_mode: BuildMode,
     test_kind: &str,
     test_dir: &str,
-    run_binary: bool,
+    test_mode: TestMode,
     files_to_ignore_on_m68k: &'static [&'static str],
 ) {
     fn rust_filter(path: &Path) -> bool {
@@ -148,7 +172,7 @@ fn build_test_runner(
                 }
             }
 
-            if is_debug {
+            if build_mode.is_debug() {
                 compiler_args
                     .extend_from_slice(&["-C".to_string(), "llvm-args=sanitize-undefined".into()]);
                 if test_target.is_none() {
@@ -164,7 +188,7 @@ fn build_test_runner(
                 ]);
             }
 
-            compile_and_run_cmds(compiler_args, &test_target, &exe, run_binary)
+            compile_and_run_cmds(compiler_args, &test_target, &exe, test_mode)
         })
         .run();
 }
@@ -173,10 +197,10 @@ fn compile_tests(tempdir: PathBuf, current_dir: String) {
     build_test_runner(
         tempdir,
         current_dir,
-        true,
+        BuildMode::Debug,
         "lang compile",
         "tests/compile",
-        false,
+        TestMode::Compile,
         &["simd-ffi.rs"],
     );
 }
@@ -185,19 +209,19 @@ fn run_tests(tempdir: PathBuf, current_dir: String) {
     build_test_runner(
         tempdir.clone(),
         current_dir.clone(),
-        true,
+        BuildMode::Debug,
         "[DEBUG] lang run",
         "tests/run",
-        true,
+        TestMode::CompileAndRun,
         &[],
     );
     build_test_runner(
         tempdir,
         current_dir.to_string(),
-        false,
+        BuildMode::Release,
         "[RELEASE] lang run",
         "tests/run",
-        true,
+        TestMode::CompileAndRun,
         &[],
     );
 }
