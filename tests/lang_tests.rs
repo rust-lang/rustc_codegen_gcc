@@ -65,6 +65,7 @@ fn build_test_runner(
     test_kind: &str,
     test_dir: &str,
     run_binary: bool,
+    files_to_ignore_on_m68k: &'static [&'static str],
 ) {
     fn rust_filter(path: &Path) -> bool {
         path.is_file() && path.extension().expect("extension").to_str().expect("to_str") == "rs"
@@ -87,9 +88,25 @@ fn build_test_runner(
 
     println!("=== {test_kind} tests ===");
 
+    // TODO(antoyo): find a way to send this via a cli argument.
+    let test_target = std::env::var("CG_GCC_TEST_TARGET").ok();
+    let test_target_filter = test_target.clone();
+
     LangTester::new()
         .test_dir(test_dir)
-        .test_path_filter(filter)
+        .test_path_filter(move |filename| {
+            if !filter(filename) {
+                return false;
+            }
+            if test_target_filter.is_some()
+                && let Some(filename) = filename.file_name()
+                && let Some(filename) = filename.to_str()
+                && files_to_ignore_on_m68k.contains(&filename)
+            {
+                return false;
+            }
+            true
+        })
         .test_extract(|path| {
             std::fs::read_to_string(path)
                 .expect("read file")
@@ -117,8 +134,6 @@ fn build_test_runner(
                 exe.to_str().expect("to_str").into(),
                 path.to_str().expect("to_str").into(),
             ];
-            // TODO(antoyo): find a way to send this via a cli argument.
-            let test_target = std::env::var("CG_GCC_TEST_TARGET").ok();
 
             if let Some(ref target) = test_target {
                 compiler_args.extend_from_slice(&["--target".into(), target.into()]);
@@ -155,7 +170,15 @@ fn build_test_runner(
 }
 
 fn compile_tests(tempdir: PathBuf, current_dir: String) {
-    build_test_runner(tempdir, current_dir, true, "lang compile", "tests/compile", false);
+    build_test_runner(
+        tempdir,
+        current_dir,
+        true,
+        "lang compile",
+        "tests/compile",
+        false,
+        &["simd-ffi.rs"],
+    );
 }
 
 fn run_tests(tempdir: PathBuf, current_dir: String) {
@@ -166,6 +189,7 @@ fn run_tests(tempdir: PathBuf, current_dir: String) {
         "[DEBUG] lang run",
         "tests/run",
         true,
+        &[],
     );
     build_test_runner(
         tempdir,
@@ -174,6 +198,7 @@ fn run_tests(tempdir: PathBuf, current_dir: String) {
         "[RELEASE] lang run",
         "tests/run",
         true,
+        &[],
     );
 }
 
