@@ -11,6 +11,7 @@ fn compile_and_run_cmds(
     compiler_args: Vec<String>,
     test_target: &Option<String>,
     exe: &Path,
+    run_binary: bool,
 ) -> Vec<(&'static str, Command)> {
     let mut compiler = Command::new("rustc");
     compiler.args(compiler_args);
@@ -35,18 +36,33 @@ fn compile_and_run_cmds(
         copy.arg("cp");
         copy.args([exe, &vm_exe_path]);
 
-        let mut runtime = Command::new("sudo");
-        runtime.args(["chroot", vm_dir, "qemu-m68k-static"]);
-        runtime.arg(inside_vm_exe_path);
-        runtime.current_dir(vm_parent_dir);
-        vec![("Compiler", compiler), ("Copy", copy), ("Run-time", runtime)]
+        let mut commands = vec![("Compiler", compiler), ("Copy", copy)];
+        if run_binary {
+            let mut runtime = Command::new("sudo");
+            runtime.args(["chroot", vm_dir, "qemu-m68k-static"]);
+            runtime.arg(inside_vm_exe_path);
+            runtime.current_dir(vm_parent_dir);
+            commands.push(("Run-time", runtime));
+        }
+        commands
     } else {
-        let runtime = Command::new(exe);
-        vec![("Compiler", compiler), ("Run-time", runtime)]
+        let mut commands = vec![("Compiler", compiler)];
+        if run_binary {
+            let runtime = Command::new(exe);
+            commands.push(("Run-time", runtime));
+        }
+        commands
     }
 }
 
-fn run_tests(tempdir: PathBuf, current_dir: String, is_debug: bool) {
+fn build_test_runner(
+    tempdir: PathBuf,
+    current_dir: String,
+    is_debug: bool,
+    test_kind: &str,
+    test_dir: &str,
+    run_binary: bool,
+) {
     fn rust_filter(path: &Path) -> bool {
         path.is_file() && path.extension().expect("extension").to_str().expect("to_str") == "rs"
     }
@@ -66,14 +82,10 @@ fn run_tests(tempdir: PathBuf, current_dir: String, is_debug: bool) {
         rust_filter(filename)
     }
 
-    if is_debug {
-        println!("=== [DEBUG] lang tests ===");
-    } else {
-        println!("=== [RELEASE] lang tests ===");
-    }
+    println!("=== {test_kind} tests ===");
 
     LangTester::new()
-        .test_dir("tests/run")
+        .test_dir(test_dir)
         .test_path_filter(filter)
         .test_extract(|path| {
             std::fs::read_to_string(path)
@@ -134,9 +146,32 @@ fn run_tests(tempdir: PathBuf, current_dir: String, is_debug: bool) {
                 ]);
             }
 
-            compile_and_run_cmds(compiler_args, &test_target, &exe)
+            compile_and_run_cmds(compiler_args, &test_target, &exe, run_binary)
         })
         .run();
+}
+
+fn compile_tests(tempdir: PathBuf, current_dir: String) {
+    build_test_runner(tempdir, current_dir, true, "lang compile", "tests/compile", false);
+}
+
+fn run_tests(tempdir: PathBuf, current_dir: String) {
+    build_test_runner(
+        tempdir.clone(),
+        current_dir.clone(),
+        true,
+        "[DEBUG] lang run",
+        "tests/run",
+        true,
+    );
+    build_test_runner(
+        tempdir,
+        current_dir.to_string(),
+        false,
+        "[RELEASE] lang run",
+        "tests/run",
+        true,
+    );
 }
 
 fn main() {
@@ -145,6 +180,6 @@ fn main() {
     let current_dir = current_dir.to_str().expect("current dir").to_string();
 
     let tempdir_path: PathBuf = tempdir.as_ref().into();
-    run_tests(tempdir_path.clone(), current_dir.clone(), true);
-    run_tests(tempdir_path, current_dir, false);
+    compile_tests(tempdir_path.clone(), current_dir.clone());
+    run_tests(tempdir_path, current_dir);
 }
