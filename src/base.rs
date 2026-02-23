@@ -143,7 +143,7 @@ pub fn compile_codegen_unit(
         // See https://github.com/rust-lang/rustc_codegen_gcc/issues/570
         let crate_attrs = tcx.hir_attrs(rustc_hir::CRATE_HIR_ID);
         if find_attr!(crate_attrs, AttributeKind::NoBuiltins) {
-            context.add_command_line_option("-fno-builtin");
+            context.add_command_line_option("-fno-tree-loop-distribute-patterns");
         }
 
         if let Some(model) = tcx.sess.code_model() {
