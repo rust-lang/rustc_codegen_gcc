@@ -332,7 +332,7 @@ fn no_builtins_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 
     let mut command = args.config_info.rustc_command_vec();
     command.extend_from_slice(&[
-        &"tests/run/no_builtins.rs",
+        &"tests/no_builtins/no_builtins.rs",
         &"--emit",
         &"obj",
         &"-O",
@@ -364,7 +364,7 @@ fn no_builtins_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 
     let mut command = args.config_info.rustc_command_vec();
     command.extend_from_slice(&[
-        &"tests/run/with_builtins.rs",
+        &"tests/no_builtins/with_builtins.rs",
         &"--emit",
         &"obj",
         &"-O",
