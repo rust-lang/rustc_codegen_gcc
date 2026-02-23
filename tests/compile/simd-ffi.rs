@@ -5,6 +5,7 @@
 
 #![allow(internal_features, non_camel_case_types)]
 #![crate_type = "lib"]
+
 // we can compile to a variety of platforms, because we don't need
 // cross-compiled standard libraries.
 #![feature(no_core, auto_traits)]

@@ -23,25 +23,28 @@ fn compile_and_run_cmds(
         env_path = format!("/opt/m68k-unknown-linux-gnu/bin:{}", env_path);
         compiler.env("PATH", env_path);
 
-        let vm_parent_dir = std::env::var("CG_GCC_VM_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::current_dir().unwrap());
-        let vm_dir = "vm";
-        let exe_filename = exe.file_name().unwrap();
-        let vm_home_dir = vm_parent_dir.join(vm_dir).join("home");
-        let vm_exe_path = vm_home_dir.join(exe_filename);
-        // FIXME(antoyo): panicking here makes the test pass.
-        let inside_vm_exe_path = PathBuf::from("/home").join(exe_filename);
-        let mut copy = Command::new("sudo");
-        copy.arg("cp");
-        copy.args([exe, &vm_exe_path]);
-
-        let mut commands = vec![("Compiler", compiler), ("Copy", copy)];
+        let mut commands = vec![("Compiler", compiler)];
         if run_binary {
+            let vm_parent_dir = std::env::var("CG_GCC_VM_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| std::env::current_dir().unwrap());
+            let vm_dir = "vm";
+            let exe_filename = exe.file_name().unwrap();
+            let vm_home_dir = vm_parent_dir.join(vm_dir).join("home");
+            let vm_exe_path = vm_home_dir.join(exe_filename);
+            // FIXME(antoyo): panicking here makes the test pass.
+            let inside_vm_exe_path = PathBuf::from("/home").join(exe_filename);
+
+            let mut copy = Command::new("sudo");
+            copy.arg("cp");
+            copy.args([exe, &vm_exe_path]);
+
             let mut runtime = Command::new("sudo");
             runtime.args(["chroot", vm_dir, "qemu-m68k-static"]);
             runtime.arg(inside_vm_exe_path);
             runtime.current_dir(vm_parent_dir);
+
+            commands.push(("Copy", copy));
             commands.push(("Run-time", runtime));
         }
         commands
