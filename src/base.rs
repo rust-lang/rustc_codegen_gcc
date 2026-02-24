@@ -141,6 +141,8 @@ pub fn compile_codegen_unit(
         // replacing code patterns (like loops) with calls to builtins (like memset).
         // The `-fno-tree-loop-distribute-patterns` flag disables the loop distribution pass
         // that transforms loops into calls to library functions (memset, memcpy, etc.).
+        // See GCC handling for more details:
+        // https://github.com/rust-lang/gcc/blob/efdd0a7290c22f5438d7c5380105d353ee3e8518/gcc/c-family/c-opts.cc#L953
         let crate_attrs = tcx.hir_attrs(rustc_hir::CRATE_HIR_ID);
         if find_attr!(crate_attrs, AttributeKind::NoBuiltins) {
             context.add_command_line_option("-fno-tree-loop-distribute-patterns");
