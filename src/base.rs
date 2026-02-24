@@ -139,8 +139,8 @@ pub fn compile_codegen_unit(
 
         // NOTE: We need to honor the `#![no_builtins]` attribute to prevent GCC from
         // replacing code patterns (like loops) with calls to builtins (like memset).
-        // This is important for crates like `compiler_builtins` that implement these functions.
-        // See https://github.com/rust-lang/rustc_codegen_gcc/issues/570
+        // The `-fno-tree-loop-distribute-patterns` flag disables the loop distribution pass
+        // that transforms loops into calls to library functions (memset, memcpy, etc.).
         let crate_attrs = tcx.hir_attrs(rustc_hir::CRATE_HIR_ID);
         if find_attr!(crate_attrs, AttributeKind::NoBuiltins) {
             context.add_command_line_option("-fno-tree-loop-distribute-patterns");

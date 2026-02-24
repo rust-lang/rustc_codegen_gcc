@@ -1,6 +1,6 @@
 // Test that the #![no_builtins] attribute is honored.
-// When this attribute is present, GCC should pass -fno-builtin to prevent
-// replacing code patterns (like loops) with calls to builtins (like memset).
+// When this attribute is present, GCC should not replace code patterns
+// (like loops) with calls to builtins (like memset).
 // See https://github.com/rust-lang/rustc_codegen_gcc/issues/570
 //
 // This test is verified by the build system test `--no-builtins-tests` which
