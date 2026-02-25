@@ -835,14 +835,16 @@ fn valid_ui_error_pattern_test(file: &str) -> bool {
 }
 
 fn contains_ui_error_patterns(file_path: &Path, keep_lto_tests: bool) -> Result<bool, String> {
-    // Tests generating errors.
     let file = File::open(file_path)
         .map_err(|error| format!("Failed to read `{}`: {:?}", file_path.display(), error))?;
+
+    let mut has_pass_marker = false;
     for line in BufReader::new(file).lines().map_while(Result::ok) {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
+
         if [
             "//@ error-pattern:",
             "//@ build-fail",
@@ -870,16 +872,30 @@ fn contains_ui_error_patterns(file_path: &Path, keep_lto_tests: bool) -> Result<
         if line.contains("//[") && line.contains("]~") {
             return Ok(true);
         }
+
+        // Check for pass markers
+        if ["//@ check-pass", "//@ build-pass", "//@ run-pass"]
+            .iter()
+            .any(|marker| line.contains(marker))
+        {
+            has_pass_marker = true;
+        }
+
+        if ["//@ ignore-auxiliary"].iter().any(|marker| line.contains(marker)) {
+            return Ok(false);
+        }
     }
     let file_path = file_path.display().to_string();
     if file_path.contains("ambiguous-4-extern.rs") {
         eprintln!("nothing found for {file_path:?}");
     }
+
     // The files in this directory contain errors.
     if file_path.contains("/error-emitter/") {
         return Ok(true);
     }
-    Ok(false)
+
+    Ok(!has_pass_marker)
 }
 
 // # Parameters
