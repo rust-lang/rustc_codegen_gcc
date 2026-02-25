@@ -68,7 +68,8 @@ fn show_usage() {
     --use-system-gcc       : Use system installed libgccjit
     --build-only           : Only build rustc_codegen_gcc then exits
     --nb-parts             : Used to split rustc_tests (for CI needs)
-    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test"#
+    --current-part         : Used with `--nb-parts`, allows you to specify which parts to test
+    --with-llvm-sysroot    : Use the LLVM sysroot instead of the GCC one"#
     );
     ConfigInfo::show_usage();
     for (option, (doc, _)) in get_runners() {
@@ -93,6 +94,7 @@ struct TestArg {
     config_info: ConfigInfo,
     sysroot_features: Vec<String>,
     keep_lto_tests: bool,
+    with_llvm_sysroot: bool,
 }
 
 impl TestArg {
@@ -136,6 +138,9 @@ impl TestArg {
                         return Err(format!("Expected an argument after `{arg}`, found nothing"));
                     }
                 },
+                "--with-llvm-sysroot" => {
+                    test_arg.with_llvm_sysroot = true;
+                }
                 "--help" => {
                     show_usage();
                     return Ok(None);
@@ -559,9 +564,14 @@ fn asm_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     let extra =
         if args.is_using_gcc_master_branch() { "" } else { " -Csymbol-mangling-version=v0" };
 
+    let sysroot_arg = if args.with_llvm_sysroot {
+        String::new()
+    } else {
+        format!(" --sysroot {}", args.config_info.sysroot_path)
+    };
+
     let rustc_args = format!(
-        "-Zpanic-abort-tests -Zcodegen-backend={codegen_backend_path} --sysroot {} -Cpanic=abort{extra}",
-        args.config_info.sysroot_path
+        "-Zpanic-abort-tests -Zcodegen-backend={codegen_backend_path}{sysroot_arg} -Cpanic=abort{extra}",
     );
 
     run_command_with_env(
@@ -1028,11 +1038,16 @@ where
     let extra =
         if args.is_using_gcc_master_branch() { "" } else { " -Csymbol-mangling-version=v0" };
 
+    let sysroot_arg = if args.with_llvm_sysroot {
+        String::new()
+    } else {
+        format!(" --sysroot {}", args.config_info.sysroot_path)
+    };
+
     let rustc_args = format!(
-        "{test_flags} -Zcodegen-backend={backend} --sysroot {sysroot}{extra}",
+        "{test_flags} -Zcodegen-backend={backend}{sysroot_arg}{extra}",
         test_flags = env.get("TEST_FLAGS").unwrap_or(&String::new()),
         backend = args.config_info.cg_backend_path,
-        sysroot = args.config_info.sysroot_path,
         extra = extra,
     );
 
@@ -1270,7 +1285,7 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
 
-    args.config_info.setup(&mut env, args.use_system_gcc)?;
+    args.config_info.setup(&mut env, args.use_system_gcc, args.with_llvm_sysroot)?;
 
     if args.runners.is_empty() {
         run_all(&env, &args)?;

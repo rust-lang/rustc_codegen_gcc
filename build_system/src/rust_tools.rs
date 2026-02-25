@@ -72,7 +72,9 @@ impl RustcTools {
 
         let mut env: HashMap<String, String> = std::env::vars().collect();
         let mut config = ConfigInfo::default();
-        config.setup(&mut env, false)?;
+        // We always build the sysroot with `cg_gcc` so we don't need to build the sysroot with
+        // `cg_llvm` since it's already distributed by rustup.
+        config.setup(&mut env, false, false)?;
         let toolchain = get_toolchain()?;
 
         let toolchain_version = rustc_toolchain_version_info(&toolchain)?;
