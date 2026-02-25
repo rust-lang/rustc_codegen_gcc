@@ -6,9 +6,10 @@ use std::{env as std_env, fs};
 use boml::Toml;
 use boml::types::TomlValue;
 
+use crate::build::link_libgccjit_in_sysroot;
 use crate::utils::{
-    create_dir, create_symlink, get_os_name, get_sysroot_dir, run_command_with_output,
-    rustc_version_info, split_args,
+    create_dir, create_symlink, get_os_name, get_rustup_sysroot_dir, get_sysroot_dir,
+    run_command_with_output, rustc_version_info, split_args,
 };
 
 #[derive(Default, PartialEq, Eq, Clone, Copy, Debug)]
@@ -314,6 +315,7 @@ impl ConfigInfo {
         &mut self,
         env: &mut HashMap<String, String>,
         use_system_gcc: bool,
+        with_llvm_sysroot: bool,
     ) -> Result<(), String> {
         env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
 
@@ -393,11 +395,10 @@ impl ConfigInfo {
             // by its build system directly so no need to set it ourselves.
             rustflags.push(format!("-Zcodegen-backend={backend}"));
         } else {
-            rustflags.extend_from_slice(&[
-                "--sysroot".to_string(),
-                self.sysroot_path.clone(),
-                format!("-Zcodegen-backend={}", self.cg_backend_path),
-            ]);
+            if !with_llvm_sysroot {
+                rustflags.extend_from_slice(&["--sysroot".to_string(), self.sysroot_path.clone()]);
+            }
+            rustflags.push(format!("-Zcodegen-backend={}", self.cg_backend_path));
         }
 
         // This environment variable is useful in case we want to change options of rustc commands.
@@ -454,6 +455,13 @@ impl ConfigInfo {
         if !env.contains_key("RUSTC_LOG") {
             env.insert("RUSTC_LOG".to_string(), "warn".to_string());
         }
+
+        // In this case, it means we need to symlink `libgccjit.so` into the rustup sysroot.
+        if with_llvm_sysroot {
+            let sysroot_path = get_rustup_sysroot_dir()?;
+            link_libgccjit_in_sysroot(self, &sysroot_path)?;
+        }
+
         Ok(())
     }
 
