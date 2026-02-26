@@ -12,13 +12,13 @@ use rustc_codegen_ssa::traits::{
 };
 use rustc_middle::bug;
 use rustc_middle::ty::Instance;
-use rustc_span::Span;
+use rustc_span::{DUMMY_SP, Span};
 use rustc_target::asm::*;
 
 use crate::builder::Builder;
 use crate::callee::get_fn;
 use crate::context::CodegenCx;
-use crate::errors::UnwindingInlineAsm;
+use crate::errors::{NullBytesInAsm, UnwindingInlineAsm};
 use crate::type_of::LayoutGccExt;
 
 // Rust asm! and GCC Extended Asm semantics differ substantially.
@@ -859,7 +859,7 @@ impl<'gcc, 'tcx> AsmCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         template: &[InlineAsmTemplatePiece],
         operands: &[GlobalAsmOperandRef<'tcx>],
         options: InlineAsmOptions,
-        _line_spans: &[Span],
+        line_spans: &[Span],
     ) {
         let asm_arch = self.tcx.sess.asm_arch.unwrap();
 
@@ -926,6 +926,13 @@ impl<'gcc, 'tcx> AsmCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         }
         // NOTE: seems like gcc will put the asm in the wrong section, so set it to .text manually.
         template_str.push_str("\n.popsection");
+        // NOTE: GCC's add_top_level_asm uses CString which cannot contain null bytes.
+        // Emit an error if there are any null bytes in the template string.
+        if template_str.contains('\0') {
+            let span = line_spans.first().copied().unwrap_or(DUMMY_SP);
+            self.tcx.dcx().emit_err(NullBytesInAsm { span });
+            return;
+        }
         self.context.add_top_level_asm(None, &template_str);
     }
 
