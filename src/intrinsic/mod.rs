@@ -173,7 +173,12 @@ fn get_simple_function_f128<'gcc, 'tcx>(
     let func_name = match name {
         sym::ceilf128 => "ceilf128",
         sym::fabsf128 => "fabsf128",
+        sym::expf128 => "expf128",
+        sym::exp2f128 => "exp2f128",
         sym::floorf128 => "floorf128",
+        sym::logf128 => "logf128",
+        sym::log2f128 => "log2f128",
+        sym::log10f128 => "log10f128",
         sym::truncf128 => "truncf128",
         sym::roundf128 => "roundf128",
         sym::round_ties_even_f128 => "roundevenf128",
@@ -200,9 +205,10 @@ fn get_simple_function_f128_2args<'gcc, 'tcx>(
 
     let f128_type = cx.type_f128();
     let func_name = match name {
+        sym::copysignf128 => "copysignf128",
         sym::maxnumf128 => "fmaxf128",
         sym::minnumf128 => "fminf128",
-        sym::copysignf128 => "copysignf128",
+        sym::powf128 => "powf128",
         _ => return None,
     };
     Some(cx.context.new_function(
@@ -227,9 +233,14 @@ fn f16_builtin<'gcc, 'tcx>(
     let builtin_name = match name {
         sym::ceilf16 => "__builtin_ceilf",
         sym::copysignf16 => "__builtin_copysignf",
+        sym::expf16 => "expf",
+        sym::exp2f16 => "exp2f",
         sym::fabsf16 => "fabsf",
         sym::floorf16 => "__builtin_floorf",
         sym::fmaf16 => "fmaf",
+        sym::logf16 => "logf",
+        sym::log2f16 => "log2f",
+        sym::log10f16 => "log10f",
         sym::maxnumf16 => "__builtin_fmaxf",
         sym::minnumf16 => "__builtin_fminf",
         sym::powf16 => "__builtin_powf",
@@ -294,9 +305,14 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::ceilf16
             | sym::copysignf16
+            | sym::expf16
+            | sym::exp2f16
             | sym::fabsf16
             | sym::floorf16
             | sym::fmaf16
+            | sym::logf16
+            | sym::log2f16
+            | sym::log10f16
             | sym::maxnumf16
             | sym::minnumf16
             | sym::powf16
