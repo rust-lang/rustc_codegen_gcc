@@ -25,8 +25,8 @@ pub(crate) struct LtoBitcodeFromRlib {
 pub(crate) struct ExplicitTailCallsUnsupported;
 
 #[derive(Diagnostic)]
-#[diag("asm contains a NULL byte")]
-pub(crate) struct NullBytesInAsm {
+#[diag("asm contains a NUL byte")]
+pub(crate) struct NulBytesInAsm {
     #[primary_span]
     pub span: Span,
 }
