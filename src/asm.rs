@@ -530,8 +530,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
             template_str.push_str(INTEL_SYNTAX_INS);
         }
 
-        // 4. Generate Extended Asm block
+        // NOTE: GCC's extended asm uses CString which cannot contain nul bytes.
+        // Emit an error if there are any nul bytes in the template string.
+        if template_str.contains('\0') {
+            let err_sp = span.first().copied().unwrap_or(DUMMY_SP);
+            self.sess().dcx().emit_err(NulBytesInAsm { span: err_sp });
+            return;
+        }
 
+        // 4. Generate Extended Asm block
         let block = self.llbb();
         let extended_asm = if let Some(dest) = dest {
             assert!(!labels.is_empty());
