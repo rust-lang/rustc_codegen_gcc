@@ -213,7 +213,7 @@ fn asm() {
         core::arch::asm!(
             "",
             out("al") _,
-            out("bl") _,
+            //out("bl") _, reserved by LLVM, reservation enforced by rustc
             out("cl") _,
             out("dl") _,
             out("sil") _,
