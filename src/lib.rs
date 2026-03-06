@@ -493,10 +493,10 @@ impl WriteBackendMethods for GccCodegenBackend {
         let bc_out = temp_dir.path().join("fakethinlto.o");
         std::mem::forget(temp_dir);
 
-        if module.lto_supported {
+        /*if module.lto_supported {
             context.add_command_line_option("-flto=auto");
             context.add_command_line_option("-flto-partition=one");
-        }
+        }*/
         context.compile_to_file(OutputKind::ObjectFile, bc_out.to_str().expect("path to str"));
 
         ModuleBuffer::new(bc_out)
