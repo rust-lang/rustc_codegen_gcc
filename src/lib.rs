@@ -77,7 +77,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use gccjit::{CType, Context, OptimizationLevel};
+use gccjit::{CType, Context, OptimizationLevel, OutputKind};
 #[cfg(feature = "master")]
 use gccjit::{TargetInfo, Version};
 use rustc_ast::expand::allocator::AllocatorMethod;
@@ -102,7 +102,7 @@ use rustc_span::Symbol;
 use rustc_target::spec::{Arch, RelocModel};
 use tempfile::TempDir;
 
-use crate::back::lto::ModuleBuffer;
+use crate::back::lto::{ModuleBuffer, ThinData};
 use crate::gcc_util::{target_cpu, to_gcc_features};
 
 pub struct PrintOnPanic<F: Fn() -> String>(pub F);
@@ -177,6 +177,8 @@ pub struct GccCodegenBackend {
     lto_supported: Arc<AtomicBool>,
 }
 
+static LTO_SUPPORTED: AtomicBool = AtomicBool::new(false);
+
 fn load_libgccjit_if_needed(libgccjit_target_lib_file: &Path) {
     if gccjit::is_loaded() {
         // Do not load a libgccjit second time.
@@ -249,6 +251,7 @@ impl CodegenBackend for GccCodegenBackend {
         #[cfg(feature = "master")]
         {
             let lto_supported = gccjit::is_lto_supported();
+            LTO_SUPPORTED.store(lto_supported, Ordering::SeqCst);
             self.lto_supported.store(lto_supported, Ordering::SeqCst);
 
             gccjit::set_global_personality_function_name(b"rust_eh_personality\0");
@@ -276,10 +279,6 @@ impl CodegenBackend for GccCodegenBackend {
                 .supports_128bit_integers
                 .store(check_context.get_last_error() == Ok(None), Ordering::SeqCst);
         }
-    }
-
-    fn thin_lto_supported(&self) -> bool {
-        false
     }
 
     fn provide(&self, providers: &mut Providers) {
@@ -417,7 +416,7 @@ impl WriteBackendMethods for GccCodegenBackend {
     type Module = GccContext;
     type TargetMachine = ();
     type ModuleBuffer = ModuleBuffer;
-    type ThinData = ();
+    type ThinData = ThinData;
 
     fn target_machine_factory(
         &self,
@@ -443,16 +442,16 @@ impl WriteBackendMethods for GccCodegenBackend {
     }
 
     fn run_thin_lto(
-        _cgcx: &CodegenContext,
-        _prof: &SelfProfilerRef,
-        _dcx: DiagCtxtHandle<'_>,
+        cgcx: &CodegenContext,
+        prof: &SelfProfilerRef,
+        dcx: DiagCtxtHandle<'_>,
         // FIXME(bjorn3): Limit LTO exports to these symbols
         _exported_symbols_for_lto: &[String],
-        _each_linked_rlib_for_lto: &[PathBuf],
-        _modules: Vec<(String, Self::ModuleBuffer)>,
-        _cached_modules: Vec<(SerializedModule<Self::ModuleBuffer>, WorkProduct)>,
+        each_linked_rlib_for_lto: &[PathBuf],
+        modules: Vec<(String, Self::ModuleBuffer)>,
+        cached_modules: Vec<(SerializedModule<Self::ModuleBuffer>, WorkProduct)>,
     ) -> (Vec<ThinModule<Self>>, Vec<WorkProduct>) {
-        unreachable!()
+        back::lto::run_thin(cgcx, prof, dcx, each_linked_rlib_for_lto, modules, cached_modules)
     }
 
     fn optimize(
@@ -466,13 +465,13 @@ impl WriteBackendMethods for GccCodegenBackend {
     }
 
     fn optimize_and_codegen_thin(
-        _cgcx: &CodegenContext,
-        _prof: &SelfProfilerRef,
-        _shared_emitter: &SharedEmitter,
+        cgcx: &CodegenContext,
+        prof: &SelfProfilerRef,
+        shared_emitter: &SharedEmitter,
         _tm_factory: TargetMachineFactoryFn<Self>,
-        _thin: ThinModule<Self>,
+        thin: ThinModule<Self>,
     ) -> CompiledModule {
-        unreachable!()
+        back::lto::optimize_and_codegen_thin(cgcx, prof, shared_emitter, thin)
     }
 
     fn codegen(
@@ -487,8 +486,20 @@ impl WriteBackendMethods for GccCodegenBackend {
         back::write::codegen(cgcx, prof, dcx, module, config)
     }
 
-    fn serialize_module(_module: Self::Module, _is_thin: bool) -> Self::ModuleBuffer {
-        unimplemented!();
+    fn serialize_module(module: Self::Module, _is_thin: bool) -> Self::ModuleBuffer {
+        let context = &module.context;
+
+        let temp_dir = TempDir::new().unwrap();
+        let bc_out = temp_dir.path().join("fakethinlto.o");
+        std::mem::forget(temp_dir);
+
+        if module.lto_supported {
+            context.add_command_line_option("-flto=auto");
+            context.add_command_line_option("-flto-partition=one");
+        }
+        context.compile_to_file(OutputKind::ObjectFile, bc_out.to_str().expect("path to str"));
+
+        ModuleBuffer::new(bc_out)
     }
 }
 

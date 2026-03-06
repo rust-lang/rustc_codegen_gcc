@@ -17,13 +17,15 @@
 // /usr/bin/ld: warning: type of symbol `_RNvNvNvNvNtNtNtCsAj5i4SGTR7_3std4sync4mpmc5waker17current_thread_id5DUMMY7___getit5___KEY' changed from 1 to 6 in /tmp/ccKeUSiR.ltrans0.ltrans.o
 // /usr/bin/ld: warning: incremental linking of LTO and non-LTO objects; using -flinker-output=nolto-rel which will bypass whole program optimization
 // cSpell:enable
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
-use gccjit::OutputKind;
+use gccjit::{Context, OutputKind};
 use object::read::archive::ArchiveFile;
-use rustc_codegen_ssa::back::lto::SerializedModule;
+use rustc_codegen_ssa::back::lto::{SerializedModule, ThinModule, ThinShared};
 use rustc_codegen_ssa::back::write::{CodegenContext, FatLtoInput, SharedEmitter};
 use rustc_codegen_ssa::traits::*;
 use rustc_codegen_ssa::{CompiledModule, ModuleCodegen, ModuleKind, looks_like_rust_object_file};
@@ -31,12 +33,15 @@ use rustc_data_structures::memmap::Mmap;
 use rustc_data_structures::profiling::SelfProfilerRef;
 use rustc_errors::{DiagCtxt, DiagCtxtHandle};
 use rustc_log::tracing::info;
+use rustc_middle::bug;
+use rustc_middle::dep_graph::WorkProduct;
 use rustc_session::config::Lto;
+use rustc_target::spec::RelocModel;
 use tempfile::{TempDir, tempdir};
 
 use crate::back::write::{codegen, save_temp_bitcode};
 use crate::errors::LtoBitcodeFromRlib;
-use crate::{GccCodegenBackend, GccContext, LtoMode, to_gcc_opt_level};
+use crate::{GccCodegenBackend, GccContext, LTO_SUPPORTED, LtoMode, SyncContext, to_gcc_opt_level};
 
 struct LtoData {
     // TODO(antoyo): use symbols_below_threshold.
@@ -233,7 +238,7 @@ fn fat_lto(
                     module
                         .module_llvm
                         .context
-                        .add_driver_option(module_buffer.0.to_str().expect("path"));
+                        .add_driver_option(module_buffer.path.to_str().expect("path"));
                 }
                 SerializedModule::FromRlib(_) => unimplemented!("from rlib"),
                 SerializedModule::FromUncompressedFile(_) => {
@@ -263,11 +268,19 @@ fn fat_lto(
     codegen(cgcx, prof, dcx, module, &cgcx.module_config)
 }
 
-pub struct ModuleBuffer(PathBuf);
+pub struct ModuleBuffer {
+    path: PathBuf,
+    // Temporary directory used by LTO. We keep it here so that it's not removed before linking.
+    _temp_dir: Option<TempDir>,
+}
 
 impl ModuleBuffer {
     pub fn new(path: PathBuf) -> ModuleBuffer {
-        ModuleBuffer(path)
+        ModuleBuffer { path, _temp_dir: None }
+    }
+
+    pub fn new_in_temp_dir(path: PathBuf, temp_dir: TempDir) -> ModuleBuffer {
+        ModuleBuffer { path, _temp_dir: Some(temp_dir) }
     }
 }
 
@@ -275,4 +288,166 @@ impl ModuleBufferMethods for ModuleBuffer {
     fn data(&self) -> &[u8] {
         &[]
     }
+}
+
+/// Performs thin LTO by performing necessary global analysis and returning two
+/// lists, one of the modules that need optimization and another for modules that
+/// can simply be copied over from the incr. comp. cache.
+pub(crate) fn run_thin(
+    cgcx: &CodegenContext,
+    prof: &SelfProfilerRef,
+    dcx: DiagCtxtHandle<'_>,
+    each_linked_rlib_for_lto: &[PathBuf],
+    modules: Vec<(String, ModuleBuffer)>,
+    cached_modules: Vec<(SerializedModule<ModuleBuffer>, WorkProduct)>,
+) -> (Vec<ThinModule<GccCodegenBackend>>, Vec<WorkProduct>) {
+    let lto_data = prepare_lto(cgcx, each_linked_rlib_for_lto, dcx);
+    if cgcx.use_linker_plugin_lto {
+        unreachable!(
+            "We should never reach this case if the LTO step \
+                      is deferred to the linker"
+        );
+    }
+    thin_lto(
+        cgcx,
+        prof,
+        dcx,
+        modules,
+        lto_data.upstream_modules,
+        lto_data.tmp_path,
+        cached_modules,
+        //&lto_data.symbols_below_threshold,
+    )
+}
+
+fn thin_lto(
+    _cgcx: &CodegenContext,
+    prof: &SelfProfilerRef,
+    _dcx: DiagCtxtHandle<'_>,
+    modules: Vec<(String, ModuleBuffer)>,
+    serialized_modules: Vec<(SerializedModule<ModuleBuffer>, CString)>,
+    tmp_path: TempDir,
+    cached_modules: Vec<(SerializedModule<ModuleBuffer>, WorkProduct)>,
+    //_symbols_below_threshold: &[String],
+) -> (Vec<ThinModule<GccCodegenBackend>>, Vec<WorkProduct>) {
+    let _timer = prof.generic_activity("LLVM_thin_lto_global_analysis");
+    info!("going for that thin, thin LTO");
+
+    let full_scope_len = modules.len() + serialized_modules.len() + cached_modules.len();
+    let mut thin_buffers = Vec::with_capacity(modules.len());
+    let mut module_names = Vec::with_capacity(full_scope_len);
+    //let mut thin_modules = Vec::with_capacity(full_scope_len);
+
+    for (i, (name, buffer)) in modules.into_iter().enumerate() {
+        info!("local module: {} - {}", i, name);
+        let cname = CString::new(name.as_bytes()).unwrap();
+        thin_buffers.push(buffer);
+        module_names.push(cname);
+    }
+
+    let mut serialized = Vec::with_capacity(serialized_modules.len() + cached_modules.len());
+
+    let cached_modules =
+        cached_modules.into_iter().map(|(sm, wp)| (sm, CString::new(wp.cgu_name).unwrap()));
+
+    for (module, name) in serialized_modules.into_iter().chain(cached_modules) {
+        info!("upstream or cached module {:?}", name);
+        serialized.push(module);
+        module_names.push(name);
+    }
+
+    let data = ThinData; //(Arc::new(tmp_path))/*(data)*/;
+
+    // Throw our data in an `Arc` as we'll be sharing it across threads. We
+    // also put all memory referenced by the C++ data (buffers, ids, etc)
+    // into the arc as well. After this we'll create a thin module
+    // codegen per module in this data.
+    let shared =
+        Arc::new(ThinShared { data, thin_buffers, serialized_modules: serialized, module_names });
+
+    let copy_jobs = vec![];
+    let mut opt_jobs = vec![];
+
+    info!("checking which modules can be-reused and which have to be re-optimized.");
+    for (module_index, module_name) in shared.module_names.iter().enumerate() {
+        let module_name = module_name_to_str(module_name);
+        info!(" - {}: re-compiled", module_name);
+        opt_jobs.push(ThinModule { shared: shared.clone(), idx: module_index });
+    }
+
+    // NOTE: save the temporary directory used by LTO so that it gets deleted after linking instead
+    // of now.
+    //module.module_llvm.temp_dir = Some(tmp_path);
+    // TODO: save the directory so that it gets deleted later.
+    std::mem::forget(tmp_path);
+
+    (opt_jobs, copy_jobs)
+}
+
+pub fn optimize_and_codegen_thin(
+    cgcx: &CodegenContext,
+    prof: &SelfProfilerRef,
+    shared_emitter: &SharedEmitter,
+    thin_module: ThinModule<GccCodegenBackend>,
+) -> CompiledModule {
+    let dcx = DiagCtxt::new(Box::new(shared_emitter.clone()));
+    let dcx = dcx.handle();
+
+    let lto_supported = LTO_SUPPORTED.load(Ordering::SeqCst);
+    let lto_mode = if lto_supported { LtoMode::Fat } else { LtoMode::Thin };
+    let context = match thin_module.shared.thin_buffers.get(thin_module.idx) {
+        Some(thin_buffer) => {
+            println!("local: {:?}", &thin_module.shared.module_names[thin_module.idx]);
+            let context = Context::default();
+            context.add_driver_option(thin_buffer.path.to_str().expect("path"));
+            Arc::new(SyncContext::new(context));
+
+            return CompiledModule {
+                name: thin_module.shared.module_names[thin_module.idx].to_str().unwrap().to_owned(),
+                kind: ModuleKind::Regular,
+                object: Some(thin_buffer.path.clone()),
+                dwarf_object: None,
+                bytecode: None,
+                assembly: None,
+                llvm_ir: None,
+                links_from_incr_cache: vec![],
+            };
+        }
+        None => {
+            println!("foreign: {:?}", &thin_module.shared.module_names[thin_module.idx]);
+            let context = Context::default();
+            let len = thin_module.shared.thin_buffers.len();
+            let module = &thin_module.shared.serialized_modules[thin_module.idx - len];
+            match *module {
+                SerializedModule::Local(ref module_buffer) => {
+                    context.add_driver_option(module_buffer.path.to_str().expect("path"));
+                }
+                SerializedModule::FromRlib(_) => unimplemented!("from rlib"),
+                SerializedModule::FromUncompressedFile(_) => {
+                    unimplemented!("from uncompressed file")
+                }
+            }
+            Arc::new(SyncContext::new(context))
+        }
+    };
+    let module = ModuleCodegen::new_regular(
+        thin_module.name().to_string(),
+        GccContext {
+            context,
+            lto_mode,
+            lto_supported,
+            // TODO(antoyo): use the correct relocation model here.
+            relocation_model: RelocModel::Pic,
+            temp_dir: None,
+        },
+    );
+    crate::back::write::codegen(cgcx, prof, dcx, module, &cgcx.module_config)
+}
+
+pub struct ThinData;
+
+fn module_name_to_str(c_str: &CStr) -> &str {
+    c_str.to_str().unwrap_or_else(|e| {
+        bug!("Encountered non-utf8 GCC module name `{}`: {}", c_str.to_string_lossy(), e)
+    })
 }
