@@ -430,6 +430,7 @@ pub fn optimize_and_codegen_thin(
             Arc::new(SyncContext::new(context))
         }
     };
+    context.add_command_line_option("-flinker-output=nolto-rel");
     let module = ModuleCodegen::new_regular(
         thin_module.name().to_string(),
         GccContext {
