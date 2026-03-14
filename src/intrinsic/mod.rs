@@ -95,28 +95,6 @@ fn get_simple_intrinsic<'gcc, 'tcx>(
     Some(cx.context.get_builtin_function(gcc_name))
 }
 
-// TODO(antoyo): We can probably remove these and use the fallback intrinsic implementation.
-fn get_simple_function<'gcc, 'tcx>(
-    cx: &CodegenCx<'gcc, 'tcx>,
-    name: Symbol,
-) -> Option<Function<'gcc>> {
-    let (ty, func_name) = match name {
-        sym::minimumf32 => (cx.float_type, "fminimumf"),
-        sym::minimumf64 => (cx.double_type, "fminimum"),
-        sym::maximumf32 => (cx.float_type, "fmaximumf"),
-        sym::maximumf64 => (cx.double_type, "fmaximum"),
-        _ => return None,
-    };
-    Some(cx.context.new_function(
-        None,
-        FunctionType::Extern,
-        ty,
-        &[cx.context.new_parameter(None, ty, "a"), cx.context.new_parameter(None, ty, "b")],
-        func_name,
-        false,
-    ))
-}
-
 fn get_simple_function_f128<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     name: Symbol,
@@ -215,7 +193,6 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         let fn_args = instance.args;
 
         let simple = get_simple_intrinsic(self, name);
-        let simple_func = get_simple_function(self, name);
 
         let value = match name {
             _ if simple.is_some() => {
@@ -226,8 +203,26 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                     &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(),
                 )
             }
-            _ if simple_func.is_some() => {
-                let func = simple_func.expect("simple function");
+            // TODO(antoyo): We can probably remove these and use the fallback intrinsic implementation.
+            sym::minimumf32 | sym::minimumf64 | sym::maximumf32 | sym::maximumf64 => {
+                let (ty, func_name) = match name {
+                    sym::minimumf32 => (self.cx.float_type, "fminimumf"),
+                    sym::maximumf32 => (self.cx.float_type, "fmaximumf"),
+                    sym::minimumf64 => (self.cx.double_type, "fminimum"),
+                    sym::maximumf64 => (self.cx.double_type, "fmaximum"),
+                    _ => unreachable!(),
+                };
+                let func = self.cx.context.new_function(
+                    None,
+                    FunctionType::Extern,
+                    ty,
+                    &[
+                        self.cx.context.new_parameter(None, ty, "a"),
+                        self.cx.context.new_parameter(None, ty, "b"),
+                    ],
+                    func_name,
+                    false,
+                );
                 self.cx.context.new_call(
                     self.location,
                     func,
