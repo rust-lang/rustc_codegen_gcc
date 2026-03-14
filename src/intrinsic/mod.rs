@@ -100,42 +100,18 @@ fn get_simple_function<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     name: Symbol,
 ) -> Option<Function<'gcc>> {
-    let (return_type, parameters, func_name) = match name {
-        sym::minimumf32 => {
-            let parameters = [
-                cx.context.new_parameter(None, cx.float_type, "a"),
-                cx.context.new_parameter(None, cx.float_type, "b"),
-            ];
-            (cx.float_type, parameters, "fminimumf")
-        }
-        sym::minimumf64 => {
-            let parameters = [
-                cx.context.new_parameter(None, cx.double_type, "a"),
-                cx.context.new_parameter(None, cx.double_type, "b"),
-            ];
-            (cx.double_type, parameters, "fminimum")
-        }
-        sym::maximumf32 => {
-            let parameters = [
-                cx.context.new_parameter(None, cx.float_type, "a"),
-                cx.context.new_parameter(None, cx.float_type, "b"),
-            ];
-            (cx.float_type, parameters, "fmaximumf")
-        }
-        sym::maximumf64 => {
-            let parameters = [
-                cx.context.new_parameter(None, cx.double_type, "a"),
-                cx.context.new_parameter(None, cx.double_type, "b"),
-            ];
-            (cx.double_type, parameters, "fmaximum")
-        }
+    let (ty, func_name) = match name {
+        sym::minimumf32 => (cx.float_type, "fminimumf"),
+        sym::minimumf64 => (cx.double_type, "fminimum"),
+        sym::maximumf32 => (cx.float_type, "fmaximumf"),
+        sym::maximumf64 => (cx.double_type, "fmaximum"),
         _ => return None,
     };
     Some(cx.context.new_function(
         None,
         FunctionType::Extern,
-        return_type,
-        &parameters,
+        ty,
+        &[cx.context.new_parameter(None, ty, "a"), cx.context.new_parameter(None, ty, "b")],
         func_name,
         false,
     ))
