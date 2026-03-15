@@ -419,6 +419,16 @@ pub fn get_sysroot_dir() -> PathBuf {
     Path::new(crate::BUILD_DIR).join("build_sysroot")
 }
 
+pub fn get_rustup_sysroot_dir() -> Result<PathBuf, String> {
+    let output = run_command(&[&"rustc", &"--print=sysroot"], None)?;
+
+    Ok(PathBuf::from(
+        String::from_utf8(output.stdout)
+            .map_err(|error| format!("`rustc --print=sysroot` failed: {error}"))?
+            .trim(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

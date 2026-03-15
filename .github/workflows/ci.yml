@@ -26,16 +26,19 @@ jobs:
           - { gcc: "gcc-15.deb" }
           - { gcc: "gcc-15-without-int128.deb" }
         commands: [
-          "--std-tests",
+          "--build-sysroot --std-tests",
           # FIXME: re-enable asm tests when GCC can emit in the right syntax.
-          # "--asm-tests",
-          "--test-libcore",
-          "--extended-rand-tests",
-          "--extended-regex-example-tests",
-          "--extended-regex-tests",
-          "--test-successful-rustc --nb-parts 2 --current-part 0",
-          "--test-successful-rustc --nb-parts 2 --current-part 1",
-          "--projects",
+          # "--build-sysroot --asm-tests",
+          "--build-sysroot --test-libcore",
+          "--build-sysroot --extended-rand-tests",
+          "--build-sysroot --extended-regex-example-tests",
+          "--build-sysroot --extended-regex-tests",
+          "--build-sysroot --test-successful-rustc --nb-parts 2 --current-part 0",
+          "--build-sysroot --test-successful-rustc --nb-parts 2 --current-part 1",
+          "--build-sysroot --projects",
+          "--test-successful-rustc --nb-parts 2 --current-part 0 --with-llvm-sysroot",
+          "--test-successful-rustc --nb-parts 2 --current-part 1 --with-llvm-sysroot",
+          "--projects --with-llvm-sysroot",
         ]
 
     steps:
@@ -119,7 +122,7 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --release --clean --build-sysroot ${{ matrix.commands }}
+        ./y.sh test --release --clean ${{ matrix.commands }}
 
   duplicates:
     runs-on: ubuntu-24.04
