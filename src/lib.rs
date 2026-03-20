@@ -384,6 +384,7 @@ pub struct GccContext {
     context: Arc<SyncContext>,
     /// This field is needed in order to be able to set the flag -fPIC when necessary when doing
     /// LTO.
+    #[allow(dead_code)]
     relocation_model: RelocModel,
     lto_mode: LtoMode,
     lto_supported: bool,
