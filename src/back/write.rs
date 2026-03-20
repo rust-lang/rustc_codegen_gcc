@@ -1,32 +1,26 @@
 use std::{env, fs};
 
-use gccjit::{Context, OutputKind};
+use gccjit::OutputKind;
 use rustc_codegen_ssa::back::link::ensure_removed;
-use rustc_codegen_ssa::back::write::{
-    BitcodeSection, CodegenContext, EmitObj, ModuleConfig, SharedEmitter,
-};
+use rustc_codegen_ssa::back::write::{BitcodeSection, CodegenContext, EmitObj, ModuleConfig};
 use rustc_codegen_ssa::{CompiledModule, ModuleCodegen};
 use rustc_data_structures::profiling::SelfProfilerRef;
-use rustc_errors::DiagCtxt;
+use rustc_errors::DiagCtxtHandle;
 use rustc_fs_util::link_or_copy;
 use rustc_log::tracing::debug;
 use rustc_session::config::OutputType;
 use rustc_target::spec::SplitDebuginfo;
 
-use crate::base::add_pic_option;
 use crate::errors::CopyBitcode;
 use crate::{GccContext, LtoMode};
 
 pub(crate) fn codegen(
     cgcx: &CodegenContext,
     prof: &SelfProfilerRef,
-    shared_emitter: &SharedEmitter,
+    dcx: DiagCtxtHandle<'_>,
     module: ModuleCodegen<GccContext>,
     config: &ModuleConfig,
 ) -> CompiledModule {
-    let dcx = DiagCtxt::new(Box::new(shared_emitter.clone()));
-    let dcx = dcx.handle();
-
     let _timer = prof.generic_activity_with_arg("GCC_module_codegen", &*module.name);
     {
         let context = &module.module_llvm.context;
@@ -153,7 +147,6 @@ pub(crate) fn codegen(
                     let path = obj_out.to_str().expect("path to str");
 
                     if fat_lto {
-                        let lto_path = format!("{}.lto", path);
                         // cSpell:disable
                         // FIXME(antoyo): The LTO frontend generates the following warning:
                         // ../build_sysroot/sysroot_src/library/core/src/num/dec2flt/lemire.rs:150:15: warning: type of ‘_ZN4core3num7dec2flt5table17POWER_OF_FIVE_12817ha449a68fb31379e4E’ does not match original declaration [-Wlto-type-mismatch]
@@ -164,26 +157,7 @@ pub(crate) fn codegen(
                         // This option is to mute it to make the UI tests pass with LTO enabled.
                         // cSpell:enable
                         context.add_driver_option("-Wno-lto-type-mismatch");
-                        // NOTE: this doesn't actually generate an executable. With the above
-                        // flags, it combines the .o files together in another .o.
-                        context.compile_to_file(OutputKind::Executable, &lto_path);
-
-                        let context = Context::default();
-                        if cgcx.target_arch == "x86" || cgcx.target_arch == "x86_64" {
-                            // NOTE: it seems we need to use add_driver_option instead of
-                            // add_command_line_option here because we use the LTO frontend via gcc.
-                            context.add_driver_option("-masm=intel");
-                        }
-
-                        // NOTE: these two options are needed to invoke LTO to produce an object file.
-                        // We need to initiate a second compilation because the arguments "-x lto"
-                        // needs to be at the very beginning.
-                        context.add_driver_option("-x");
-                        context.add_driver_option("lto");
-                        add_pic_option(&context, module.module_llvm.relocation_model);
-                        context.add_driver_option(lto_path);
-
-                        context.compile_to_file(OutputKind::ObjectFile, path);
+                        context.compile_to_file(OutputKind::Executable, path);
                     } else {
                         // NOTE: this doesn't actually generate an executable. With the above
                         // flags, it combines the .o files together in another .o.
