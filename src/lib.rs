@@ -547,8 +547,9 @@ fn target_config(sess: &Session, target_info: &LockedTargetInfo) -> TargetConfig
         },
     );
 
-    let has_reliable_f16 = target_info.supports_target_dependent_type(CType::Float16);
-    let has_reliable_f128 = target_info.supports_target_dependent_type(CType::Float128);
+    // FIXME re-enable once the necessary intrinsics are implemented
+    let has_reliable_f16 = false; //target_info.supports_target_dependent_type(CType::Float16);
+    let has_reliable_f128 = false; //target_info.supports_target_dependent_type(CType::Float128);
 
     TargetConfig {
         target_features,
