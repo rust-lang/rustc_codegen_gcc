@@ -106,12 +106,9 @@ fn cleanup_sysroot_previous_build(library_dir: &Path) {
     );
 }
 
-pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Result<(), String> {
-    let start_dir = get_sysroot_dir();
-
-    // Symlink libgccjit.so to sysroot.
-    let lib_path = start_dir.join("sysroot").join("lib");
-    let rustlib_target_path = lib_path
+pub fn link_libgccjit_in_sysroot(config: &ConfigInfo, sysroot_path: &Path) -> Result<(), String> {
+    let rustlib_target_path = sysroot_path
+        .join("lib")
         .join("rustlib")
         .join(&config.host_triple)
         .join("codegen-backends")
@@ -124,8 +121,18 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
     // First remove the file to be able to create the symlink even when the file already exists.
     let _ = fs::remove_file(&libgccjit_in_sysroot_path);
     create_dir(&rustlib_target_path)?;
-    symlink(libgccjit_path, &libgccjit_in_sysroot_path)
+    symlink(&libgccjit_path, &libgccjit_in_sysroot_path)
         .map_err(|error| format!("Cannot create symlink for libgccjit.so: {}", error))?;
+    println!("Created symlink of `libgccjit.so` at {libgccjit_in_sysroot_path:?}");
+    Ok(())
+}
+
+pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Result<(), String> {
+    let start_dir = get_sysroot_dir();
+
+    // Symlink libgccjit.so to sysroot.
+    let sysroot_path = start_dir.join("sysroot");
+    link_libgccjit_in_sysroot(config, &sysroot_path)?;
 
     let library_dir = start_dir.join("sysroot_src").join("library");
     cleanup_sysroot_previous_build(&library_dir);
@@ -179,7 +186,7 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
     run_command_with_output_and_env(&args, Some(&sysroot_dir), Some(&env))?;
 
     // Copy files to sysroot
-    let sysroot_path = lib_path.join(format!("rustlib/{}/lib/", config.target_triple));
+    let sysroot_path = sysroot_path.join(format!("lib/rustlib/{}/lib/", config.target_triple));
     // To avoid errors like "multiple candidates for `rmeta` dependency `core` found", we clean the
     // sysroot directory before copying the sysroot build artifacts.
     let _ = fs::remove_dir_all(&sysroot_path);
@@ -227,7 +234,9 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     }
     run_command_with_output_and_env(&command, None, Some(&env))?;
 
-    args.config_info.setup(&mut env, false)?;
+    // We always build the sysroot with `cg_gcc` so we don't need to build the sysroot with
+    // `cg_llvm` since it's already distributed by rustup.
+    args.config_info.setup(&mut env, false, false)?;
 
     // We voluntarily ignore the error.
     let _ = fs::remove_dir_all("target/out");
