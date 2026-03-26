@@ -103,7 +103,12 @@ fn get_simple_function_f128<'gcc, 'tcx>(
     let func_name = match name {
         sym::ceilf128 => "ceilf128",
         sym::fabsf128 => "fabsf128",
+        sym::expf128 => "expf128",
+        sym::exp2f128 => "exp2f128",
         sym::floorf128 => "floorf128",
+        sym::logf128 => "logf128",
+        sym::log2f128 => "log2f128",
+        sym::log10f128 => "log10f128",
         sym::truncf128 => "truncf128",
         sym::roundf128 => "roundf128",
         sym::round_ties_even_f128 => "roundevenf128",
@@ -134,6 +139,7 @@ fn get_simple_function_f128_2args<'gcc, 'tcx>(
         sym::maxnumf128 => "fmaxf128",
         sym::minnumf128 => "fminf128",
         sym::copysignf128 => "copysignf128",
+        sym::powf128 => "powf128",
         _ => unreachable!(),
     };
     cx.context.new_function(
@@ -158,9 +164,14 @@ fn f16_builtin<'gcc, 'tcx>(
     let builtin_name = match name {
         sym::ceilf16 => "__builtin_ceilf",
         sym::copysignf16 => "__builtin_copysignf",
+        sym::expf16 => "expf",
+        sym::exp2f16 => "exp2f",
         sym::fabsf16 => "fabsf",
         sym::floorf16 => "__builtin_floorf",
         sym::fmaf16 => "fmaf",
+        sym::logf16 => "logf",
+        sym::log2f16 => "log2f",
+        sym::log10f16 => "log10f",
         sym::maxnumf16 => "__builtin_fmaxf",
         sym::minnumf16 => "__builtin_fminf",
         sym::powf16 => "__builtin_powf",
@@ -231,9 +242,14 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::ceilf16
             | sym::copysignf16
+            | sym::expf16
+            | sym::exp2f16
             | sym::fabsf16
             | sym::floorf16
             | sym::fmaf16
+            | sym::logf16
+            | sym::log2f16
+            | sym::log10f16
             | sym::maxnumf16
             | sym::minnumf16
             | sym::powf16
@@ -248,6 +264,11 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             | sym::roundf128
             | sym::round_ties_even_f128
             | sym::sqrtf128
+            | sym::expf128
+            | sym::exp2f128
+            | sym::logf128
+            | sym::log2f128
+            | sym::log10f128
                 if self.cx.supports_f128_type =>
             {
                 self.cx.context.new_call(
@@ -261,6 +282,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             | sym::maxnumf128
             | sym::minnumf128
             | sym::copysignf128
+            | sym::powf128
                 if self.cx.supports_f128_type =>
             {
                 self.cx.context.new_call(
@@ -440,7 +462,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                 let layout = self.layout_of(tp_ty).layout;
                 let _use_integer_compare = match layout.backend_repr() {
                     Scalar(_) | ScalarPair(_, _) => true,
-                    SimdVector { .. } | ScalableVector { .. } => false,
+                    SimdVector { .. } | SimdScalableVector { .. } => false,
                     Memory { .. } => {
                         // For rusty ABIs, small aggregates are actually passed
                         // as `RegKind::Integer` (see `FnAbi::adjust_for_abi`),
@@ -647,7 +669,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         &mut self,
         _vtable: Self::Value,
         _vtable_byte_offset: u64,
-        _typeid: Self::Value,
+        _typeid: &[u8],
     ) -> Self::Value {
         // Unsupported.
         self.context.new_rvalue_from_int(self.int_type, 0)
