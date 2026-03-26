@@ -267,10 +267,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                     &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(),
                 )
             }
-            sym::maximumf128
-            | sym::minimumf128
-            | sym::copysignf128
-            | sym::powf128
+            sym::maximumf128 | sym::minimumf128 | sym::copysignf128 | sym::powf128
                 if self.cx.supports_f128_type =>
             {
                 self.cx.context.new_call(
