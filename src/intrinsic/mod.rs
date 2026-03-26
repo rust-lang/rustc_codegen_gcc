@@ -132,8 +132,6 @@ fn get_simple_function_f128_2args<'gcc, 'tcx>(
         // https://docs.rs/compiler_builtins/latest/compiler_builtins/math/full_availability/fn.fminimumf128.html
         sym::maximumf128 => "fmaximumf128",
         sym::minimumf128 => "fminimumf128",
-        sym::maxnumf128 => "fmaxf128",
-        sym::minnumf128 => "fminf128",
         sym::copysignf128 => "copysignf128",
         sym::powf128 => "powf128",
         _ => unreachable!(),
@@ -271,8 +269,6 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::maximumf128
             | sym::minimumf128
-            | sym::maxnumf128
-            | sym::minnumf128
             | sym::copysignf128
             | sym::powf128
                 if self.cx.supports_f128_type =>
