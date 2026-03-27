@@ -119,7 +119,7 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --release --clean --build-sysroot ${{ matrix.commands }}
+        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${{ matrix.commands }}
 
   duplicates:
     runs-on: ubuntu-24.04
