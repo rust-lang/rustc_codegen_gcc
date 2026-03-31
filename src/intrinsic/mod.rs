@@ -734,7 +734,7 @@ impl<'gcc, 'tcx> ArgAbiExt<'gcc, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
         if self.is_ignore() {
             return;
         }
-        if let PassMode::Indirect { attrs, meta_attrs: None, .. } = &self.mode {
+        if let PassMode::Indirect { ref attrs, meta_attrs: None, .. } = self.mode {
             let align = attrs.pointee_align.unwrap_or(self.layout.align.abi);
             OperandValue::Ref(PlaceValue::new_sized(val, align)).store(bx, dst)
         } else if self.is_unsized_indirect() {
