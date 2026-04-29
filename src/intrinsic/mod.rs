@@ -338,13 +338,6 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                 );
                 return Ok(());
             }
-            sym::copy | sym::copy_nonoverlapping | sym::write_bytes => {
-                let ty = fn_args.type_at(0);
-                if self.layout_of(ty).size.bytes() == 0 {
-                    return Ok(());
-                }
-                return Err(Instance::new_raw(instance.def_id(), instance.args));
-            }
             sym::breakpoint => {
                 unimplemented!();
             }
