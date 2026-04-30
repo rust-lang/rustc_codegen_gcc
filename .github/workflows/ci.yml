@@ -96,6 +96,8 @@ jobs:
 
     - name: Build
       run: |
+        mkdir -p /home/runner/.rustup/toolchains/nightly-2026-04-29-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/codegen-backends/lib/x86_64-unknown-linux-gnu/
+        ln -s /usr/lib/libgccjit.so /home/runner/.rustup/toolchains/nightly-2026-04-29-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/codegen-backends/lib/x86_64-unknown-linux-gnu/libgccjit.so
         ./y.sh build --sysroot
         ./y.sh test --cargo-tests
 
