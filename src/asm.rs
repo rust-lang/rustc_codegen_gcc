@@ -362,7 +362,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         let ty = value.layout.gcc_type(self.cx);
                         let reg_var = self.current_func().new_local(None, ty, "input_register");
                         reg_var.set_register_name(reg_name);
-                        // TODO: We should remove this when switching to "untyped" pointers
+                        // FIXME: We should remove this when switching to "untyped" pointers
                         let value = value.immediate();
                         let value = if value.get_type() != ty {
                             self.context.new_cast(None, value, ty)
