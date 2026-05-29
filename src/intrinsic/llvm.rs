@@ -62,6 +62,25 @@ fn aes_output_type<'a, 'gcc, 'tcx>(
     (typ, field1, field2)
 }
 
+fn splat_scalar_to_vector<'a, 'gcc, 'tcx>(
+    builder: &Builder<'a, 'gcc, 'tcx>,
+    vector_ty: Type<'gcc>,
+    value: RValue<'gcc>,
+) -> RValue<'gcc> {
+    let vector_ty_info = vector_ty.dyncast_vector().expect("vector type");
+    let element_ty = vector_ty_info.get_element_type();
+    let value = if value.get_type() != element_ty {
+        builder.context.new_bitcast(None, value, element_ty)
+    } else {
+        value
+    };
+    builder.context.new_rvalue_from_vector(
+        None,
+        vector_ty,
+        &vec![value; vector_ty_info.get_num_units()],
+    )
+}
+
 fn wide_aes_output_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
 ) -> (Type<'gcc>, Field<'gcc>, Field<'gcc>) {
@@ -613,9 +632,9 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 let arg2_type = gcc_func.get_param_type(1);
                 let arg3_type = gcc_func.get_param_type(2);
                 let arg4_type = gcc_func.get_param_type(3);
-                let a = builder.context.new_rvalue_from_vector(None, arg1_type, &[new_args[0]; 8]);
-                let b = builder.context.new_rvalue_from_vector(None, arg2_type, &[new_args[1]; 8]);
-                let c = builder.context.new_rvalue_from_vector(None, arg3_type, &[new_args[2]; 8]);
+                let a = splat_scalar_to_vector(builder, arg1_type, new_args[0]);
+                let b = splat_scalar_to_vector(builder, arg2_type, new_args[1]);
+                let c = splat_scalar_to_vector(builder, arg3_type, new_args[2]);
                 let arg4 = builder.context.new_rvalue_from_int(arg4_type, -1);
                 args = vec![a, b, c, arg4, new_args[3]].into();
             }
@@ -712,9 +731,9 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 let arg1_type = gcc_func.get_param_type(0);
                 let arg2_type = gcc_func.get_param_type(1);
                 let arg3_type = gcc_func.get_param_type(2);
-                let a = builder.context.new_rvalue_from_vector(None, arg1_type, &[new_args[0]; 4]);
-                let b = builder.context.new_rvalue_from_vector(None, arg2_type, &[new_args[1]; 4]);
-                let c = builder.context.new_rvalue_from_vector(None, arg3_type, &[new_args[2]; 4]);
+                let a = splat_scalar_to_vector(builder, arg1_type, new_args[0]);
+                let b = splat_scalar_to_vector(builder, arg2_type, new_args[1]);
+                let c = splat_scalar_to_vector(builder, arg3_type, new_args[2]);
                 args = vec![a, b, c, new_args[3]].into();
             }
             "__builtin_ia32_vfmaddsd3_round" => {
@@ -722,9 +741,9 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 let arg1_type = gcc_func.get_param_type(0);
                 let arg2_type = gcc_func.get_param_type(1);
                 let arg3_type = gcc_func.get_param_type(2);
-                let a = builder.context.new_rvalue_from_vector(None, arg1_type, &[new_args[0]; 2]);
-                let b = builder.context.new_rvalue_from_vector(None, arg2_type, &[new_args[1]; 2]);
-                let c = builder.context.new_rvalue_from_vector(None, arg3_type, &[new_args[2]; 2]);
+                let a = splat_scalar_to_vector(builder, arg1_type, new_args[0]);
+                let b = splat_scalar_to_vector(builder, arg2_type, new_args[1]);
+                let c = splat_scalar_to_vector(builder, arg3_type, new_args[2]);
                 args = vec![a, b, c, new_args[3]].into();
             }
             "__builtin_ia32_ldmxcsr" => {
@@ -838,6 +857,10 @@ pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
                 let zero = builder.context.new_rvalue_zero(builder.int_type);
                 return_value =
                     builder.context.new_vector_access(None, return_value, zero).to_rvalue();
+                let expected_type = orig_args[0].get_type();
+                if return_value.get_type() != expected_type {
+                    return_value = builder.context.new_bitcast(None, return_value, expected_type);
+                }
             }
         }
         "__builtin_ia32_addcarryx_u64"

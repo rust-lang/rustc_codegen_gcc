@@ -1,8 +1,8 @@
 use std::iter::FromIterator;
 
-use gccjit::{BinaryOp, RValue, ToRValue, Type};
 #[cfg(feature = "master")]
-use gccjit::{ComparisonOp, UnaryOp};
+use gccjit::ComparisonOp;
+use gccjit::{BinaryOp, RValue, ToRValue, Type, UnaryOp};
 use rustc_abi::{Align, Size};
 use rustc_codegen_ssa::base::compare_simd_types;
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};
@@ -795,12 +795,14 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn simd_simple_float_intrinsic<'gcc, 'tcx>(
         name: Symbol,
         in_elem: Ty<'_>,
         in_ty: Ty<'_>,
         in_len: u64,
         bx: &mut Builder<'_, 'gcc, 'tcx>,
+        llret_ty: Type<'gcc>,
         span: Span,
         args: &[OperandRef<'tcx, RValue<'gcc>>],
     ) -> Result<RValue<'gcc>, ErrorGuaranteed> {
@@ -814,10 +816,10 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             return_error!(InvalidMonomorphization::BasicFloatType { span, name, ty: in_ty });
         };
         let elem_ty = bx.cx.type_float_from_ty(*f);
-        let (elem_ty_str, elem_ty, cast_type) = match f.bit_width() {
-            16 => ("", elem_ty, Some(bx.cx.double_type)),
-            32 => ("f", elem_ty, None),
-            64 => ("", elem_ty, None),
+        let is_f16 = f.bit_width() == 16;
+        let elem_ty_str = match f.bit_width() {
+            16 | 32 => "f",
+            64 => "",
             _ => {
                 return_error!(InvalidMonomorphization::FloatingPointVector {
                     span,
@@ -828,7 +830,9 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             }
         };
 
-        let vec_ty = bx.cx.type_vector(elem_ty, in_len);
+        let vec_ty = if is_f16 { llret_ty } else { bx.cx.type_vector(elem_ty, in_len) };
+        let result_elem_ty =
+            vec_ty.unqualified().dyncast_vector().expect("vector return type").get_element_type();
 
         let intr_name = match name {
             sym::simd_ceil => "ceil",
@@ -862,14 +866,14 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
                 let mut element = bx.extract_element(arg.immediate(), index).to_rvalue();
                 // FIXME: it would probably be better to not have casts here and use the proper
                 // instructions.
-                if let Some(typ) = cast_type {
-                    element = bx.context.new_cast(None, element, typ);
+                if is_f16 {
+                    element = super::f16_to_f32(bx.cx, element);
                 }
                 arguments.push(element);
             }
             let mut result = bx.context.new_call(None, function, &arguments);
-            if cast_type.is_some() {
-                result = bx.context.new_cast(None, result, elem_ty);
+            if is_f16 {
+                result = super::f32_to_f16(bx.cx, result, result_elem_ty);
             }
             vector_elements.push(result);
         }
@@ -896,7 +900,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             | sym::simd_round_ties_even
             | sym::simd_trunc
     ) {
-        return simd_simple_float_intrinsic(name, in_elem, in_ty, in_len, bx, span, args);
+        return simd_simple_float_intrinsic(name, in_elem, in_ty, in_len, bx, llret_ty, span, args);
     }
 
     #[cfg(feature = "master")]
@@ -1211,19 +1215,47 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         return Ok(bx.context.new_rvalue_zero(bx.i32_type));
     }
 
-    arith_binary! {
-        simd_add: Uint, Int => add, Float => fadd;
-        simd_sub: Uint, Int => sub, Float => fsub;
-        simd_mul: Uint, Int => mul, Float => fmul;
-        simd_div: Uint => udiv, Int => sdiv, Float => fdiv;
-        simd_rem: Uint => urem, Int => srem, Float => frem;
-        simd_shl: Uint, Int => shl;
-        simd_shr: Uint => lshr, Int => ashr;
-        simd_and: Uint, Int => and;
-        simd_or: Uint, Int => or; // FIXME(antoyo): calling `or` might not work on vectors.
-        simd_xor: Uint, Int => xor;
-        simd_minimum_number_nsz: Float => vector_minimum_number_nsz;
-        simd_maximum_number_nsz: Float => vector_maximum_number_nsz;
+    fn simd_f16_neg<'gcc, 'tcx>(
+        bx: &mut Builder<'_, 'gcc, 'tcx>,
+        value: RValue<'gcc>,
+        result_ty: Type<'gcc>,
+    ) -> RValue<'gcc> {
+        let vector_type = result_ty.unqualified().dyncast_vector().expect("vector result type");
+        let elem_ty = vector_type.get_element_type();
+        let f32_type = bx.cx.type_f32();
+        let elements = (0..vector_type.get_num_units())
+            .map(|i| {
+                let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
+                let value = bx.extract_element(value, index).to_rvalue();
+                let value = super::f16_to_f32(bx.cx, value);
+                let result = bx.context.new_unary_op(None, UnaryOp::Minus, f32_type, value);
+                super::f32_to_f16(bx.cx, result, elem_ty)
+            })
+            .collect::<Vec<_>>();
+        bx.context.new_rvalue_from_vector(None, result_ty, &elements)
+    }
+
+    fn simd_f16_binary_op<'gcc, 'tcx>(
+        bx: &mut Builder<'_, 'gcc, 'tcx>,
+        lhs: RValue<'gcc>,
+        rhs: RValue<'gcc>,
+        result_ty: Type<'gcc>,
+        op: impl Fn(&mut Builder<'_, 'gcc, 'tcx>, RValue<'gcc>, RValue<'gcc>) -> RValue<'gcc>,
+    ) -> RValue<'gcc> {
+        let vector_type = result_ty.unqualified().dyncast_vector().expect("vector result type");
+        let elem_ty = vector_type.get_element_type();
+        let elements = (0..vector_type.get_num_units())
+            .map(|i| {
+                let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
+                let lhs = bx.extract_element(lhs, index).to_rvalue();
+                let rhs = bx.extract_element(rhs, index).to_rvalue();
+                let lhs = super::f16_to_f32(bx.cx, lhs);
+                let rhs = super::f16_to_f32(bx.cx, rhs);
+                let result = op(bx, lhs, rhs);
+                super::f32_to_f16(bx.cx, result, elem_ty)
+            })
+            .collect::<Vec<_>>();
+        bx.context.new_rvalue_from_vector(None, result_ty, &elements)
     }
 
     macro_rules! arith_unary {
@@ -1238,6 +1270,80 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
                 return_error!(InvalidMonomorphization::UnsupportedOperation { span, name, in_ty, in_elem })
             })*
         }
+    }
+
+    if let ty::Float(ref f) = *in_elem.kind()
+        && f.bit_width() == 16
+    {
+        match name {
+            sym::simd_add => {
+                return Ok(simd_f16_binary_op(
+                    bx,
+                    args[0].immediate(),
+                    args[1].immediate(),
+                    llret_ty,
+                    |_, lhs, rhs| lhs + rhs,
+                ));
+            }
+            sym::simd_sub => {
+                return Ok(simd_f16_binary_op(
+                    bx,
+                    args[0].immediate(),
+                    args[1].immediate(),
+                    llret_ty,
+                    |_, lhs, rhs| lhs - rhs,
+                ));
+            }
+            sym::simd_mul => {
+                return Ok(simd_f16_binary_op(
+                    bx,
+                    args[0].immediate(),
+                    args[1].immediate(),
+                    llret_ty,
+                    |bx, lhs, rhs| {
+                        bx.context.new_binary_op(None, BinaryOp::Mult, lhs.get_type(), lhs, rhs)
+                    },
+                ));
+            }
+            sym::simd_div => {
+                return Ok(simd_f16_binary_op(
+                    bx,
+                    args[0].immediate(),
+                    args[1].immediate(),
+                    llret_ty,
+                    |_, lhs, rhs| lhs / rhs,
+                ));
+            }
+            sym::simd_rem => {
+                let fmodf = bx.context.get_builtin_function("fmodf");
+                return Ok(simd_f16_binary_op(
+                    bx,
+                    args[0].immediate(),
+                    args[1].immediate(),
+                    llret_ty,
+                    |bx, lhs, rhs| bx.context.new_call(None, fmodf, &[lhs, rhs]),
+                ));
+            }
+            sym::simd_neg => {
+                return Ok(simd_f16_neg(bx, args[0].immediate(), llret_ty));
+            }
+            _ => {}
+        }
+    }
+
+    arith_binary! {
+        simd_add: Uint, Int => add, Float => fadd;
+        simd_sub: Uint, Int => sub, Float => fsub;
+        simd_mul: Uint, Int => mul, Float => fmul;
+        simd_div: Uint => udiv, Int => sdiv, Float => fdiv;
+        simd_rem: Uint => urem, Int => srem, Float => frem;
+        simd_shl: Uint, Int => shl;
+        simd_shr: Uint => lshr, Int => ashr;
+        simd_and: Uint, Int => and;
+        simd_or: Uint, Int => or; // FIXME(antoyo): calling `or` might not work on vectors.
+        simd_xor: Uint, Int => xor;
+        simd_minimum_number_nsz: Float => vector_minimum_number_nsz;
+        simd_maximum_number_nsz: Float => vector_maximum_number_nsz;
     }
 
     arith_unary! {

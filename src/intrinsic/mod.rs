@@ -145,17 +145,15 @@ fn generic_f16_builtin<'gcc, 'tcx>(
     name: Symbol,
     args: &[OperandRef<'tcx, RValue<'gcc>>],
 ) -> RValue<'gcc> {
-    let f32_type = cx.type_f32();
     let builtin_name = match name {
         sym::fabs => "fabsf",
         _ => unreachable!(),
     };
 
     let func = cx.context.get_builtin_function(builtin_name);
-    let args: Vec<_> =
-        args.iter().map(|arg| cx.context.new_cast(None, arg.immediate(), f32_type)).collect();
+    let args: Vec<_> = args.iter().map(|arg| f16_to_f32(cx, arg.immediate())).collect();
     let result = cx.context.new_call(None, func, &args);
-    cx.context.new_cast(None, result, cx.type_f16())
+    f32_to_f16(cx, result, cx.f16_abi_type)
 }
 
 fn f16_builtin<'gcc, 'tcx>(
@@ -163,7 +161,6 @@ fn f16_builtin<'gcc, 'tcx>(
     name: Symbol,
     args: &[OperandRef<'tcx, RValue<'gcc>>],
 ) -> RValue<'gcc> {
-    let f32_type = cx.type_f32();
     let builtin_name = match name {
         sym::ceilf16 => "__builtin_ceilf",
         sym::copysignf16 => "__builtin_copysignf",
@@ -183,10 +180,43 @@ fn f16_builtin<'gcc, 'tcx>(
     };
 
     let func = cx.context.get_builtin_function(builtin_name);
-    let args: Vec<_> =
-        args.iter().map(|arg| cx.context.new_cast(None, arg.immediate(), f32_type)).collect();
+    let args: Vec<_> = args.iter().map(|arg| f16_to_f32(cx, arg.immediate())).collect();
     let result = cx.context.new_call(None, func, &args);
-    cx.context.new_cast(None, result, cx.type_f16())
+    f32_to_f16(cx, result, cx.f16_abi_type)
+}
+
+fn f16_to_f32<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, value: RValue<'gcc>) -> RValue<'gcc> {
+    let value = cx.bitcast_if_needed(value, cx.f16_abi_type);
+    let f32_type = cx.type_f32();
+    let param = cx.context.new_parameter(None, cx.f16_abi_type, "a");
+    let func = cx.context.new_function(
+        None,
+        FunctionType::Extern,
+        f32_type,
+        &[param],
+        "__extendhfsf2",
+        false,
+    );
+    cx.context.new_call(None, func, &[value])
+}
+
+fn f32_to_f16<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    value: RValue<'gcc>,
+    dest_ty: Type<'gcc>,
+) -> RValue<'gcc> {
+    let f32_type = cx.type_f32();
+    let param = cx.context.new_parameter(None, f32_type, "a");
+    let func = cx.context.new_function(
+        None,
+        FunctionType::Extern,
+        cx.f16_abi_type,
+        &[param],
+        "__truncsfhf2",
+        false,
+    );
+    let value = cx.context.new_call(None, func, &[value]);
+    cx.bitcast_if_needed(value, dest_ty)
 }
 
 impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
@@ -318,10 +348,10 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::powif16 => {
                 let func = self.cx.context.get_builtin_function("__builtin_powif");
-                let arg0 = self.cx.context.new_cast(None, args[0].immediate(), self.cx.type_f32());
+                let arg0 = f16_to_f32(self.cx, args[0].immediate());
                 let args = [arg0, args[1].immediate()];
                 let result = self.cx.context.new_call(None, func, &args);
-                self.cx.context.new_cast(None, result, self.cx.type_f16())
+                f32_to_f16(self.cx, result, self.cx.f16_abi_type)
             }
             sym::powif128 => {
                 let f128_type = self.cx.type_f128();

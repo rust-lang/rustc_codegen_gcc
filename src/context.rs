@@ -59,6 +59,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub u128_type: Type<'gcc>,
     pub usize_type: Type<'gcc>,
 
+    pub f16_abi_type: Type<'gcc>,
+
     pub char_type: Type<'gcc>,
     pub uchar_type: Type<'gcc>,
     pub short_type: Type<'gcc>,
@@ -184,6 +186,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let u32_type = create_type(CType::UInt32t, tcx.types.u32);
         let u64_type = create_type(CType::UInt64t, tcx.types.u64);
 
+        let f16_abi_type = context.new_int_type(2, false);
+
         let (i128_type, u128_type) = if supports_128bit_integers {
             let i128_type = create_type(CType::Int128t, tcx.types.i128);
             let u128_type = create_type(CType::UInt128t, tcx.types.u128);
@@ -260,6 +264,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             u32_type,
             u64_type,
             u128_type,
+            f16_abi_type,
             char_type,
             uchar_type,
             short_type,

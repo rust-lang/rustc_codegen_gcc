@@ -153,7 +153,7 @@ impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
         if self.supports_f16_type {
             return self.context.new_c_type(CType::Float16);
         }
-        bug!("unsupported float width 16")
+        self.f16_abi_type
     }
 
     fn type_f32(&self) -> Type<'gcc> {
@@ -186,7 +186,9 @@ impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
 
     #[cfg(feature = "master")]
     fn type_kind(&self, typ: Type<'gcc>) -> TypeKind {
-        if self.is_int_type_or_bool(typ) {
+        if typ == self.f16_abi_type {
+            TypeKind::Half
+        } else if self.is_int_type_or_bool(typ) {
             TypeKind::Integer
         } else if typ.get_pointee().is_some() {
             TypeKind::Pointer
@@ -220,7 +222,9 @@ impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
 
     #[cfg(not(feature = "master"))]
     fn type_kind(&self, typ: Type<'gcc>) -> TypeKind {
-        if self.is_int_type_or_bool(typ) {
+        if typ == self.f16_abi_type {
+            TypeKind::Half
+        } else if self.is_int_type_or_bool(typ) {
             TypeKind::Integer
         } else if typ.is_compatible_with(self.float_type) {
             TypeKind::Float
@@ -270,6 +274,9 @@ impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
 
     #[cfg(feature = "master")]
     fn float_width(&self, typ: Type<'gcc>) -> usize {
+        if typ == self.f16_abi_type {
+            return 16;
+        }
         if typ.is_floating_point() {
             (typ.get_size() * u8::BITS).try_into().unwrap()
         } else {
@@ -281,7 +288,9 @@ impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
     fn float_width(&self, typ: Type<'gcc>) -> usize {
         let f32 = self.context.new_type::<f32>();
         let f64 = self.context.new_type::<f64>();
-        if typ.is_compatible_with(f32) {
+        if typ == self.f16_abi_type {
+            16
+        } else if typ.is_compatible_with(f32) {
             32
         } else if typ.is_compatible_with(f64) {
             64

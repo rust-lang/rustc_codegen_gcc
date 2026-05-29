@@ -454,6 +454,106 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         );
         result.to_rvalue()
     }
+
+    fn f16_ext_fn_name(&self, dest_ty: Type<'gcc>) -> Option<&'static str> {
+        match self.cx.type_kind(dest_ty) {
+            TypeKind::Float => Some("__extendhfsf2"),
+            TypeKind::Double => Some("__extendhfdf2"),
+            _ => None,
+        }
+    }
+
+    fn f16_trunc_fn_name(&self, src_ty: Type<'gcc>) -> Option<&'static str> {
+        match self.cx.type_kind(src_ty) {
+            TypeKind::Float => Some("__truncsfhf2"),
+            TypeKind::Double => Some("__truncdfhf2"),
+            _ => None,
+        }
+    }
+
+    fn call_unary_fn(
+        &self,
+        name: &str,
+        value: RValue<'gcc>,
+        param_ty: Type<'gcc>,
+        return_ty: Type<'gcc>,
+    ) -> RValue<'gcc> {
+        let param = self.context.new_parameter(None, param_ty, "a");
+        let func = self.context.new_function(
+            None,
+            gccjit::FunctionType::Extern,
+            return_ty,
+            &[param],
+            name,
+            false,
+        );
+        self.context.new_call(self.location, func, &[value])
+    }
+
+    fn f16_to_float_ext(&self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+        if self.cx.type_kind(value.get_type()) != TypeKind::Half {
+            return None;
+        }
+
+        let func_name = self.f16_ext_fn_name(dest_ty)?;
+        let value = self.cx.bitcast_if_needed(value, self.cx.f16_abi_type);
+        Some(self.call_unary_fn(func_name, value, self.cx.f16_abi_type, dest_ty))
+    }
+
+    fn float_to_f16_trunc(&self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
+        if self.cx.type_kind(dest_ty) != TypeKind::Half {
+            return None;
+        }
+
+        let value_type = value.get_type();
+        let func_name = self.f16_trunc_fn_name(value_type)?;
+        let value = self.call_unary_fn(func_name, value, value_type, self.cx.f16_abi_type);
+        Some(self.cx.bitcast_if_needed(value, dest_ty))
+    }
+
+    fn int_to_f16_trunc(
+        &self,
+        value: RValue<'gcc>,
+        dest_ty: Type<'gcc>,
+        signed: bool,
+    ) -> Option<RValue<'gcc>> {
+        if self.cx.type_kind(dest_ty) != TypeKind::Half {
+            return None;
+        }
+
+        let value = if signed {
+            self.gcc_int_to_float_cast(value, self.cx.type_f32())
+        } else {
+            self.gcc_uint_to_float_cast(value, self.cx.type_f32())
+        };
+        self.float_to_f16_trunc(value, dest_ty)
+    }
+
+    fn f16_arithmetic_binary_op(
+        &mut self,
+        a: RValue<'gcc>,
+        b: RValue<'gcc>,
+        op: impl FnOnce(&mut Self, RValue<'gcc>, RValue<'gcc>) -> RValue<'gcc>,
+    ) -> Option<RValue<'gcc>> {
+        let dest_ty = a.get_type();
+        let a = self.f16_to_float_ext(a, self.cx.type_f32())?;
+        let b = self
+            .f16_to_float_ext(b, self.cx.type_f32())
+            .expect("f16 binary operands should have the same type");
+        let result = op(self, a, b);
+        Some(self.float_to_f16_trunc(result, dest_ty).expect("f32 should truncate to f16"))
+    }
+
+    fn f16_arithmetic_unary_op(
+        &mut self,
+        value: RValue<'gcc>,
+        op: impl FnOnce(&mut Self, RValue<'gcc>) -> RValue<'gcc>,
+    ) -> Option<RValue<'gcc>> {
+        let dest_ty = value.get_type();
+        let value = self.f16_to_float_ext(value, self.cx.type_f32())?;
+        let result = op(self, value);
+        Some(self.float_to_f16_trunc(result, dest_ty).expect("f32 should truncate to f16"))
+    }
 }
 
 impl<'tcx> HasTyCtxt<'tcx> for Builder<'_, '_, 'tcx> {
@@ -695,6 +795,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fadd(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(a, b, |this, a, b| this.assign_to_var(a + b))
+        {
+            return value;
+        }
         self.assign_to_var(a + b)
     }
 
@@ -704,6 +809,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fsub(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(a, b, |this, a, b| this.assign_to_var(a - b))
+        {
+            return value;
+        }
         self.assign_to_var(a - b)
     }
 
@@ -712,6 +822,17 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fmul(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.f16_arithmetic_binary_op(a, b, |this, a, b| {
+            this.assign_to_var(this.cx.context.new_binary_op(
+                this.location,
+                BinaryOp::Mult,
+                a.get_type(),
+                a,
+                b,
+            ))
+        }) {
+            return value;
+        }
         self.assign_to_var(self.cx.context.new_binary_op(
             self.location,
             BinaryOp::Mult,
@@ -748,6 +869,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fdiv(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(a, b, |this, a, b| this.assign_to_var(a / b))
+        {
+            return value;
+        }
         self.assign_to_var(a / b)
     }
 
@@ -760,6 +886,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn frem(&mut self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.f16_arithmetic_binary_op(a, b, |this, a, b| {
+            let fmodf = this.context.get_builtin_function("fmodf");
+            this.context.new_call(this.location, fmodf, &[a, b])
+        }) {
+            return value;
+        }
         // FIXME(antoyo): add check in libgccjit since using the binary operator % causes the following error:
         // during RTL pass: expand
         // libgccjit.so: error: in expmed_mode_index, at expmed.h:240
@@ -795,14 +927,6 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         #[cfg(feature = "master")]
         match self.cx.type_kind(a_type) {
-            TypeKind::Half => {
-                let fmodf = self.context.get_builtin_function("fmodf");
-                let f32_type = self.type_f32();
-                let a = self.context.new_cast(self.location, a, f32_type);
-                let b = self.context.new_cast(self.location, b, f32_type);
-                let result = self.context.new_call(self.location, fmodf, &[a, b]);
-                return self.context.new_cast(self.location, result, a_type);
-            }
             TypeKind::Float => {
                 let fmodf = self.context.get_builtin_function("fmodf");
                 return self.context.new_call(self.location, fmodf, &[a, b]);
@@ -882,6 +1006,11 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fneg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.f16_arithmetic_unary_op(a, |this, a| {
+            this.cx.context.new_unary_op(this.location, UnaryOp::Minus, a.get_type(), a)
+        }) {
+            return value;
+        }
         set_rvalue_location(
             self,
             self.cx.context.new_unary_op(self.location, UnaryOp::Minus, a.get_type(), a),
@@ -1282,27 +1411,41 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fptoui(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        let value = self.f16_to_float_ext(value, self.cx.type_f32()).unwrap_or(value);
         set_rvalue_location(self, self.gcc_float_to_uint_cast(value, dest_ty))
     }
 
     fn fptosi(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        let value = self.f16_to_float_ext(value, self.cx.type_f32()).unwrap_or(value);
         set_rvalue_location(self, self.gcc_float_to_int_cast(value, dest_ty))
     }
 
     fn uitofp(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.int_to_f16_trunc(value, dest_ty, false) {
+            return set_rvalue_location(self, value);
+        }
         set_rvalue_location(self, self.gcc_uint_to_float_cast(value, dest_ty))
     }
 
     fn sitofp(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.int_to_f16_trunc(value, dest_ty, true) {
+            return set_rvalue_location(self, value);
+        }
         set_rvalue_location(self, self.gcc_int_to_float_cast(value, dest_ty))
     }
 
     fn fptrunc(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.float_to_f16_trunc(value, dest_ty) {
+            return set_rvalue_location(self, value);
+        }
         // FIXME(antoyo): make sure it truncates.
         set_rvalue_location(self, self.context.new_cast(self.location, value, dest_ty))
     }
 
     fn fpext(&mut self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        if let Some(value) = self.f16_to_float_ext(value, dest_ty) {
+            return set_rvalue_location(self, value);
+        }
         set_rvalue_location(self, self.context.new_cast(self.location, value, dest_ty))
     }
 
@@ -1368,6 +1511,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // LLVM has a concept of "unordered compares", where eg ULT returns true if either the two
         // arguments are unordered (i.e. either is NaN), or the lhs is less than the rhs. GCC does
         // not natively have this concept, so in some cases we must manually handle NaNs
+
+        let lhs = self.f16_to_float_ext(lhs, self.cx.type_f32()).unwrap_or(lhs);
+        let rhs = self.f16_to_float_ext(rhs, self.cx.type_f32()).unwrap_or(rhs);
+
         let must_handle_nan = match op {
             RealPredicate::RealPredicateFalse => unreachable!(),
             RealPredicate::RealOEQ => false,
@@ -1848,6 +1995,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         if scalar.is_bool() {
             return self.unchecked_utrunc(val, self.cx().type_i1());
         }
+        if let abi::Primitive::Float(abi::Float::F16) = scalar.primitive() {
+            return self.cx.bitcast_if_needed(val, self.cx.f16_abi_type);
+        }
         val
     }
 
@@ -1864,9 +2014,12 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     fn fptoint_sat(
         &mut self,
         signed: bool,
-        val: RValue<'gcc>,
+        mut val: RValue<'gcc>,
         dest_ty: Type<'gcc>,
     ) -> RValue<'gcc> {
+        if let Some(extended) = self.f16_to_float_ext(val, self.cx.type_f32()) {
+            val = extended;
+        }
         let src_ty = self.cx.val_ty(val);
         let (float_ty, int_ty) = if self.cx.type_kind(src_ty) == TypeKind::Vector {
             assert_eq!(self.cx.vector_length(src_ty), self.cx.vector_length(dest_ty));
