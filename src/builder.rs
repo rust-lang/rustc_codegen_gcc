@@ -1054,21 +1054,41 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn fadd_algebraic(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, a, b| this.assign_to_var(a + b))
+        {
+            return value;
+        }
         self.assign_to_var(lhs + rhs)
     }
 
     fn fsub_algebraic(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, a, b| this.assign_to_var(a - b))
+        {
+            return value;
+        }
         self.assign_to_var(lhs - rhs)
     }
 
     fn fmul_algebraic(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, a, b| this.assign_to_var(a * b))
+        {
+            return value;
+        }
         self.assign_to_var(lhs * rhs)
     }
 
     fn fdiv_algebraic(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, a, b| this.assign_to_var(a / b))
+        {
+            return value;
+        }
         self.assign_to_var(lhs / rhs)
     }
 
