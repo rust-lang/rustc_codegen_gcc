@@ -694,6 +694,32 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
         };
 
         match (in_style, out_style) {
+            (Style::Float, Style::Float)
+                if matches!(in_elem.kind(), ty::Float(f) if f.bit_width() == 16)
+                    || matches!(out_elem.kind(), ty::Float(f) if f.bit_width() == 16) =>
+            {
+                let arg = args[0].immediate();
+                let result_elem_ty = llret_ty
+                    .unqualified()
+                    .dyncast_vector()
+                    .expect("vector return type")
+                    .get_element_type();
+                let mut elements = Vec::with_capacity(in_len as usize);
+                for i in 0..in_len {
+                    let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
+                    let mut element = bx.extract_element(arg, index).to_rvalue();
+                    if matches!(in_elem.kind(), ty::Float(f) if f.bit_width() == 16) {
+                        element = super::f16_to_f32(bx.cx, element);
+                    }
+                    if matches!(out_elem.kind(), ty::Float(f) if f.bit_width() == 16) {
+                        element = super::f32_to_f16(bx.cx, element, result_elem_ty);
+                    } else {
+                        element = bx.context.new_cast(None, element, result_elem_ty);
+                    }
+                    elements.push(element);
+                }
+                return Ok(bx.context.new_rvalue_from_vector(None, llret_ty, &elements));
+            }
             (Style::Unsupported, Style::Unsupported) => {
                 require!(
                     false,
