@@ -6,7 +6,9 @@ use rustc_middle::ty::Ty;
 use rustc_span::Symbol;
 use rustc_target::callconv::FnAbi;
 
-use crate::abi::{FnAbiGcc, FnAbiGccExt};
+#[cfg(feature = "master")]
+use crate::abi::x86_interrupt_first_arg_is_invalid;
+use crate::abi::FnAbiGccExt;
 use crate::context::CodegenCx;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -110,22 +112,31 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     pub fn declare_fn(&self, name: &str, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> Function<'gcc> {
-        let FnAbiGcc {
-            return_type,
-            arguments_type,
-            is_c_variadic,
-            on_stack_param_indices,
-            #[cfg(feature = "master")]
-            fn_attributes,
-        } = fn_abi.gcc_type(self);
+        // Lower the ABI once and reuse it below, including for the `x86-interrupt` check,
+        // instead of lowering it a second time inside a helper.
+        let fn_abi_gcc = fn_abi.gcc_type(self);
         #[cfg(feature = "master")]
-        let conv = fn_abi.gcc_cconv(self);
+        let conv = if x86_interrupt_first_arg_is_invalid(fn_abi.conv, &fn_abi_gcc.arguments_type) {
+            // GCC rejects an `x86-interrupt` function whose first argument is not a
+            // pointer. Drop the calling-convention attribute so libgccjit does not abort;
+            // a clean error is emitted in `predefine_fn` instead (issue #833).
+            None
+        } else {
+            fn_abi.gcc_cconv(self)
+        };
         #[cfg(not(feature = "master"))]
         let conv = None;
-        let func = declare_raw_fn(self, name, conv, return_type, &arguments_type, is_c_variadic);
-        self.on_stack_function_params.borrow_mut().insert(func, on_stack_param_indices);
+        let func = declare_raw_fn(
+            self,
+            name,
+            conv,
+            fn_abi_gcc.return_type,
+            &fn_abi_gcc.arguments_type,
+            fn_abi_gcc.is_c_variadic,
+        );
+        self.on_stack_function_params.borrow_mut().insert(func, fn_abi_gcc.on_stack_param_indices);
         #[cfg(feature = "master")]
-        for fn_attr in fn_attributes {
+        for fn_attr in fn_abi_gcc.fn_attributes {
             func.add_attribute(fn_attr);
         }
         func
