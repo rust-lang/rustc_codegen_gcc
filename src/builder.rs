@@ -971,24 +971,44 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
     fn fadd_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, lhs, rhs| this.assign_to_var(lhs + rhs))
+        {
+            return value;
+        }
         let result = set_rvalue_location(self, lhs + rhs);
         self.assign_to_var(result)
     }
 
     fn fsub_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, lhs, rhs| this.assign_to_var(lhs - rhs))
+        {
+            return value;
+        }
         let result = set_rvalue_location(self, lhs - rhs);
         self.assign_to_var(result)
     }
 
     fn fmul_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, lhs, rhs| this.assign_to_var(lhs * rhs))
+        {
+            return value;
+        }
         let result = set_rvalue_location(self, lhs * rhs);
         self.assign_to_var(result)
     }
 
     fn fdiv_fast(&mut self, lhs: RValue<'gcc>, rhs: RValue<'gcc>) -> RValue<'gcc> {
         // NOTE: it seems like we cannot enable fast-mode for a single operation in GCC.
+        if let Some(value) =
+            self.f16_arithmetic_binary_op(lhs, rhs, |this, lhs, rhs| this.assign_to_var(lhs / rhs))
+        {
+            return value;
+        }
         let result = set_rvalue_location(self, lhs / rhs);
         self.assign_to_var(result)
     }

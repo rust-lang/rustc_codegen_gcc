@@ -8,7 +8,7 @@
 
 use std::cmp::Ordering;
 use std::hint::black_box;
-use std::intrinsics::{fmaf16, powif16};
+use std::intrinsics::{fadd_fast, fdiv_fast, fmaf16, fmul_fast, fsub_fast, powif16};
 
 unsafe extern "C" {
     #[link_name = "llvm.fma.f16"]
@@ -45,6 +45,10 @@ fn main() {
     assert_f16_bits(two * three, 0x4600);
     assert_f16_bits(two / one, 0x4000);
     assert_f16_bits(-three, 0xc200);
+    assert_f16_bits(unsafe { fadd_fast(one, two) }, 0x4200);
+    assert_f16_bits(unsafe { fsub_fast(two, one) }, 0x3c00);
+    assert_f16_bits(unsafe { fmul_fast(two, three) }, 0x4600);
+    assert_f16_bits(unsafe { fdiv_fast(three, two) }, 0x3e00);
     assert_f16_bits(fmaf16(one, two, -three), 0xbc00);
     assert_f16_bits(unsafe { llvm_fma_f16(one, two, -three) }, 0xbc00);
     assert_f16_bits(powif16(two, 3), 0x4800);
