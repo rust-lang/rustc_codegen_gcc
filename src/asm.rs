@@ -18,7 +18,7 @@ use rustc_target::asm::*;
 use crate::builder::Builder;
 use crate::callee::get_fn;
 use crate::context::CodegenCx;
-use crate::errors::{NulBytesInAsm, UnwindingInlineAsm};
+use crate::errors::{AsmGotoWithOutputs, NulBytesInAsm, UnwindingInlineAsm};
 use crate::type_of::LayoutGccExt;
 
 // Rust asm! and GCC Extended Asm semantics differ substantially.
@@ -542,6 +542,15 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         if template_str.contains('\0') {
             let err_sp = span.first().copied().unwrap_or(DUMMY_SP);
             self.sess().dcx().emit_err(NulBytesInAsm { span: err_sp });
+            return;
+        }
+
+        // GCC's `asm goto` cannot have output operands (libgccjit rejects them with
+        // "cannot add output operand to asm goto"). Emit a clean error instead of
+        // letting libgccjit abort with an internal error.
+        if dest.is_some() && !outputs.is_empty() {
+            let err_sp = span.first().copied().unwrap_or(DUMMY_SP);
+            self.sess().dcx().emit_err(AsmGotoWithOutputs { span: err_sp });
             return;
         }
 

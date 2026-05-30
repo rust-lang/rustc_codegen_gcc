@@ -30,3 +30,10 @@ pub(crate) struct NulBytesInAsm {
     #[primary_span]
     pub span: Span,
 }
+
+#[derive(Diagnostic)]
+#[diag("GCC backend does not support `asm goto` with output operands")]
+pub(crate) struct AsmGotoWithOutputs {
+    #[primary_span]
+    pub span: Span,
+}
