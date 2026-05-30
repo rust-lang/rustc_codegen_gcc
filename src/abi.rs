@@ -295,7 +295,7 @@ pub fn x86_interrupt_first_arg_is_invalid<'gcc>(
     arguments_type: &[Type<'gcc>],
 ) -> bool {
     matches!(conv, CanonAbi::Interrupt(InterruptKind::X86))
-        && arguments_type.first().map_or(true, |ty| !type_is_pointer(*ty))
+        && arguments_type.first().is_none_or(|ty| !type_is_pointer(*ty))
 }
 
 /// Convenience wrapper around [`x86_interrupt_first_arg_is_invalid`] for callers that only
