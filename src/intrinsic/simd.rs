@@ -1,8 +1,8 @@
 use std::iter::FromIterator;
 
+use gccjit::{BinaryOp, RValue, ToRValue, Type};
 #[cfg(feature = "master")]
-use gccjit::ComparisonOp;
-use gccjit::{BinaryOp, RValue, ToRValue, Type, UnaryOp};
+use gccjit::{ComparisonOp, UnaryOp};
 use rustc_abi::{Align, Size};
 use rustc_codegen_ssa::base::compare_simd_types;
 use rustc_codegen_ssa::common::{IntPredicate, TypeKind};

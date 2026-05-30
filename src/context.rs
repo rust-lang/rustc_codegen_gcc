@@ -413,8 +413,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     pub fn is_f16_abi_storage_type(&self, typ: Type<'gcc>) -> bool {
         // Callers use this only for Rust f16 operations. The compatibility arm handles
         // GCC versions that hand back an equivalent u16 storage type instead of the exact handle.
-        self.type_kind(typ) == TypeKind::Half
-            || (!typ.is_floating_point()
+        let kind = self.type_kind(typ);
+        kind == TypeKind::Half
+            || (kind == TypeKind::Integer
                 && typ.get_size() == 2
                 && typ.is_compatible_with(self.f16_abi_type))
     }
