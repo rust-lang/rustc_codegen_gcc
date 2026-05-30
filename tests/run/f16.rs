@@ -3,9 +3,10 @@
 // Run-time:
 //   status: 0
 
-#![feature(core_intrinsics, f16)]
+#![feature(core_intrinsics, f16, float_algebraic)]
 #![allow(internal_features)]
 
+use std::cmp::Ordering;
 use std::hint::black_box;
 use std::intrinsics::{fmaf16, powif16};
 
@@ -41,4 +42,13 @@ fn main() {
     assert_f16_bits(-three, 0xc200);
     assert_f16_bits(fmaf16(one, two, -three), 0xbc00);
     assert_f16_bits(powif16(two, 3), 0x4800);
+
+    assert_f16_bits(black_box(123.0f16).algebraic_add(black_box(456.0f16)), 0x6086);
+    assert_f16_bits(black_box(123.0f16).algebraic_rem(black_box(17.0f16)), 0x4400);
+
+    let q_nan = f16::from_bits(0x7e00);
+    let s_nan = f16::from_bits(0x7c2a);
+    assert_f16_bits(-q_nan, 0xfe00);
+    assert_f16_bits(-s_nan, 0xfc2a);
+    assert_eq!(f16::total_cmp(&-q_nan, &-s_nan), Ordering::Less);
 }

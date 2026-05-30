@@ -455,60 +455,20 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         result.to_rvalue()
     }
 
-    fn f16_ext_fn_name(&self, dest_ty: Type<'gcc>) -> Option<&'static str> {
-        match self.cx.type_kind(dest_ty) {
-            TypeKind::Float => Some("__extendhfsf2"),
-            TypeKind::Double => Some("__extendhfdf2"),
-            _ => None,
-        }
-    }
-
-    fn f16_trunc_fn_name(&self, src_ty: Type<'gcc>) -> Option<&'static str> {
-        match self.cx.type_kind(src_ty) {
-            TypeKind::Float => Some("__truncsfhf2"),
-            TypeKind::Double => Some("__truncdfhf2"),
-            _ => None,
-        }
-    }
-
-    fn call_unary_fn(
-        &self,
-        name: &str,
-        value: RValue<'gcc>,
-        param_ty: Type<'gcc>,
-        return_ty: Type<'gcc>,
-    ) -> RValue<'gcc> {
-        let param = self.context.new_parameter(None, param_ty, "a");
-        let func = self.context.new_function(
-            None,
-            gccjit::FunctionType::Extern,
-            return_ty,
-            &[param],
-            name,
-            false,
-        );
-        self.context.new_call(self.location, func, &[value])
-    }
-
     fn f16_to_float_ext(&self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
-        if self.cx.type_kind(value.get_type()) != TypeKind::Half {
+        if !self.cx.is_f16_abi_storage_type(value.get_type()) {
             return None;
         }
 
-        let func_name = self.f16_ext_fn_name(dest_ty)?;
-        let value = self.cx.bitcast_if_needed(value, self.cx.f16_abi_type);
-        Some(self.call_unary_fn(func_name, value, self.cx.f16_abi_type, dest_ty))
+        self.cx.f16_to_float_libcall(value, dest_ty, self.location)
     }
 
     fn float_to_f16_trunc(&self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> Option<RValue<'gcc>> {
-        if self.cx.type_kind(dest_ty) != TypeKind::Half {
+        if !self.cx.is_f16_abi_storage_type(dest_ty) {
             return None;
         }
 
-        let value_type = value.get_type();
-        let func_name = self.f16_trunc_fn_name(value_type)?;
-        let value = self.call_unary_fn(func_name, value, value_type, self.cx.f16_abi_type);
-        Some(self.cx.bitcast_if_needed(value, dest_ty))
+        self.cx.float_to_f16_libcall(value, dest_ty, self.location)
     }
 
     fn int_to_f16_trunc(
@@ -517,7 +477,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         dest_ty: Type<'gcc>,
         signed: bool,
     ) -> Option<RValue<'gcc>> {
-        if self.cx.type_kind(dest_ty) != TypeKind::Half {
+        if !self.cx.is_f16_abi_storage_type(dest_ty) {
             return None;
         }
 
@@ -541,17 +501,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             .f16_to_float_ext(b, self.cx.type_f32())
             .expect("f16 binary operands should have the same type");
         let result = op(self, a, b);
-        Some(self.float_to_f16_trunc(result, dest_ty).expect("f32 should truncate to f16"))
-    }
-
-    fn f16_arithmetic_unary_op(
-        &mut self,
-        value: RValue<'gcc>,
-        op: impl FnOnce(&mut Self, RValue<'gcc>) -> RValue<'gcc>,
-    ) -> Option<RValue<'gcc>> {
-        let dest_ty = value.get_type();
-        let value = self.f16_to_float_ext(value, self.cx.type_f32())?;
-        let result = op(self, value);
         Some(self.float_to_f16_trunc(result, dest_ty).expect("f32 should truncate to f16"))
     }
 }
@@ -1006,10 +955,9 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn fneg(&mut self, a: RValue<'gcc>) -> RValue<'gcc> {
-        if let Some(value) = self.f16_arithmetic_unary_op(a, |this, a| {
-            this.cx.context.new_unary_op(this.location, UnaryOp::Minus, a.get_type(), a)
-        }) {
-            return value;
+        let dest_ty = a.get_type();
+        if self.cx.is_f16_abi_storage_type(dest_ty) {
+            return self.cx.f16_neg(a, dest_ty);
         }
         set_rvalue_location(
             self,

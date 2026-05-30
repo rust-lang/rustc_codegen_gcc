@@ -1,9 +1,12 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use gccjit::{Block, CType, Context, Function, FunctionType, LValue, Location, RValue, Type};
+use gccjit::{
+    BinaryOp, Block, CType, Context, Function, FunctionType, LValue, Location, RValue, Type,
+};
 use rustc_abi::{Align, HasDataLayout, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_codegen_ssa::base::wants_msvc_seh;
+use rustc_codegen_ssa::common::TypeKind;
 use rustc_codegen_ssa::errors as ssa_errors;
 use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeCodegenMethods, MiscCodegenMethods};
 use rustc_data_structures::base_n::{ALPHANUMERIC_ONLY, ToBaseN};
@@ -375,6 +378,81 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         } else {
             value
         }
+    }
+
+    fn call_unary_fn(
+        &self,
+        name: &str,
+        value: RValue<'gcc>,
+        param_ty: Type<'gcc>,
+        return_ty: Type<'gcc>,
+        location: Option<Location<'gcc>>,
+    ) -> RValue<'gcc> {
+        let param = self.context.new_parameter(None, param_ty, "a");
+        let func =
+            self.context.new_function(None, FunctionType::Extern, return_ty, &[param], name, false);
+        self.context.new_call(location, func, &[value])
+    }
+
+    fn f16_ext_fn_name(&self, dest_ty: Type<'gcc>) -> Option<&'static str> {
+        match self.type_kind(dest_ty) {
+            TypeKind::Float => Some("__extendhfsf2"),
+            TypeKind::Double => Some("__extendhfdf2"),
+            _ => None,
+        }
+    }
+
+    fn f16_trunc_fn_name(&self, src_ty: Type<'gcc>) -> Option<&'static str> {
+        match self.type_kind(src_ty) {
+            TypeKind::Float => Some("__truncsfhf2"),
+            TypeKind::Double => Some("__truncdfhf2"),
+            _ => None,
+        }
+    }
+
+    pub fn is_f16_abi_storage_type(&self, typ: Type<'gcc>) -> bool {
+        // Callers use this only for Rust f16 operations. The compatibility arm handles
+        // GCC versions that hand back an equivalent u16 storage type instead of the exact handle.
+        self.type_kind(typ) == TypeKind::Half
+            || (!typ.is_floating_point()
+                && typ.get_size() == 2
+                && typ.is_compatible_with(self.f16_abi_type))
+    }
+
+    pub fn f16_to_float_libcall(
+        &self,
+        value: RValue<'gcc>,
+        dest_ty: Type<'gcc>,
+        location: Option<Location<'gcc>>,
+    ) -> Option<RValue<'gcc>> {
+        let name = self.f16_ext_fn_name(dest_ty)?;
+        let value = self.bitcast_if_needed(value, self.f16_abi_type);
+        Some(self.call_unary_fn(name, value, self.f16_abi_type, dest_ty, location))
+    }
+
+    pub fn float_to_f16_libcall(
+        &self,
+        value: RValue<'gcc>,
+        dest_ty: Type<'gcc>,
+        location: Option<Location<'gcc>>,
+    ) -> Option<RValue<'gcc>> {
+        let value_type = value.get_type();
+        let name = self.f16_trunc_fn_name(value_type)?;
+        let value = self.call_unary_fn(name, value, value_type, self.f16_abi_type, location);
+        Some(self.bitcast_if_needed(value, dest_ty))
+    }
+
+    pub fn f16_neg(&self, value: RValue<'gcc>, dest_ty: Type<'gcc>) -> RValue<'gcc> {
+        let value = self.bitcast_if_needed(value, self.f16_abi_type);
+        let sign_bit = self.gcc_uint(self.f16_abi_type, 0x8000);
+        let value = self.context.new_binary_op(
+            None,
+            BinaryOp::BitwiseXor,
+            self.f16_abi_type,
+            value,
+            sign_bit,
+        );
+        self.bitcast_if_needed(value, dest_ty)
     }
 }
 

@@ -693,29 +693,57 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             _ => Style::Unsupported,
         };
 
+        let in_is_f16 = matches!(in_elem.kind(), ty::Float(f) if f.bit_width() == 16);
+        let out_is_f16 = matches!(out_elem.kind(), ty::Float(f) if f.bit_width() == 16);
+
         match (in_style, out_style) {
-            (Style::Float, Style::Float)
-                if matches!(in_elem.kind(), ty::Float(f) if f.bit_width() == 16)
-                    || matches!(out_elem.kind(), ty::Float(f) if f.bit_width() == 16) =>
-            {
+            (Style::Float, Style::Float) if in_is_f16 || out_is_f16 => {
                 let arg = args[0].immediate();
-                let result_elem_ty = llret_ty
-                    .unqualified()
-                    .dyncast_vector()
-                    .expect("vector return type")
-                    .get_element_type();
+                let result_elem_ty = bx.element_type(llret_ty);
                 let mut elements = Vec::with_capacity(in_len as usize);
                 for i in 0..in_len {
                     let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
                     let mut element = bx.extract_element(arg, index).to_rvalue();
-                    if matches!(in_elem.kind(), ty::Float(f) if f.bit_width() == 16) {
-                        element = super::f16_to_f32(bx.cx, element);
-                    }
-                    if matches!(out_elem.kind(), ty::Float(f) if f.bit_width() == 16) {
-                        element = super::f32_to_f16(bx.cx, element, result_elem_ty);
+                    if in_is_f16 {
+                        element = super::f16_to_float(bx.cx, element, result_elem_ty);
+                    } else if out_is_f16 {
+                        element = super::float_to_f16(bx.cx, element, result_elem_ty);
                     } else {
                         element = bx.context.new_cast(None, element, result_elem_ty);
                     }
+                    elements.push(element);
+                }
+                return Ok(bx.context.new_rvalue_from_vector(None, llret_ty, &elements));
+            }
+            (Style::Int, Style::Float) if out_is_f16 => {
+                let arg = args[0].immediate();
+                let result_elem_ty = bx.element_type(llret_ty);
+                let mut elements = Vec::with_capacity(in_len as usize);
+                for i in 0..in_len {
+                    let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
+                    let element = bx.extract_element(arg, index).to_rvalue();
+                    let element = match *in_elem.kind() {
+                        ty::Int(_) => bx.sitofp(element, result_elem_ty),
+                        ty::Uint(_) => bx.uitofp(element, result_elem_ty),
+                        _ => unreachable!(),
+                    };
+                    elements.push(element);
+                }
+                return Ok(bx.context.new_rvalue_from_vector(None, llret_ty, &elements));
+            }
+            (Style::Float, Style::Int) if in_is_f16 => {
+                let arg = args[0].immediate();
+                let result_elem_ty = bx.element_type(llret_ty);
+                let mut elements = Vec::with_capacity(in_len as usize);
+                for i in 0..in_len {
+                    let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
+                    let element = bx.extract_element(arg, index).to_rvalue();
+                    let element = super::f16_to_f32(bx.cx, element);
+                    let element = match *out_elem.kind() {
+                        ty::Int(_) => bx.fptosi(element, result_elem_ty),
+                        ty::Uint(_) => bx.fptoui(element, result_elem_ty),
+                        _ => unreachable!(),
+                    };
                     elements.push(element);
                 }
                 return Ok(bx.context.new_rvalue_from_vector(None, llret_ty, &elements));
@@ -899,7 +927,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
             }
             let mut result = bx.context.new_call(None, function, &arguments);
             if is_f16 {
-                result = super::f32_to_f16(bx.cx, result, result_elem_ty);
+                result = super::float_to_f16(bx.cx, result, result_elem_ty);
             }
             vector_elements.push(result);
         }
@@ -1248,14 +1276,11 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
     ) -> RValue<'gcc> {
         let vector_type = result_ty.unqualified().dyncast_vector().expect("vector result type");
         let elem_ty = vector_type.get_element_type();
-        let f32_type = bx.cx.type_f32();
         let elements = (0..vector_type.get_num_units())
             .map(|i| {
                 let index = bx.context.new_rvalue_from_long(bx.ulong_type, i as i64);
                 let value = bx.extract_element(value, index).to_rvalue();
-                let value = super::f16_to_f32(bx.cx, value);
-                let result = bx.context.new_unary_op(None, UnaryOp::Minus, f32_type, value);
-                super::f32_to_f16(bx.cx, result, elem_ty)
+                bx.cx.f16_neg(value, elem_ty)
             })
             .collect::<Vec<_>>();
         bx.context.new_rvalue_from_vector(None, result_ty, &elements)
@@ -1278,7 +1303,7 @@ pub fn generic_simd_intrinsic<'a, 'gcc, 'tcx>(
                 let lhs = super::f16_to_f32(bx.cx, lhs);
                 let rhs = super::f16_to_f32(bx.cx, rhs);
                 let result = op(bx, lhs, rhs);
-                super::f32_to_f16(bx.cx, result, elem_ty)
+                super::float_to_f16(bx.cx, result, elem_ty)
             })
             .collect::<Vec<_>>();
         bx.context.new_rvalue_from_vector(None, result_ty, &elements)
