@@ -150,10 +150,7 @@ fn generic_f16_builtin<'gcc, 'tcx>(
         _ => unreachable!(),
     };
 
-    let func = cx.context.get_builtin_function(builtin_name);
-    let args: Vec<_> = args.iter().map(|arg| f16_to_f32(cx, arg.immediate())).collect();
-    let result = cx.context.new_call(None, func, &args);
-    float_to_f16(cx, result, cx.f16_abi_type)
+    call_f32_builtin_for_f16(cx, builtin_name, args)
 }
 
 fn f16_builtin<'gcc, 'tcx>(
@@ -179,6 +176,14 @@ fn f16_builtin<'gcc, 'tcx>(
         _ => unreachable!(),
     };
 
+    call_f32_builtin_for_f16(cx, builtin_name, args)
+}
+
+fn call_f32_builtin_for_f16<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    builtin_name: &str,
+    args: &[OperandRef<'tcx, RValue<'gcc>>],
+) -> RValue<'gcc> {
     let func = cx.context.get_builtin_function(builtin_name);
     let args: Vec<_> = args.iter().map(|arg| f16_to_f32(cx, arg.immediate())).collect();
     let result = cx.context.new_call(None, func, &args);
@@ -617,24 +622,20 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         args: &[OperandRef<'tcx, Self::Value>],
         is_cleanup: bool,
     ) -> Self::Value {
+        let sym = self.tcx.symbol_name(instance).name;
+        if sym == "llvm.fma.f16" {
+            return call_f32_builtin_for_f16(self.cx, "fmaf", args);
+        }
+
         let func = if let Some(&func) = self.intrinsic_instances.borrow().get(&instance) {
             func
         } else {
-            let sym = self.tcx.symbol_name(instance).name;
-
             let func = if let Some(func) = self.intrinsics.borrow().get(sym) {
                 *func
             } else {
                 self.linkage.set(FunctionType::Extern);
 
-                let func = match sym {
-                    "llvm.fma.f16" => {
-                        // fma is not a target builtin, but a normal builtin, so we handle it differently
-                        // here.
-                        self.context.get_builtin_function("fma")
-                    }
-                    _ => llvm::intrinsic(sym, self),
-                };
+                let func = llvm::intrinsic(sym, self);
 
                 self.intrinsics.borrow_mut().insert(sym.to_string(), func);
 

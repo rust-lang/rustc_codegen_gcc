@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use gccjit::{CType, Context, Field, Function, FunctionPtrType, RValue, ToRValue, Type};
+use gccjit::{Context, Field, Function, FunctionPtrType, RValue, ToRValue, Type};
 use rustc_codegen_ssa::traits::BuilderMethods;
 
 use crate::builder::Builder;
@@ -806,13 +806,6 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
                 ]
                 .into();
             }
-            "fma" => {
-                let mut new_args = args.to_vec();
-                new_args[0] = builder.context.new_cast(None, new_args[0], builder.double_type);
-                new_args[1] = builder.context.new_cast(None, new_args[1], builder.double_type);
-                new_args[2] = builder.context.new_cast(None, new_args[2], builder.double_type);
-                args = new_args.into();
-            }
             "__builtin_ia32_sqrtsh_mask_round"
             | "__builtin_ia32_vcvtss2sh_mask_round"
             | "__builtin_ia32_vcvtsd2sh_mask_round"
@@ -932,10 +925,6 @@ pub fn adjust_intrinsic_return_value<'a, 'gcc, 'tcx>(
                 None,
                 &[first_mask, second_mask],
             );
-        }
-        "fma" => {
-            let f16_type = builder.context.new_c_type(CType::Float16);
-            return_value = builder.context.new_cast(None, return_value, f16_type);
         }
         "__builtin_ia32_encodekey128_u32" => {
             // The builtin __builtin_ia32_encodekey128_u32 writes the result in its pointer argument while

@@ -3,12 +3,17 @@
 // Run-time:
 //   status: 0
 
-#![feature(core_intrinsics, f16, float_algebraic)]
+#![feature(core_intrinsics, f16, float_algebraic, link_llvm_intrinsics)]
 #![allow(internal_features)]
 
 use std::cmp::Ordering;
 use std::hint::black_box;
 use std::intrinsics::{fmaf16, powif16};
+
+unsafe extern "C" {
+    #[link_name = "llvm.fma.f16"]
+    fn llvm_fma_f16(a: f16, b: f16, c: f16) -> f16;
+}
 
 fn assert_f16_bits(value: f16, bits: u16) {
     assert_eq!(value.to_bits(), bits);
@@ -41,6 +46,7 @@ fn main() {
     assert_f16_bits(two / one, 0x4000);
     assert_f16_bits(-three, 0xc200);
     assert_f16_bits(fmaf16(one, two, -three), 0xbc00);
+    assert_f16_bits(unsafe { llvm_fma_f16(one, two, -three) }, 0xbc00);
     assert_f16_bits(powif16(two, 3), 0x4800);
 
     assert_f16_bits(black_box(123.0f16).algebraic_add(black_box(456.0f16)), 0x6086);
