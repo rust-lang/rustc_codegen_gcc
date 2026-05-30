@@ -31,6 +31,7 @@ pub(crate) struct NulBytesInAsm {
     pub span: Span,
 }
 
+#[cfg(feature = "master")]
 #[derive(Diagnostic)]
 #[diag(
     "the GCC backend requires the first argument of an `x86-interrupt` function to be a pointer"
