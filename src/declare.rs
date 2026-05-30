@@ -6,9 +6,9 @@ use rustc_middle::ty::Ty;
 use rustc_span::Symbol;
 use rustc_target::callconv::FnAbi;
 
+use crate::abi::FnAbiGccExt;
 #[cfg(feature = "master")]
 use crate::abi::x86_interrupt_first_arg_is_invalid;
-use crate::abi::FnAbiGccExt;
 use crate::context::CodegenCx;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
