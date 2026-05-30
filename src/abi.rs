@@ -287,7 +287,8 @@ pub fn conv_to_fn_attribute<'gcc>(conv: CanonAbi, arch: &Arch) -> Option<FnAttri
 ///
 /// This works on the already-lowered GCC argument types so callers that have them (e.g.
 /// `declare_fn`) avoid a redundant ABI lowering. `x86-interrupt` functions return `()`,
-/// so there is no sret pointer prepended and `arguments_type[0]` is the frame argument.
+/// so there is no struct-return pointer prepended and `arguments_type[0]` is the frame
+/// argument.
 #[cfg(feature = "master")]
 pub fn x86_interrupt_first_arg_is_invalid<'gcc>(
     conv: CanonAbi,
