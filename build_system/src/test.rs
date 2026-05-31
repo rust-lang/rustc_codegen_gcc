@@ -515,7 +515,6 @@ fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
     // If the repository was already cloned, command will fail, so doesn't matter.
     let _ = git_clone("https://github.com/rust-lang/rust.git", Some(&rust_dir_path), false);
     let rust_dir: Option<&Path> = Some(&rust_dir_path);
-    run_command(&[&"git", &"checkout", &"--", &"tests/"], rust_dir)?;
     run_command_with_output_and_env(&[&"git", &"fetch"], rust_dir, Some(env))?;
     let rustc_commit = match rustc_version_info(env.get("RUSTC").map(|s| s.as_str()))?.commit_hash {
         Some(commit_hash) => commit_hash,
@@ -523,12 +522,12 @@ fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
     };
     if rustc_commit != "unknown" {
         run_command_with_output_and_env(
-            &[&"git", &"checkout", &rustc_commit],
+            &[&"git", &"checkout", &"--force", &rustc_commit],
             rust_dir,
             Some(env),
         )?;
     } else {
-        run_command_with_output_and_env(&[&"git", &"checkout"], rust_dir, Some(env))?;
+        run_command_with_output_and_env(&[&"git", &"checkout", &"--force"], rust_dir, Some(env))?;
     }
 
     let cargo = String::from_utf8(
