@@ -16,6 +16,8 @@ use rustc_target::callconv::{ArgAttributes, CastTarget, FnAbi, PassMode};
 use rustc_target::spec::Arch;
 
 use crate::builder::Builder;
+#[cfg(feature = "master")]
+use crate::common::type_is_pointer;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 
@@ -278,4 +280,34 @@ pub fn conv_to_fn_attribute<'gcc>(conv: CanonAbi, arch: &Arch) -> Option<FnAttri
         },
     };
     Some(attribute)
+}
+
+/// GCC's `interrupt` attribute requires the first parameter of an `x86-interrupt`
+/// function to be a pointer. When it is not, libgccjit aborts codegen with an internal
+/// error and leaves no object file behind. Detect that case so the backend can emit a
+/// clean diagnostic and skip the attribute instead of crashing (issue #833).
+///
+/// This works on the already-lowered GCC argument types so callers that have them (e.g.
+/// `declare_fn`) avoid a redundant ABI lowering. `x86-interrupt` functions return `()`,
+/// so there is no struct-return pointer prepended and `arguments_type[0]` is the frame
+/// argument.
+#[cfg(feature = "master")]
+pub fn x86_interrupt_first_arg_is_invalid<'gcc>(
+    conv: CanonAbi,
+    arguments_type: &[Type<'gcc>],
+) -> bool {
+    matches!(conv, CanonAbi::Interrupt(InterruptKind::X86))
+        && arguments_type.first().is_none_or(|ty| !type_is_pointer(*ty))
+}
+
+/// Convenience wrapper around [`x86_interrupt_first_arg_is_invalid`] for callers that only
+/// hold the `FnAbi` and must lower it themselves. Short-circuits before lowering for the
+/// common non-`x86-interrupt` case.
+#[cfg(feature = "master")]
+pub fn x86_interrupt_has_invalid_first_arg<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    fn_abi: &FnAbi<'tcx, Ty<'tcx>>,
+) -> bool {
+    matches!(fn_abi.conv, CanonAbi::Interrupt(InterruptKind::X86))
+        && x86_interrupt_first_arg_is_invalid(fn_abi.conv, &fn_abi.gcc_type(cx).arguments_type)
 }

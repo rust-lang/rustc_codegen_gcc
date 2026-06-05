@@ -10,7 +10,11 @@ use rustc_middle::mono::Visibility;
 use rustc_middle::ty::layout::{FnAbiOf, HasTypingEnv, LayoutOf};
 use rustc_middle::ty::{self, Instance, TypeVisitableExt};
 
+#[cfg(feature = "master")]
+use crate::abi::x86_interrupt_has_invalid_first_arg;
 use crate::context::CodegenCx;
+#[cfg(feature = "master")]
+use crate::errors::X86InterruptBadFirstArg;
 use crate::type_of::LayoutGccExt;
 use crate::{attributes, base};
 
@@ -51,6 +55,12 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         assert!(!instance.args.has_infer());
 
         let fn_abi = self.fn_abi_of_instance(instance, ty::List::empty());
+        #[cfg(feature = "master")]
+        if x86_interrupt_has_invalid_first_arg(self, fn_abi) {
+            self.tcx
+                .dcx()
+                .emit_err(X86InterruptBadFirstArg { span: self.tcx.def_span(instance.def_id()) });
+        }
         self.linkage.set(base::linkage_to_gcc(linkage));
         let decl = self.declare_fn(symbol_name, fn_abi);
         //let attrs = self.tcx.codegen_instance_attrs(instance.def);
