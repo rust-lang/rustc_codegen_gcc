@@ -145,17 +145,12 @@ fn generic_f16_builtin<'gcc, 'tcx>(
     name: Symbol,
     args: &[OperandRef<'tcx, RValue<'gcc>>],
 ) -> RValue<'gcc> {
-    let f32_type = cx.type_f32();
     let builtin_name = match name {
         sym::fabs => "fabsf",
         _ => unreachable!(),
     };
 
-    let func = cx.context.get_builtin_function(builtin_name);
-    let args: Vec<_> =
-        args.iter().map(|arg| cx.context.new_cast(None, arg.immediate(), f32_type)).collect();
-    let result = cx.context.new_call(None, func, &args);
-    cx.context.new_cast(None, result, cx.type_f16())
+    call_f32_builtin_for_f16(cx, builtin_name, args)
 }
 
 fn f16_builtin<'gcc, 'tcx>(
@@ -163,7 +158,6 @@ fn f16_builtin<'gcc, 'tcx>(
     name: Symbol,
     args: &[OperandRef<'tcx, RValue<'gcc>>],
 ) -> RValue<'gcc> {
-    let f32_type = cx.type_f32();
     let builtin_name = match name {
         sym::ceilf16 => "__builtin_ceilf",
         sym::copysignf16 => "__builtin_copysignf",
@@ -182,11 +176,41 @@ fn f16_builtin<'gcc, 'tcx>(
         _ => unreachable!(),
     };
 
+    call_f32_builtin_for_f16(cx, builtin_name, args)
+}
+
+fn call_f32_builtin_for_f16<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    builtin_name: &str,
+    args: &[OperandRef<'tcx, RValue<'gcc>>],
+) -> RValue<'gcc> {
     let func = cx.context.get_builtin_function(builtin_name);
-    let args: Vec<_> =
-        args.iter().map(|arg| cx.context.new_cast(None, arg.immediate(), f32_type)).collect();
+    let args: Vec<_> = args.iter().map(|arg| f16_to_f32(cx, arg.immediate())).collect();
     let result = cx.context.new_call(None, func, &args);
-    cx.context.new_cast(None, result, cx.type_f16())
+    float_to_f16(cx, result, cx.f16_abi_type)
+}
+
+fn f16_to_float<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    value: RValue<'gcc>,
+    dest_ty: Type<'gcc>,
+) -> RValue<'gcc> {
+    cx.f16_to_float_libcall(value, dest_ty, None)
+        .unwrap_or_else(|| bug!("cannot extend f16 to {:?}", cx.type_kind(dest_ty)))
+}
+
+fn f16_to_f32<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, value: RValue<'gcc>) -> RValue<'gcc> {
+    f16_to_float(cx, value, cx.type_f32())
+}
+
+fn float_to_f16<'gcc, 'tcx>(
+    cx: &CodegenCx<'gcc, 'tcx>,
+    value: RValue<'gcc>,
+    dest_ty: Type<'gcc>,
+) -> RValue<'gcc> {
+    let value_ty = value.get_type();
+    cx.float_to_f16_libcall(value, dest_ty, None)
+        .unwrap_or_else(|| bug!("cannot truncate {:?} to f16", cx.type_kind(value_ty)))
 }
 
 impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
@@ -318,10 +342,10 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::powif16 => {
                 let func = self.cx.context.get_builtin_function("__builtin_powif");
-                let arg0 = self.cx.context.new_cast(None, args[0].immediate(), self.cx.type_f32());
+                let arg0 = f16_to_f32(self.cx, args[0].immediate());
                 let args = [arg0, args[1].immediate()];
                 let result = self.cx.context.new_call(None, func, &args);
-                self.cx.context.new_cast(None, result, self.cx.type_f16())
+                float_to_f16(self.cx, result, self.cx.f16_abi_type)
             }
             sym::powif128 => {
                 let f128_type = self.cx.type_f128();
@@ -598,24 +622,20 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         args: &[OperandRef<'tcx, Self::Value>],
         is_cleanup: bool,
     ) -> Self::Value {
+        let sym = self.tcx.symbol_name(instance).name;
+        if sym == "llvm.fma.f16" {
+            return call_f32_builtin_for_f16(self.cx, "fmaf", args);
+        }
+
         let func = if let Some(&func) = self.intrinsic_instances.borrow().get(&instance) {
             func
         } else {
-            let sym = self.tcx.symbol_name(instance).name;
-
             let func = if let Some(func) = self.intrinsics.borrow().get(sym) {
                 *func
             } else {
                 self.linkage.set(FunctionType::Extern);
 
-                let func = match sym {
-                    "llvm.fma.f16" => {
-                        // fma is not a target builtin, but a normal builtin, so we handle it differently
-                        // here.
-                        self.context.get_builtin_function("fma")
-                    }
-                    _ => llvm::intrinsic(sym, self),
-                };
+                let func = llvm::intrinsic(sym, self);
 
                 self.intrinsics.borrow_mut().insert(sym.to_string(), func);
 

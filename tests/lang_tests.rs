@@ -223,7 +223,7 @@ fn run_tests(tempdir: PathBuf, current_dir: String) {
         "[DEBUG] lang run",
         "tests/run",
         TestMode::CompileAndRun,
-        &[],
+        &["f16.rs"],
     );
     build_test_runner(
         tempdir,
@@ -232,7 +232,7 @@ fn run_tests(tempdir: PathBuf, current_dir: String) {
         "[RELEASE] lang run",
         "tests/run",
         TestMode::CompileAndRun,
-        &[],
+        &["f16.rs"],
     );
 }
 
