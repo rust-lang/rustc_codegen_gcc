@@ -207,25 +207,33 @@ impl CodegenBackend for GccCodegenBackend {
                 .join("libgccjit.so")
         }
 
-        // We use all_paths() instead of only path() in case the path specified by --sysroot is
-        // invalid.
-        // This is the case for instance in Rust for Linux where they specify --sysroot=/dev/null.
-        for path in sess.opts.sysroot.all_paths() {
-            let libgccjit_target_lib_file = file_path(path, sess);
-            if let Ok(true) = fs::exists(&libgccjit_target_lib_file) {
-                load_libgccjit_if_needed(&libgccjit_target_lib_file);
-                break;
+        let mut attempted_paths = Vec::new();
+        if let Ok(libgccjit_path) = std::env::var("CG_LIBGCCJIT_PATH") {
+            let libgccjit_path = PathBuf::from(libgccjit_path);
+            if let Ok(true) = fs::exists(&libgccjit_path) {
+                load_libgccjit_if_needed(&libgccjit_path);
+            } else {
+                attempted_paths.push(libgccjit_path);
             }
         }
 
         if !gccjit::is_loaded() {
-            let mut paths = vec![];
+            // We use all_paths() instead of only path() in case the path specified by --sysroot is
+            // invalid.
+            // This is the case for instance in Rust for Linux where they specify --sysroot=/dev/null.
             for path in sess.opts.sysroot.all_paths() {
                 let libgccjit_target_lib_file = file_path(path, sess);
-                paths.push(libgccjit_target_lib_file);
+                if let Ok(true) = fs::exists(&libgccjit_target_lib_file) {
+                    load_libgccjit_if_needed(&libgccjit_target_lib_file);
+                    break;
+                } else {
+                    attempted_paths.push(libgccjit_target_lib_file);
+                }
             }
+        }
 
-            panic!("Could not load libgccjit.so. Attempted paths: {:#?}", paths);
+        if !gccjit::is_loaded() {
+            panic!("Could not load libgccjit.so. Attempted paths: {:#?}", attempted_paths);
         }
 
         #[cfg(feature = "master")]

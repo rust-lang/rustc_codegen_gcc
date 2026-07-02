@@ -397,6 +397,10 @@ impl ConfigInfo {
         } else {
             if !self.use_llvm_sysroot {
                 rustflags.extend_from_slice(&["--sysroot".to_string(), self.sysroot_path.clone()]);
+            } else {
+                let libgccjit_path =
+                    Path::new(self.gcc_path.as_deref().unwrap()).join("libgccjit.so");
+                env.insert("CG_LIBGCCJIT_PATH".into(), libgccjit_path.display().to_string());
             }
             rustflags.push(format!("-Zcodegen-backend={}", self.cg_backend_path));
         }
