@@ -4,6 +4,8 @@ mod simd;
 #[cfg(feature = "master")]
 use std::iter;
 
+#[cfg(feature = "master")]
+use gccjit::FnAttribute;
 use gccjit::{ComparisonOp, Function, FunctionType, RValue, ToRValue, Type, UnaryOp};
 use rustc_abi::{Align, BackendRepr, HasDataLayout, WrappingRange};
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -1489,6 +1491,14 @@ fn get_rust_try_fn<'a, 'gcc, 'tcx>(
         rustc_hir::Safety::Unsafe,
     ));
     let rust_try = gen_fn(cx, "__rust_try", rust_fn_sig, codegen);
+    // NOTE: The `__rust_try` shim must not be inlined into its caller. As explained on
+    // `codegen_gnu_try` above, the shim exists precisely so that its try/catch has the correct
+    // (single) personality function. When GCC inlines the shim into the caller under
+    // optimization (-O2/-O3), the try/catch landing pad is degraded into a
+    // cleanup-and-`_Unwind_Resume`: the exception is re-raised instead of being caught, so
+    // `catch_unwind` silently stops catching in release mode. Keeping the shim out-of-line
+    // preserves the catch semantics.
+    rust_try.1.add_attribute(FnAttribute::NoInline);
     cx.rust_try_fn.set(Some(rust_try));
     rust_try
 }
