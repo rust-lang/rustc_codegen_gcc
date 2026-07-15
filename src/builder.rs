@@ -312,6 +312,27 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.block.get_function()
     }
 
+    /// If the current block belongs to a cleanup region, adopt `targets`
+    /// (its cleanup successors) into the same region. Following the cleanup
+    /// CFG edges this way grows the region to cover the whole cleanup
+    /// subgraph, which is then emitted as one fall-through finally body.
+    #[cfg(feature = "master")]
+    fn extend_cleanup_region(&self, targets: &[Block<'gcc>]) {
+        let region = self.cleanup_regions.borrow().get(&self.block).copied();
+        if let Some(region) = region {
+            let mut regions = self.cleanup_regions.borrow_mut();
+            for &target in targets {
+                if !regions.contains_key(&target) {
+                    region.add_block(target);
+                    regions.insert(target, region);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(feature = "master"))]
+    fn extend_cleanup_region(&self, _targets: &[Block<'gcc>]) {}
+
     pub fn function_call(
         &mut self,
         func: Function<'gcc>,
@@ -565,11 +586,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn br(&mut self, dest: Block<'gcc>) {
-        self.llbb().end_with_jump(self.location, dest)
+        self.llbb().end_with_jump(self.location, dest);
+        self.extend_cleanup_region(&[dest]);
     }
 
     fn cond_br(&mut self, cond: RValue<'gcc>, then_block: Block<'gcc>, else_block: Block<'gcc>) {
-        self.llbb().end_with_conditional(self.location, cond, then_block, else_block)
+        self.llbb().end_with_conditional(self.location, cond, then_block, else_block);
+        self.extend_cleanup_region(&[then_block, else_block]);
     }
 
     fn switch(
@@ -587,9 +610,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // of a (pointless) switch.
         if cases.len() == 0 {
             self.block.end_with_jump(self.location, default_block);
+            self.extend_cleanup_region(&[default_block]);
             return;
         }
 
+        // Remember the cleanup successors so the switch's targets are pulled
+        // into the same cleanup region, if any.
+        let switch_block = self.block;
+        let mut targets = vec![default_block];
         let mut gcc_cases = vec![];
         let typ = self.val_ty(value);
         // FIXME(FractalFir): This is a workaround for a libgccjit limitation.
@@ -599,6 +627,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         // This *may* be slower than a native switch, but a slow working solution is better than none at all.
         if typ.is_i128(self) || typ.is_u128(self) {
             for (on_val, dest) in cases {
+                targets.push(dest);
                 let on_val = self.const_uint_big(typ, on_val);
                 let is_case =
                     self.context.new_comparison(self.location, ComparisonOp::Equals, value, on_val);
@@ -609,11 +638,17 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             self.block.end_with_jump(self.location, default_block);
         } else {
             for (on_val, dest) in cases {
+                targets.push(dest);
                 let on_val = self.const_uint_big(typ, on_val);
                 gcc_cases.push(self.context.new_case(on_val, on_val, dest));
             }
             self.block.end_with_switch(self.location, value, default_block, &gcc_cases);
         }
+
+        let saved_block = self.block;
+        self.block = switch_block;
+        self.extend_cleanup_region(&targets);
+        self.block = saved_block;
     }
 
     #[cfg(feature = "master")]
@@ -643,13 +678,25 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         try_block.end_with_jump(self.location, then);
 
-        if self.cleanup_blocks.borrow().contains(&catch) {
-            self.block.add_try_finally(self.location, try_block, catch);
+        let cleanup_region = self.cleanup_regions.borrow().get(&catch).copied();
+        if let Some(cleanup_region) = cleanup_region {
+            // The unwind target is a drop cleanup: emit a structured cleanup
+            // whose (fall-through) body is the whole cleanup subgraph, so GCC
+            // synthesizes the context-sensitive resume rather than us emitting
+            // an unconditional cross-frame `_Unwind_Resume`.
+            let try_region = self.current_func().new_region(self.location);
+            try_region.add_block(try_block);
+            self.block.add_cleanup(self.location, try_region, cleanup_region);
         } else {
+            // The unwind target is a catch handler (e.g. `catch_unwind`).
             self.block.add_try_catch(self.location, try_block, catch);
         }
 
         self.block.end_with_jump(self.location, then);
+        // If this invoke is itself inside a cleanup (e.g. a drop that can
+        // unwind, guarded by a "terminate" landing pad), its normal edge
+        // continues the enclosing cleanup, so pull `then` into that region.
+        self.extend_cleanup_region(&[then]);
 
         return_value.to_rvalue()
     }
@@ -1617,9 +1664,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn cleanup_landing_pad(&mut self, pers_fn: Function<'gcc>) -> (RValue<'gcc>, RValue<'gcc>) {
         self.set_personality_fn(pers_fn);
 
-        // NOTE: insert the current block in a variable so that a later call to invoke knows to
-        // generate a try/finally instead of a try/catch for this block.
-        self.cleanup_blocks.borrow_mut().insert(self.block);
+        // Seed a cleanup region with this landing pad. A later `invoke`
+        // whose unwind target is this block emits a structured cleanup; the
+        // region grows along the cleanup CFG edges (see extend_cleanup_region)
+        // to cover the drops and the resume point.
+        let region = self.current_func().new_region(self.location);
+        region.add_block(self.block);
+        self.cleanup_regions.borrow_mut().insert(self.block, region);
 
         let eh_pointer_builtin =
             self.cx.context.get_target_builtin_function("__builtin_eh_pointer");
@@ -1651,13 +1702,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     #[cfg(feature = "master")]
-    fn resume(&mut self, exn0: RValue<'gcc>, _exn1: RValue<'gcc>) {
-        let exn_type = exn0.get_type();
-        let exn = self.context.new_cast(self.location, exn0, exn_type);
-        let unwind_resume = self.context.get_target_builtin_function("__builtin_unwind_resume");
-        self.llbb()
-            .add_eval(self.location, self.context.new_call(self.location, unwind_resume, &[exn]));
-        self.unreachable();
+    fn resume(&mut self, _exn0: RValue<'gcc>, _exn1: RValue<'gcc>) {
+        // This block is the exit of a cleanup region: fall through so the
+        // middle-end synthesizes the context-sensitive resume (an in-frame
+        // transfer to the enclosing handler, or `_Unwind_Resume` at the
+        // function boundary once inlining decisions are known). We must NOT
+        // emit an explicit `__builtin_unwind_resume`, which would be an
+        // unconditional cross-frame resume that escapes a same-frame catch.
+        self.llbb().end_with_fallthrough(self.location);
     }
 
     #[cfg(not(feature = "master"))]

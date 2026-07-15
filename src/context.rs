@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use gccjit::{Block, CType, Context, Function, FunctionType, LValue, Location, RValue, Type};
+use gccjit::{Block, CType, Context, Function, FunctionType, LValue, Location, RValue, Region, Type};
 use rustc_abi::{Align, HasDataLayout, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_codegen_ssa::base::wants_msvc_seh;
 use rustc_codegen_ssa::errors as ssa_errors;
@@ -125,8 +125,13 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
+    /// Maps each block belonging to an exception-handling cleanup (a drop
+    /// landing pad and every block reachable from it, up to the resume) to
+    /// the `Region` that will become the fall-through cleanup body of a
+    /// `add_cleanup`. Seeded by `cleanup_landing_pad` and grown along the
+    /// cleanup CFG edges by `extend_cleanup_region`.
     #[cfg(feature = "master")]
-    pub cleanup_blocks: RefCell<FxHashSet<Block<'gcc>>>,
+    pub cleanup_regions: RefCell<FxHashMap<Block<'gcc>, Region<'gcc>>>,
     /// The alignment of a u128/i128 type.
     // We cache this, since it is needed for alignment checks during loads.
     pub int128_align: Align,
@@ -303,7 +308,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             rust_try_fn: Cell::new(None),
             pointee_infos: Default::default(),
             #[cfg(feature = "master")]
-            cleanup_blocks: Default::default(),
+            cleanup_regions: Default::default(),
         };
         // FIXME(antoyo): instead of doing this, add SsizeT to libgccjit.
         cx.isize_type = usize_type.to_signed(&cx);
