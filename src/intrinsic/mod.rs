@@ -4,6 +4,8 @@ mod simd;
 #[cfg(feature = "master")]
 use std::iter;
 
+#[cfg(feature = "master")]
+use gccjit::FnAttribute;
 use gccjit::{CType, ComparisonOp, Function, FunctionType, RValue, ToRValue, Type, UnaryOp};
 use rustc_abi::{Align, BackendRepr, HasDataLayout, WrappingRange};
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -1491,6 +1493,17 @@ fn get_rust_try_fn<'a, 'gcc, 'tcx>(
         rustc_hir::Safety::Unsafe,
     ));
     let rust_try = gen_fn(cx, "__rust_try", rust_fn_sig, codegen);
+    // NOTE: GCC's interprocedural optimizations must not touch the `__rust_try` shim. As
+    // explained on `codegen_gnu_try` above, the shim exists precisely so that its try/catch has
+    // the correct (single) personality function. Under optimization (-O2/-O3) GCC otherwise
+    // degrades the try/catch landing pad into a cleanup-and-`_Unwind_Resume`, so the exception
+    // is re-raised instead of being caught and `catch_unwind` silently stops catching. This
+    // happens in two ways: inlining the shim into its caller, and IPA-CP specializing the shim
+    // on its constant function-pointer arguments (which then inlines the throwing body into the
+    // try region). `noinline` alone only prevents the former; `noipa` disables all
+    // interprocedural optimization for the shim (it implies noinline, noclone and no_icf and
+    // makes the body opaque to IPA), which preserves the catch semantics in both cases.
+    rust_try.1.add_attribute(FnAttribute::NoIpa);
     cx.rust_try_fn.set(Some(rust_try));
     rust_try
 }
