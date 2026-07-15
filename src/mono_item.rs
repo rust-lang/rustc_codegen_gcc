@@ -75,5 +75,7 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
         self.functions.borrow_mut().insert(symbol_name.to_string(), decl);
         self.function_instances.borrow_mut().insert(instance, decl);
+        #[cfg(feature = "master")]
+        self.function_instances_reverse.borrow_mut().insert(decl, instance);
     }
 }

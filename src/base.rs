@@ -151,6 +151,11 @@ pub fn compile_codegen_unit(
                 mono_item.define::<Builder<'_, '_, '_>>(&mut cx, cgu_name.as_str(), item_data);
             }
 
+            // Now that every function's blocks exist, fill in the cleanup regions
+            // reconstructed from MIR while lowering `invoke` (structured EH).
+            #[cfg(feature = "master")]
+            cx.populate_cleanup_regions();
+
             // If this codegen unit contains the main function, also create the
             // wrapper here
             maybe_create_entry_wrapper::<Builder<'_, '_, '_>>(&cx, cx.codegen_unit);
