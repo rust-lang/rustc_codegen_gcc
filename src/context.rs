@@ -364,15 +364,18 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     /// after all functions in the codegen unit have been defined, so that every
     /// MIR block referenced by a cleanup subgraph has an emitted gccjit block.
     ///
-    /// Each cleanup region is made *self-contained*: it holds the landing pad
-    /// plus every cleanup block reachable from the cleanup's entry (following
-    /// MIR successor edges while staying in cleanup blocks). Two invokes whose
-    /// cleanup continuations overlap therefore each get a full copy of the
-    /// shared tail; libgccjit duplicates the shared blocks with fresh labels
-    /// when assembling the finally bodies. This mirrors how LLVM's WinEH
-    /// lowering (`cloneCommonBlocks`) and `rustc_codegen_clr` handle shared
-    /// cleanups, and — being a direct read of MIR's inverted-forest cleanup
-    /// contract — avoids reconstructing scopes from the emitted CFG.
+    /// Each cleanup region is made *self-contained*: it holds a clone of the
+    /// landing pad plus a clone of every cleanup block reachable from the
+    /// cleanup's entry (following MIR successor edges while staying in cleanup
+    /// blocks). Two invokes whose cleanup continuations overlap therefore each
+    /// get their own copy of the shared tail — the duplication policy lives
+    /// here, in the frontend, exactly as LLVM's WinEH lowering
+    /// (`cloneCommonBlocks`) and `rustc_codegen_clr` do it. The *originals* are
+    /// left untouched, so they are still emitted as ordinary (dead, DCE'd)
+    /// top-level blocks and continue to resolve any residual reference to
+    /// their canonical labels — e.g. a normal-path goto into shared drop code.
+    /// Being a direct read of MIR's inverted-forest cleanup contract, this
+    /// avoids reconstructing scopes from the emitted CFG.
     #[cfg(feature = "master")]
     pub fn populate_cleanup_regions(&self) {
         let pending = self.pending_cleanups.borrow();
@@ -387,19 +390,19 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             let Some(&instance) = reverse.get(&cleanup.func) else { continue };
             let mir = self.tcx.instance_mir(instance.def);
 
-            // The landing pad is the region's entry; it jumps to `entry_bb`.
-            cleanup.region.add_block(cleanup.landing_pad);
-
+            // The landing pad is the region's entry (it jumps to `entry_bb`),
+            // followed by the cleanup-block closure reachable from `entry_bb`.
+            let mut blocks = vec![cleanup.landing_pad];
             let mut visited = FxHashSet::default();
             let mut stack = vec![entry_bb];
             while let Some(bb) = stack.pop() {
                 if !visited.insert(bb) {
                     continue;
                 }
-                // A block may have been elided (unreachable); only adopt emitted
-                // ones, but keep walking the MIR graph regardless.
+                // A block may have been elided (unreachable); only collect
+                // emitted ones, but keep walking the MIR graph regardless.
                 if let Some(&block) = maps.bb_to_block.get(&bb) {
-                    cleanup.region.add_block(block);
+                    blocks.push(block);
                 }
                 for succ in mir.basic_blocks[bb].terminator().successors() {
                     if mir.basic_blocks[succ].is_cleanup {
@@ -407,6 +410,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                     }
                 }
             }
+
+            // Clone the closure into the region so each unwind edge gets its
+            // own self-contained copy; the originals stay as top-level blocks.
+            cleanup.region.add_cloned_blocks(&blocks);
         }
     }
 
