@@ -411,9 +411,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 }
             }
 
-            // Clone the closure into the region so each unwind edge gets its
-            // own self-contained copy; the originals stay as top-level blocks.
-            cleanup.region.add_cloned_blocks(&blocks);
+            // Clone the closure so each unwind edge gets its own self-contained
+            // copy (the originals stay as top-level blocks), then adopt the
+            // clones into the region as its body (the first clone — of the
+            // landing pad — is the region's entry).
+            for clone in gccjit::clone_blocks(&blocks) {
+                cleanup.region.add_block(clone);
+            }
         }
     }
 
