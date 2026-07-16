@@ -435,20 +435,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             self.block.add_assignment(self.location, result, return_value);
             result.to_rvalue()
         } else {
-            #[cfg(not(feature = "master"))]
-            if gcc_func.get_param_count() == 0 {
-                // FIXME(antoyo): As a temporary workaround for unsupported LLVM intrinsics.
-                self.block.add_eval(
-                    self.location,
-                    self.cx.context.new_call_through_ptr(self.location, func_ptr, &[]),
-                );
-            } else {
-                self.block.add_eval(
-                    self.location,
-                    self.cx.context.new_call_through_ptr(self.location, func_ptr, &args),
-                );
-            }
-            #[cfg(feature = "master")]
             self.block.add_eval(
                 self.location,
                 self.cx.context.new_call_through_ptr(self.location, func_ptr, &args),
