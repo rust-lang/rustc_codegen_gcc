@@ -1671,16 +1671,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         self.cx.landing_pads.borrow_mut().insert(self.block);
 
         // A cleanup resumes by falling through — it never inspects the exception
-        // object — so the landing-pad values are unused placeholders. In
-        // particular we must NOT emit `__builtin_eh_pointer` here: retrieving the
-        // exception is only valid inside a catch region, and doing so in a
-        // cleanup made GCC's EH lowering ICE.
-        let value1 = self
-            .current_func()
-            .new_local(self.location, self.u8_type.make_pointer(), "landing_pad0")
-            .to_rvalue();
-        let value2 =
-            self.current_func().new_local(self.location, self.i32_type, "landing_pad1").to_rvalue();
+        // object — so these landing-pad values are dead: the SSA driver stores
+        // them into the personality slot, but nothing reads them back now that
+        // `resume` falls through. Return well-defined null/zero rather than
+        // uninitialized locals. In particular we must NOT emit
+        // `__builtin_eh_pointer` here: retrieving the exception is only valid
+        // inside a catch region, and doing so in a cleanup made GCC's EH
+        // lowering ICE.
+        let value1 = self.context.new_null(self.u8_type.make_pointer());
+        let value2 = self.context.new_rvalue_zero(self.i32_type);
         (value1, value2)
     }
 
