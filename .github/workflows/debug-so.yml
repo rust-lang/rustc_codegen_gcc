@@ -1,0 +1,63 @@
+name: Debug stack-overflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - debug/so-ci
+
+permissions:
+  contents: read
+
+env:
+  RUST_BACKTRACE: 1
+  LLVM_BIN_DIR: /usr/bin
+
+jobs:
+  debug:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup rust toolchain
+      run: rustup show
+
+    - name: Setup rust cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install packages
+      run: sudo apt-get install -y ninja-build ripgrep gdb strace
+
+    - name: Download artifact
+      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/gcc-15.deb
+
+    - name: Setup path to libgccjit
+      run: |
+        sudo dpkg --force-overwrite -i gcc-15.deb
+        echo 'gcc-path = "/usr/lib/"' > config.toml
+
+    - name: Set default GCC to gcc-14
+      run: sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-14 30
+
+    - name: Enable core dumps
+      run: |
+        ulimit -c unlimited
+        sudo sysctl -w kernel.core_pattern=core.%p.%e || true
+
+    - name: Prepare
+      run: ./y.sh prepare
+
+    - name: Build backend and sysroot
+      run: ./y.sh build --release --sysroot
+
+    - name: Run the failing stack-overflow tests
+      id: stacktests
+      run: |
+        ./y.sh test --release --run-ui-tests -- \
+          tests/ui/runtime/out-of-stack.rs \
+          tests/ui/abi/stack-probes.rs \
+          --force-rerun
+
+    - name: Automated debug dump
+      if: ${{ failure() }}
+      run: bash .github/debug_so.sh
