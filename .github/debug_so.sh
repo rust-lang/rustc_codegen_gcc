@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Automated diagnostic for the stack-overflow detection miscompilation.
 # Runs in CI on failure; everything is printed to the job log.
-# Compiletest deletes the run-pass exe, so we compile our own repro (which
-# matches the failing tests) and trace it.
 set +e
 
 SYSROOT="$PWD/build/build_sysroot/sysroot"
@@ -17,60 +15,25 @@ uname -a
 ldd --version 2>/dev/null | head -1
 LIB=$(ls "$STDLIB"/libstd*.so 2>/dev/null | head -1)
 echo "libstd.so: $LIB  size=$(stat -c%s "$LIB" 2>/dev/null)"
-echo "backend:   $BACKEND"
-echo "rustc:     $RUSTC"
 
-echo "===================== BUILD REPRO ====================="
-D=$(mktemp -d)
-cat > "$D/repro.rs" <<'RS'
-use std::hint::black_box;
-use std::mem::MaybeUninit;
-use std::thread;
-use std::env;
-#[allow(unconditional_recursion)]
-fn recurse(a: &MaybeUninit<[u64; 1024]>) {
-    black_box(a.as_ptr() as u64);
-    let l: MaybeUninit<[u64; 1024]> = MaybeUninit::uninit();
-    recurse(&l);
-}
-fn overflow_recurse() { recurse(&MaybeUninit::uninit()); }
-fn overflow_frame() {
-    const S: usize = 512 * 1024;
-    thread::Builder::new().stack_size(S).spawn(|| {
-        let l: MaybeUninit<[u8; 2 * S]> = MaybeUninit::uninit();
-        black_box(l.as_ptr() as u64);
-    }).unwrap().join().unwrap();
-}
-fn silent() { let b = [0u8; 1000]; black_box(b); silent(); }
-fn main() {
-    match env::args().nth(1).as_deref() {
-        Some("child-recurse") => { thread::spawn(overflow_recurse).join().unwrap(); }
-        Some("child-frame")   => overflow_frame(),
-        Some("silent-thread") => { thread::Builder::new().name("ferris".into())
-                                       .spawn(silent).unwrap().join().ok(); }
-        _ => panic!("need arg"),
-    }
-}
-RS
-"$RUSTC" -Zcodegen-backend="$BACKEND" --sysroot "$SYSROOT" -Cprefer-dynamic -g -o "$D/a" "$D/repro.rs"
-echo "compiled repro: $(ls -l "$D/a" 2>/dev/null)"
-
-debug_one() {
-  local ARG="$1"
+# $1 = binary path, $2 = arg (the subprocess mode that overflows)
+debug_bin() {
+  local BIN="$1" ARG="$2"
+  [ -z "$BIN" ] || [ ! -x "$BIN" ] && { echo "SKIP (no binary): $BIN"; return; }
   echo ""
   echo "############################################################"
-  echo "# DEBUG  repro  $ARG"
+  echo "# DEBUG  $BIN  $ARG"
   echo "############################################################"
 
   echo "----- reproduce (139=SIGSEGV/undetected-BUG, 134=SIGABRT/detected-ok) -----"
-  "$D/a" "$ARG"; echo "exit=$?"
+  "$BIN" "$ARG"; echo "exit=$?"
 
   echo "----- strace: clone + sigaltstack per thread (does the SPAWNED thread set up its altstack?) -----"
-  strace -f -e trace=clone,clone3,sigaltstack,rt_sigaction "$D/a" "$ARG" 2>"$D/strace.txt"
-  grep -nE "clone|sigaltstack|rt_sigaction\((SIGSEGV|SIGBUS)" "$D/strace.txt"
-  echo "sigaltstack total: $(grep -c 'sigaltstack(' "$D/strace.txt")   clone total: $(grep -cE 'clone[3]?\(' "$D/strace.txt")"
+  strace -f -e trace=clone,clone3,sigaltstack,rt_sigaction "$BIN" "$ARG" 2>/tmp/strace.txt
+  grep -nE "clone|sigaltstack|rt_sigaction\((SIGSEGV|SIGBUS)" /tmp/strace.txt
+  echo "sigaltstack total: $(grep -c 'sigaltstack(' /tmp/strace.txt)   clone total: $(grep -cE 'clone[3]?\(' /tmp/strace.txt)"
 
-  echo "----- gdb: is make_handler / set_current_info reached by the SPAWNED thread? + NEED_ALTSTACK -----"
+  echo "----- gdb: is make_handler / set_current_info reached by the SPAWNED thread? -----"
   gdb -q -batch -nx \
     -ex 'set pagination off' -ex 'set confirm off' \
     -ex 'rbreak stack_overflow.*imp.*make_handler' \
@@ -82,13 +45,30 @@ debug_one() {
     -ex 'printf "== HIT#4 thread=%d ==\n", $_thread' -ex 'bt 3' -ex 'continue' \
     -ex 'printf "== HIT#5 thread=%d ==\n", $_thread' -ex 'bt 3' -ex 'continue' \
     -ex 'printf "== end ==\n"' -ex 'info program' \
-    --args "$D/a" "$ARG" 2>&1 \
-    | grep -vE "Missing separate|Download failed|Reading symbols|warning: File" | head -150
+    --args "$BIN" "$ARG" 2>&1 \
+    | grep -vE "Missing separate|Download failed|Reading symbols|warning: File" | head -140
 }
 
-debug_one "silent-thread"
-debug_one "child-recurse"
-debug_one "child-frame"
+echo "===================== REAL COMPILETEST BINARIES ====================="
+OO=$(find build/rust -type f -path '*out-of-stack/a' 2>/dev/null | head -1)
+SP=$(find build/rust -type f -path '*stack-probes*/a' 2>/dev/null | head -1)
+echo "out-of-stack: ${OO:-<none>}"
+echo "stack-probes: ${SP:-<none>}"
+debug_bin "$OO" "silent-thread"
+debug_bin "$SP" "child-recurse"
+debug_bin "$SP" "child-frame"
+
+echo ""
+echo "===================== COMPARISON: freshly-built minimal repro ====================="
+D=$(mktemp -d)
+cat > "$D/repro.rs" <<'RS'
+use std::hint::black_box;
+use std::thread::Builder;
+fn silent() { let b = [0u8; 1000]; black_box(b); silent(); }
+fn main() { Builder::new().name("ferris".into()).spawn(silent).unwrap().join().ok(); }
+RS
+"$RUSTC" -Zcodegen-backend="$BACKEND" --sysroot "$SYSROOT" -Cprefer-dynamic -o "$D/a" "$D/repro.rs" 2>/dev/null
+debug_bin "$D/a" ""
 
 echo ""
 echo "===================== OBJDUMP make_handler ====================="

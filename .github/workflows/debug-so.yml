@@ -55,8 +55,7 @@ jobs:
       run: |
         ./y.sh test --release --run-ui-tests -- \
           tests/ui/runtime/out-of-stack.rs \
-          tests/ui/abi/stack-probes.rs \
-          --force-rerun
+          tests/ui/abi/stack-probes.rs
 
     - name: Automated debug dump
       if: ${{ failure() }}
