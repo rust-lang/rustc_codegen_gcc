@@ -74,6 +74,10 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub sizet_type: Type<'gcc>,
 
     pub supports_128bit_integers: bool,
+    /// Whether the target has the `cmpxchg16b` instruction (x86-64), enabling
+    /// lock-free inline 128-bit atomics. Reflects `-Ctarget-cpu` and
+    /// `-Ctarget-feature=+cmpxchg16b`. See [`crate::intrinsic::atomics`].
+    pub has_cx16: bool,
     pub supports_f16_type: bool,
     pub supports_f32_type: bool,
     pub supports_f64_type: bool,
@@ -139,6 +143,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         codegen_unit: &'tcx CodegenUnit<'tcx>,
         tcx: TyCtxt<'tcx>,
         supports_128bit_integers: bool,
+        has_cx16: bool,
         supports_f16_type: bool,
         supports_f32_type: bool,
         supports_f64_type: bool,
@@ -275,6 +280,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             sizet_type,
 
             supports_128bit_integers,
+            has_cx16,
             supports_f16_type,
             supports_f32_type,
             supports_f64_type,

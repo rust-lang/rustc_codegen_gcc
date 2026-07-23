@@ -1,3 +1,4 @@
+pub mod atomics;
 pub mod llvm;
 mod simd;
 

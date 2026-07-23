@@ -124,12 +124,21 @@ pub fn compile_codegen_unit(
             let f64_type_supported = target_info.supports_target_dependent_type(CType::Float64);
             let f128_type_supported = target_info.supports_target_dependent_type(CType::Float128);
             let u128_type_supported = target_info.supports_target_dependent_type(CType::UInt128t);
+            // Whether lock-free inline 128-bit atomics (via `cmpxchg16b`) are available.
+            // `cpu_supports` reflects `-Ctarget-cpu` (the target info context carries
+            // `-march=<cpu>`); the CLI feature set covers `-Ctarget-feature=+cmpxchg16b`.
+            // NOTE: `cpu_supports` uses cpuid-style names (`cmpxchg16b`) and reflects
+            // `-march`/`-Ctarget-cpu`; `global_backend_features` uses GCC `-m` names
+            // (`cx16`) and reflects `-Ctarget-feature=+cmpxchg16b`.
+            let has_cx16 = target_info.cpu_supports("cmpxchg16b")
+                || tcx.global_backend_features(()).iter().any(|feature| feature == "cx16");
             // FIXME: improve this to avoid passing that many arguments.
             let mut cx = CodegenCx::new(
                 &context,
                 cgu,
                 tcx,
                 u128_type_supported,
+                has_cx16,
                 f16_type_supported,
                 f32_type_supported,
                 f64_type_supported,
