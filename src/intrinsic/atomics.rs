@@ -41,9 +41,13 @@ use crate::builder::Builder;
 /// Which lock-free compare-and-swap primitive to use for an operation.
 #[derive(Clone, Copy)]
 enum Primitive {
-    /// x86-64 `lock cmpxchg16b` (128-bit only).
+    /// x86-64 `lock cmpxchg16b` (128-bit only). Always a full barrier.
     Cmpxchg16b,
+    /// aarch64 load/store-exclusive pair (`ld[a]xp`/`st[l]xp`), 128-bit only. The
+    /// acquire/release variants are selected from [`AtomicCtx::order`].
+    LdxpStxp,
     /// `__sync_val_compare_and_swap_N`, inlined lock-free by GCC where supported.
+    /// Always a full barrier.
     Sync,
 }
 
@@ -55,6 +59,9 @@ struct AtomicCtx<'gcc> {
     int_type: Type<'gcc>,
     /// Signed integer type of the access size (for signed min/max).
     signed_type: Type<'gcc>,
+    /// Memory ordering of the operation (only the `LdxpStxp` primitive varies with
+    /// it; `Cmpxchg16b`/`Sync` are always sequentially consistent).
+    order: AtomicOrdering,
     size: Size,
 }
 
@@ -71,27 +78,49 @@ fn is_libatomic_size(bx: &Builder<'_, '_, '_>, size: Size) -> bool {
 
 /// Decide how (if at all) to inline an atomic of this size lock-free, or `None` to
 /// leave it on the default `__atomic_*_N` path.
-fn atomic_ctx<'gcc>(bx: &Builder<'_, 'gcc, '_>, size: Size) -> Option<AtomicCtx<'gcc>> {
+fn atomic_ctx<'gcc>(
+    bx: &Builder<'_, 'gcc, '_>,
+    size: Size,
+    order: AtomicOrdering,
+) -> Option<AtomicCtx<'gcc>> {
     if !is_libatomic_size(bx, size) {
         return None;
     }
-    let is_x86_64 = matches!(bx.cx.sess().target.arch, Arch::X86_64);
-    if is_x86_64 && size.bytes() == 16 {
-        // The only x86-64 128-bit option is `cmpxchg16b`; without it, defer to the
-        // default `__atomic_*_16` libcall (matching cg_llvm). Never use `__sync`
-        // here, since that could emit `cmpxchg16b` where it isn't guaranteed.
-        return bx.cx.has_cx16.then(|| AtomicCtx {
-            primitive: Primitive::Cmpxchg16b,
-            int_type: bx.cx.u128_type,
-            signed_type: bx.cx.i128_type,
-            size,
-        });
+    let arch = &bx.cx.sess().target.arch;
+    if size.bytes() == 16 {
+        match arch {
+            // The only x86-64 128-bit option is `cmpxchg16b`; without it, defer to
+            // the default `__atomic_*_16` libcall (matching cg_llvm). Never use
+            // `__sync` here, since that could emit `cmpxchg16b` where it isn't
+            // guaranteed available.
+            Arch::X86_64 => {
+                return bx.cx.has_cx16.then(|| AtomicCtx {
+                    primitive: Primitive::Cmpxchg16b,
+                    int_type: bx.cx.u128_type,
+                    signed_type: bx.cx.i128_type,
+                    order,
+                    size,
+                });
+            }
+            // aarch64 always has the load/store-exclusive pair (ARMv8.0).
+            Arch::AArch64 => {
+                return Some(AtomicCtx {
+                    primitive: Primitive::LdxpStxp,
+                    int_type: bx.cx.u128_type,
+                    signed_type: bx.cx.i128_type,
+                    order,
+                    size,
+                });
+            }
+            _ => {}
+        }
     }
     // Everything else that would libcall: let GCC inline `__sync_*_N` where it can.
     Some(AtomicCtx {
         primitive: Primitive::Sync,
         int_type: bx.context.new_int_type(size.bytes() as i32, false),
         signed_type: bx.context.new_int_type(size.bytes() as i32, true),
+        order,
         size,
     })
 }
@@ -170,6 +199,87 @@ fn cmpxchg16b<'gcc>(
     (old, success.to_rvalue())
 }
 
+/// aarch64 128-bit compare-and-swap via a load/store-exclusive retry loop.
+///
+/// Returns `(old_value, success)`. The exclusive pair is retried internally on
+/// spurious `stxp` failure, so `success` is a true CAS result (value matched), not a
+/// store-exclusive status. The acquire/release instruction variant is chosen from
+/// `ctx.order`, so this honours the requested [`AtomicOrdering`]:
+///
+/// | order        | load    | store   |
+/// |--------------|---------|---------|
+/// | Relaxed      | `ldxp`  | `stxp`  |
+/// | Acquire      | `ldaxp` | `stxp`  |
+/// | Release      | `ldxp`  | `stlxp` |
+/// | AcqRel/SeqCst| `ldaxp` | `stlxp` |
+fn ldxp_stxp_cmpxchg<'gcc>(
+    bx: &mut Builder<'_, 'gcc, '_>,
+    ctx: AtomicCtx<'gcc>,
+    ptr: RValue<'gcc>,
+    expected: RValue<'gcc>,
+    desired: RValue<'gcc>,
+) -> (RValue<'gcc>, RValue<'gcc>) {
+    let func = bx.current_func();
+
+    let load = match ctx.order {
+        AtomicOrdering::Acquire | AtomicOrdering::AcqRel | AtomicOrdering::SeqCst => "ldaxp",
+        AtomicOrdering::Relaxed | AtomicOrdering::Release => "ldxp",
+    };
+    let store = match ctx.order {
+        AtomicOrdering::Release | AtomicOrdering::AcqRel | AtomicOrdering::SeqCst => "stlxp",
+        AtomicOrdering::Relaxed | AtomicOrdering::Acquire => "stxp",
+    };
+
+    let expected_low = low_half(bx, expected);
+    let expected_high = high_half(bx, expected);
+    let desired_low = low_half(bx, desired);
+    let desired_high = high_half(bx, desired);
+
+    let old_low = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let old_high = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let success = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let status = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let address = bx.context.new_cast(bx.location, ptr, bx.cx.u128_type.make_pointer());
+
+    // Operand `%N`: 0:old_low 1:old_high 2:success 3:status(scratch) |
+    // 4:address 5:exp_low 6:exp_high 7:new_low 8:new_high.
+    // `%wN` selects the 32-bit W view (for the store-exclusive status register).
+    let template = format!(
+        "1:\n\t\
+         {load} %0, %1, [%4]\n\t\
+         cmp %0, %5\n\t\
+         ccmp %1, %6, #0, eq\n\t\
+         b.ne 2f\n\t\
+         {store} %w3, %7, %8, [%4]\n\t\
+         cbnz %w3, 1b\n\t\
+         mov %w2, #1\n\t\
+         b 3f\n\t\
+         2:\n\t\
+         clrex\n\t\
+         mov %w2, #0\n\t\
+         3:"
+    );
+    let asm = bx.llbb().add_extended_asm(bx.location, &template);
+    asm.add_output_operand(None, "=&r", old_low);
+    asm.add_output_operand(None, "=&r", old_high);
+    asm.add_output_operand(None, "=&r", success);
+    asm.add_output_operand(None, "=&r", status);
+    asm.add_input_operand(None, "r", address);
+    asm.add_input_operand(None, "r", expected_low);
+    asm.add_input_operand(None, "r", expected_high);
+    asm.add_input_operand(None, "r", desired_low);
+    asm.add_input_operand(None, "r", desired_high);
+    asm.add_clobber("cc");
+    asm.add_clobber("memory");
+    asm.set_volatile_flag(true);
+
+    let old = join_halves(bx, old_low.to_rvalue(), old_high.to_rvalue());
+    let zero = bx.context.new_rvalue_zero(bx.cx.u64_type);
+    let success =
+        bx.context.new_comparison(bx.location, ComparisonOp::NotEquals, success.to_rvalue(), zero);
+    (old, success)
+}
+
 /// `__sync_val_compare_and_swap_N`: GCC inlines a lock-free full-barrier CAS where
 /// the target supports it. Success is derived as `old == expected`, which is the
 /// correct compare-exchange semantics.
@@ -182,13 +292,20 @@ fn sync_cmpxchg<'gcc>(
 ) -> (RValue<'gcc>, RValue<'gcc>) {
     let func =
         bx.context.get_builtin_function(format!("__sync_val_compare_and_swap_{}", ctx.size.bytes()));
-    let ptr = bx.context.new_cast(bx.location, ptr, ctx.int_type.make_pointer());
-    // Match the builtin's parameter types (mirrors the `__atomic_*` handling).
-    let old_param_type = func.get_param(1).to_rvalue().get_type();
-    let expected_arg = bx.context.new_bitcast(bx.location, expected, old_param_type);
-    let desired_arg = bx.context.new_bitcast(bx.location, desired, old_param_type);
-    let old = bx.context.new_call(bx.location, func, &[ptr, expected_arg, desired_arg]);
-    let old = bx.context.new_bitcast(bx.location, old, ctx.int_type);
+    // Match the builtin's own parameter types: arg 0 is `volatile void *`, args 1/2
+    // are the value type. (Mirrors the `__atomic_*` handling in `builder.rs`.)
+    let ptr_type = func.get_param(0).to_rvalue().get_type();
+    let value_type = func.get_param(1).to_rvalue().get_type();
+    let ptr = bx.context.new_cast(bx.location, ptr, ptr_type);
+    let expected_arg = bx.context.new_bitcast(bx.location, expected, value_type);
+    let desired_arg = bx.context.new_bitcast(bx.location, desired, value_type);
+    let call = bx.context.new_call(bx.location, func, &[ptr, expected_arg, desired_arg]);
+    // Bind the call to a variable: a gccjit rvalue is an expression, so using the
+    // call in more than one place (the returned old value *and* the success
+    // comparison) would execute the CAS more than once.
+    let old = bx.new_temp(bx.current_func(), bx.location, ctx.int_type);
+    bx.llbb().add_assignment(bx.location, old, bx.context.new_bitcast(bx.location, call, ctx.int_type));
+    let old = old.to_rvalue();
     let success = bx.context.new_comparison(bx.location, ComparisonOp::Equals, old, expected);
     (old, success)
 }
@@ -203,6 +320,7 @@ fn cmpxchg<'gcc>(
 ) -> (RValue<'gcc>, RValue<'gcc>) {
     match ctx.primitive {
         Primitive::Cmpxchg16b => cmpxchg16b(bx, ptr, expected, desired),
+        Primitive::LdxpStxp => ldxp_stxp_cmpxchg(bx, ctx, ptr, expected, desired),
         Primitive::Sync => sync_cmpxchg(bx, ctx, ptr, expected, desired),
     }
 }
@@ -245,10 +363,10 @@ pub fn atomic_load<'gcc>(
     bx: &mut Builder<'_, 'gcc, '_>,
     ty: Type<'gcc>,
     ptr: RValue<'gcc>,
-    _order: AtomicOrdering,
+    order: AtomicOrdering,
     size: Size,
 ) -> Option<RValue<'gcc>> {
-    let ctx = atomic_ctx(bx, size)?;
+    let ctx = atomic_ctx(bx, size, order)?;
     // A load is a CAS of 0 with 0: it returns the current value, and only writes
     // (the same 0) when the value already is 0. Requires writable memory, exactly
     // as cg_llvm's inlined load does.
@@ -261,10 +379,10 @@ pub fn atomic_store<'gcc>(
     bx: &mut Builder<'_, 'gcc, '_>,
     value: RValue<'gcc>,
     ptr: RValue<'gcc>,
-    _order: AtomicOrdering,
+    order: AtomicOrdering,
     size: Size,
 ) -> bool {
-    let Some(ctx) = atomic_ctx(bx, size) else {
+    let Some(ctx) = atomic_ctx(bx, size, order) else {
         return false;
     };
     let value = bx.context.new_bitcast(bx.location, value, ctx.int_type);
@@ -277,12 +395,15 @@ pub fn atomic_cmpxchg<'gcc>(
     dst: RValue<'gcc>,
     cmp: RValue<'gcc>,
     src: RValue<'gcc>,
-    _order: AtomicOrdering,
-    _failure_order: AtomicOrdering,
+    order: AtomicOrdering,
+    failure_order: AtomicOrdering,
     _weak: bool,
     size: Size,
 ) -> Option<(RValue<'gcc>, RValue<'gcc>)> {
-    let ctx = atomic_ctx(bx, size)?;
+    // Use the stronger of the two orderings for the single CAS (GCC/aarch64 has no
+    // way to use a failure ordering stronger than the success ordering anyway).
+    let order = if failure_order as i32 > order as i32 { failure_order } else { order };
+    let ctx = atomic_ctx(bx, size, order)?;
     let cmp_type = cmp.get_type();
     let expected = bx.context.new_bitcast(bx.location, cmp, ctx.int_type);
     let desired = bx.context.new_bitcast(bx.location, src, ctx.int_type);
@@ -297,10 +418,10 @@ pub fn atomic_rmw<'gcc>(
     op: AtomicRmwBinOp,
     dst: RValue<'gcc>,
     src: RValue<'gcc>,
-    _order: AtomicOrdering,
+    order: AtomicOrdering,
     size: Size,
 ) -> Option<RValue<'gcc>> {
-    let ctx = atomic_ctx(bx, size)?;
+    let ctx = atomic_ctx(bx, size, order)?;
     let src_type = src.get_type();
     let operand = bx.context.new_bitcast(bx.location, src, ctx.int_type);
     let old = cmpxchg_loop(bx, ctx, dst, move |bx, old| {

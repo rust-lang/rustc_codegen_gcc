@@ -182,6 +182,20 @@ fn build_test_runner(
                 }
             }
 
+            // Per-test compiler flags, declared with a `//@ compile-flags: ...`
+            // directive anywhere in the test file (rustc-testsuite style). This lets
+            // a single test opt into flags like `-Ctarget-feature=+cmpxchg16b`
+            // without affecting the whole suite.
+            if let Ok(source) = std::fs::read_to_string(path) {
+                for line in source.lines() {
+                    if let Some(flags) = line.trim_start().strip_prefix("//@ compile-flags:") {
+                        for flag in flags.split_whitespace() {
+                            compiler_args.push(flag.into());
+                        }
+                    }
+                }
+            }
+
             if build_mode.is_debug() {
                 compiler_args
                     .extend_from_slice(&["-C".to_string(), "llvm-args=sanitize-undefined".into()]);
