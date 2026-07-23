@@ -3,11 +3,14 @@
 // Run-time:
 //   status: 0
 
-// Exercises lock-free inline 128-bit atomics (the `cmpxchg16b` path on x86-64).
-// State is checked with compare_exchange (a bool result) to avoid needing a
-// `PartialEq`/`Add` impl for `u128` in `no_core`.
+// Exercises lock-free inline 128-bit atomics. Platform-agnostic: the backend
+// emits `cmpxchg16b` on x86-64 and `ldxp/stxp` on aarch64 from the same code.
+// x86-64 needs the `cmpxchg16b` feature (aarch64 has 128-bit atomics in the
+// baseline), so the flag is guarded to x86-64 only. State is checked with
+// compare_exchange (a bool result) to avoid needing a `PartialEq`/`Add` impl for
+// `u128` in `no_core`.
 
-//@ compile-flags: -Ctarget-feature=+cmpxchg16b
+//@ [x86_64] compile-flags: -Ctarget-feature=+cmpxchg16b
 
 #![feature(no_core, intrinsics, rustc_attrs, lang_items, adt_const_params, unsized_const_params)]
 #![no_std]

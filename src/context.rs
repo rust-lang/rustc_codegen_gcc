@@ -78,6 +78,13 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// lock-free inline 128-bit atomics. Reflects `-Ctarget-cpu` and
     /// `-Ctarget-feature=+cmpxchg16b`. See [`crate::intrinsic::atomics`].
     pub has_cx16: bool,
+    /// Whether the target has FEAT_LSE (aarch64), enabling the single-instruction
+    /// 128-bit CAS `casp`. See [`crate::intrinsic::atomics`].
+    pub has_lse: bool,
+    /// Whether the target has FEAT_LSE2 (aarch64), enabling single-copy-atomic
+    /// 128-bit `ldp`/`stp` (a non-writing atomic load). See
+    /// [`crate::intrinsic::atomics`].
+    pub has_lse2: bool,
     pub supports_f16_type: bool,
     pub supports_f32_type: bool,
     pub supports_f64_type: bool,
@@ -144,6 +151,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         tcx: TyCtxt<'tcx>,
         supports_128bit_integers: bool,
         has_cx16: bool,
+        has_lse: bool,
+        has_lse2: bool,
         supports_f16_type: bool,
         supports_f32_type: bool,
         supports_f64_type: bool,
@@ -281,6 +290,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             supports_128bit_integers,
             has_cx16,
+            has_lse,
+            has_lse2,
             supports_f16_type,
             supports_f32_type,
             supports_f64_type,

@@ -186,9 +186,34 @@ fn build_test_runner(
             // directive anywhere in the test file (rustc-testsuite style). This lets
             // a single test opt into flags like `-Ctarget-feature=+cmpxchg16b`
             // without affecting the whole suite.
+            //
+            // An optional architecture guard `//@ [<arch>] compile-flags: ...`
+            // applies the flags only when the test's target architecture matches, so
+            // one platform-agnostic test can carry arch-specific flags (e.g. enable
+            // `cmpxchg16b` on x86-64 but nothing extra on aarch64).
+            let target_arch = test_target
+                .as_deref()
+                .unwrap_or("x86_64-unknown-linux-gnu")
+                .split('-')
+                .next()
+                .unwrap_or("x86_64");
             if let Ok(source) = std::fs::read_to_string(path) {
                 for line in source.lines() {
-                    if let Some(flags) = line.trim_start().strip_prefix("//@ compile-flags:") {
+                    let mut directive = line.trim_start();
+                    if let Some(rest) = directive.strip_prefix("//@ [") {
+                        let Some((guard_arch, remainder)) = rest.split_once(']') else {
+                            continue;
+                        };
+                        if guard_arch.trim() != target_arch {
+                            continue;
+                        }
+                        directive = remainder.trim_start();
+                    } else if let Some(rest) = directive.strip_prefix("//@") {
+                        directive = rest.trim_start();
+                    } else {
+                        continue;
+                    }
+                    if let Some(flags) = directive.strip_prefix("compile-flags:") {
                         for flag in flags.split_whitespace() {
                             compiler_args.push(flag.into());
                         }

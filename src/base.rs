@@ -132,6 +132,13 @@ pub fn compile_codegen_unit(
             // (`cx16`) and reflects `-Ctarget-feature=+cmpxchg16b`.
             let has_cx16 = target_info.cpu_supports("cmpxchg16b")
                 || tcx.global_backend_features(()).iter().any(|feature| feature == "cx16");
+            // aarch64 FEAT_LSE / FEAT_LSE2 for `casp` and atomic `ldp`/`stp`.
+            let feature_enabled = |cpuid_name: &str, gcc_name: &str| {
+                target_info.cpu_supports(cpuid_name)
+                    || tcx.global_backend_features(()).iter().any(|feature| feature == gcc_name)
+            };
+            let has_lse = feature_enabled("lse", "lse");
+            let has_lse2 = feature_enabled("lse2", "lse2");
             // FIXME: improve this to avoid passing that many arguments.
             let mut cx = CodegenCx::new(
                 &context,
@@ -139,6 +146,8 @@ pub fn compile_codegen_unit(
                 tcx,
                 u128_type_supported,
                 has_cx16,
+                has_lse,
+                has_lse2,
                 f16_type_supported,
                 f32_type_supported,
                 f64_type_supported,

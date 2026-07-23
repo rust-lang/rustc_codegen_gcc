@@ -46,6 +46,8 @@ enum Primitive {
     /// aarch64 load/store-exclusive pair (`ld[a]xp`/`st[l]xp`), 128-bit only. The
     /// acquire/release variants are selected from [`AtomicCtx::order`].
     LdxpStxp,
+    /// aarch64 FEAT_LSE single-instruction 128-bit CAS (`casp{,a,l,al}`).
+    LseCasp,
     /// `__sync_val_compare_and_swap_N`, inlined lock-free by GCC where supported.
     /// Always a full barrier.
     Sync,
@@ -102,10 +104,13 @@ fn atomic_ctx<'gcc>(
                     size,
                 });
             }
-            // aarch64 always has the load/store-exclusive pair (ARMv8.0).
+            // aarch64: FEAT_LSE gives a single-instruction CAS (`casp`); otherwise
+            // the load/store-exclusive pair, always present since ARMv8.0.
             Arch::AArch64 => {
+                let primitive =
+                    if bx.cx.has_lse { Primitive::LseCasp } else { Primitive::LdxpStxp };
                 return Some(AtomicCtx {
-                    primitive: Primitive::LdxpStxp,
+                    primitive,
                     int_type: bx.cx.u128_type,
                     signed_type: bx.cx.i128_type,
                     order,
@@ -280,6 +285,128 @@ fn ldxp_stxp_cmpxchg<'gcc>(
     (old, success)
 }
 
+/// aarch64 FEAT_LSE single-instruction 128-bit CAS via `casp`.
+///
+/// `casp` needs the expected/old value in an even:odd register pair and the desired
+/// value in another; we pin them to x0:x1 and x2:x3 (like the kernel does), which is
+/// the standard way to express the pair requirement in inline asm. The ordering
+/// suffix (`casp`/`caspa`/`caspl`/`caspal`) is chosen from `ctx.order`.
+fn casp_cmpxchg<'gcc>(
+    bx: &mut Builder<'_, 'gcc, '_>,
+    ctx: AtomicCtx<'gcc>,
+    ptr: RValue<'gcc>,
+    expected: RValue<'gcc>,
+    desired: RValue<'gcc>,
+) -> (RValue<'gcc>, RValue<'gcc>) {
+    let func = bx.current_func();
+    let variant = match ctx.order {
+        AtomicOrdering::Relaxed => "casp",
+        AtomicOrdering::Acquire => "caspa",
+        AtomicOrdering::Release => "caspl",
+        AtomicOrdering::AcqRel | AtomicOrdering::SeqCst => "caspal",
+    };
+
+    let expected_low = assign_temp(bx, low_half(bx, expected));
+    let expected_high = assign_temp(bx, high_half(bx, expected));
+
+    // x0:x1 = expected on input, old on output; x2:x3 = desired.
+    let register = |bx: &mut Builder<'_, 'gcc, '_>, name, value| {
+        let local = func.new_local(bx.location, bx.cx.u64_type, name);
+        local.set_register_name(name);
+        bx.llbb().add_assignment(bx.location, local, value);
+        local
+    };
+    let x0 = register(bx, "x0", expected_low);
+    let x1 = register(bx, "x1", expected_high);
+    let x2 = register(bx, "x2", low_half(bx, desired));
+    let x3 = register(bx, "x3", high_half(bx, desired));
+    let address = bx.context.new_cast(bx.location, ptr, bx.cx.u128_type.make_pointer());
+
+    let asm = bx.llbb().add_extended_asm(bx.location, &format!("{variant} %0, %1, %2, %3, [%4]"));
+    asm.add_output_operand(None, "+r", x0);
+    asm.add_output_operand(None, "+r", x1);
+    asm.add_input_operand(None, "r", x2.to_rvalue());
+    asm.add_input_operand(None, "r", x3.to_rvalue());
+    asm.add_input_operand(None, "r", address);
+    asm.add_clobber("memory");
+    asm.set_volatile_flag(true);
+
+    let old = join_halves(bx, x0.to_rvalue(), x1.to_rvalue());
+    let low_equal =
+        bx.context.new_comparison(bx.location, ComparisonOp::Equals, x0.to_rvalue(), expected_low);
+    let high_equal =
+        bx.context.new_comparison(bx.location, ComparisonOp::Equals, x1.to_rvalue(), expected_high);
+    let success = bx.context.new_binary_op(
+        bx.location,
+        BinaryOp::LogicalAnd,
+        bx.cx.bool_type,
+        low_equal,
+        high_equal,
+    );
+    (old, success)
+}
+
+/// aarch64 FEAT_LSE2 single-copy-atomic 128-bit load via `ldp` (no write-back,
+/// unlike the exclusive/CAS load). A trailing barrier provides acquire/seq-cst.
+fn ldp_load<'gcc>(
+    bx: &mut Builder<'_, 'gcc, '_>,
+    ptr: RValue<'gcc>,
+    order: AtomicOrdering,
+) -> RValue<'gcc> {
+    let func = bx.current_func();
+    let low = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let high = bx.new_temp(func, bx.location, bx.cx.u64_type);
+    let address = bx.context.new_cast(bx.location, ptr, bx.cx.u128_type.make_pointer());
+    let barrier = match order {
+        AtomicOrdering::Acquire | AtomicOrdering::AcqRel | AtomicOrdering::SeqCst => "\n\tdmb ish",
+        _ => "",
+    };
+    let asm = bx.llbb().add_extended_asm(bx.location, &format!("ldp %0, %1, [%2]{barrier}"));
+    asm.add_output_operand(None, "=r", low);
+    asm.add_output_operand(None, "=r", high);
+    asm.add_input_operand(None, "r", address);
+    asm.add_clobber("memory");
+    asm.set_volatile_flag(true);
+    join_halves(bx, low.to_rvalue(), high.to_rvalue())
+}
+
+/// aarch64 FEAT_LSE2 single-copy-atomic 128-bit store via `stp`, with barriers for
+/// release/seq-cst ordering.
+fn stp_store<'gcc>(
+    bx: &mut Builder<'_, 'gcc, '_>,
+    value: RValue<'gcc>,
+    ptr: RValue<'gcc>,
+    order: AtomicOrdering,
+) {
+    let low = assign_temp(bx, low_half(bx, value));
+    let high = assign_temp(bx, high_half(bx, value));
+    let address = bx.context.new_cast(bx.location, ptr, bx.cx.u128_type.make_pointer());
+    let (pre, post) = match order {
+        AtomicOrdering::Release => ("dmb ish\n\t", ""),
+        AtomicOrdering::AcqRel | AtomicOrdering::SeqCst => ("dmb ish\n\t", "\n\tdmb ish"),
+        _ => ("", ""),
+    };
+    let asm = bx.llbb().add_extended_asm(bx.location, &format!("{pre}stp %0, %1, [%2]{post}"));
+    asm.add_input_operand(None, "r", low);
+    asm.add_input_operand(None, "r", high);
+    asm.add_input_operand(None, "r", address);
+    asm.add_clobber("memory");
+    asm.set_volatile_flag(true);
+}
+
+/// Whether a non-writing FEAT_LSE2 `ldp`/`stp` load/store applies to this context.
+fn use_lse2(bx: &Builder<'_, '_, '_>, ctx: AtomicCtx<'_>) -> bool {
+    bx.cx.has_lse2 && matches!(ctx.primitive, Primitive::LdxpStxp | Primitive::LseCasp)
+}
+
+/// Assign an rvalue to a fresh temporary and return the temporary's rvalue, so the
+/// value is computed once (gccjit rvalues are expressions).
+fn assign_temp<'gcc>(bx: &mut Builder<'_, 'gcc, '_>, value: RValue<'gcc>) -> RValue<'gcc> {
+    let temp = bx.new_temp(bx.current_func(), bx.location, value.get_type());
+    bx.llbb().add_assignment(bx.location, temp, value);
+    temp.to_rvalue()
+}
+
 /// `__sync_val_compare_and_swap_N`: GCC inlines a lock-free full-barrier CAS where
 /// the target supports it. Success is derived as `old == expected`, which is the
 /// correct compare-exchange semantics.
@@ -321,6 +448,7 @@ fn cmpxchg<'gcc>(
     match ctx.primitive {
         Primitive::Cmpxchg16b => cmpxchg16b(bx, ptr, expected, desired),
         Primitive::LdxpStxp => ldxp_stxp_cmpxchg(bx, ctx, ptr, expected, desired),
+        Primitive::LseCasp => casp_cmpxchg(bx, ctx, ptr, expected, desired),
         Primitive::Sync => sync_cmpxchg(bx, ctx, ptr, expected, desired),
     }
 }
@@ -367,9 +495,13 @@ pub fn atomic_load<'gcc>(
     size: Size,
 ) -> Option<RValue<'gcc>> {
     let ctx = atomic_ctx(bx, size, order)?;
-    // A load is a CAS of 0 with 0: it returns the current value, and only writes
-    // (the same 0) when the value already is 0. Requires writable memory, exactly
-    // as cg_llvm's inlined load does.
+    // FEAT_LSE2: a genuine non-writing atomic load via `ldp`.
+    if use_lse2(bx, ctx) {
+        return Some(bx.context.new_bitcast(bx.location, ldp_load(bx, ptr, order), ty));
+    }
+    // Otherwise a load is a CAS of 0 with 0: it returns the current value, and only
+    // writes (the same 0) when the value already is 0. Requires writable memory,
+    // exactly as cg_llvm's inlined load does.
     let zero = bx.context.new_rvalue_zero(ctx.int_type);
     let (value, _) = cmpxchg(bx, ctx, ptr, zero, zero);
     Some(bx.context.new_bitcast(bx.location, value, ty))
@@ -386,6 +518,11 @@ pub fn atomic_store<'gcc>(
         return false;
     };
     let value = bx.context.new_bitcast(bx.location, value, ctx.int_type);
+    // FEAT_LSE2: a direct atomic store via `stp` instead of a CAS loop.
+    if use_lse2(bx, ctx) {
+        stp_store(bx, value, ptr, order);
+        return true;
+    }
     cmpxchg_loop(bx, ctx, ptr, move |_bx, _old| value);
     true
 }
