@@ -122,6 +122,7 @@ pub struct ConfigInfo {
     pub no_default_features: bool,
     pub backend: Option<String>,
     pub features: Vec<String>,
+    pub use_llvm_sysroot: bool,
 }
 
 impl ConfigInfo {
@@ -394,11 +395,14 @@ impl ConfigInfo {
             // by its build system directly so no need to set it ourselves.
             rustflags.push(format!("-Zcodegen-backend={backend}"));
         } else {
-            rustflags.extend_from_slice(&[
-                "--sysroot".to_string(),
-                self.sysroot_path.clone(),
-                format!("-Zcodegen-backend={}", self.cg_backend_path),
-            ]);
+            if !self.use_llvm_sysroot {
+                rustflags.extend_from_slice(&["--sysroot".to_string(), self.sysroot_path.clone()]);
+            } else {
+                let libgccjit_path =
+                    Path::new(self.gcc_path.as_deref().unwrap()).join("libgccjit.so");
+                env.insert("CG_LIBGCCJIT_PATH".into(), libgccjit_path.display().to_string());
+            }
+            rustflags.push(format!("-Zcodegen-backend={}", self.cg_backend_path));
         }
 
         // This environment variable is useful in case we want to change options of rustc commands.

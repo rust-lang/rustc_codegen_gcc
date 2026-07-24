@@ -71,6 +71,7 @@ fn show_usage() {
 
     --features [arg]       : Add a new feature [arg]
     --use-system-gcc       : Use system installed libgccjit
+    --use-llvm-sysroot     : Use LLVM sysroot instead of the one compiled with `cg_gcc`
     --build-only           : Only build rustc_codegen_gcc then exits
     --nb-parts             : Used to split rustc_tests (for CI needs)
     --current-part         : Used with `--nb-parts`, allows you to specify which parts to test"#
@@ -132,6 +133,9 @@ impl TestArg {
                 }
                 "--keep-lto-tests" => {
                     test_arg.keep_lto_tests = true;
+                }
+                "--use-llvm-sysroot" => {
+                    test_arg.config_info.use_llvm_sysroot = true;
                 }
                 "--sysroot-features" => match args.next() {
                     Some(feature) if !feature.is_empty() => {
@@ -284,6 +288,9 @@ fn mini_tests(env: &Env, args: &TestArg) -> Result<(), String> {
 fn build_sysroot(env: &Env, args: &TestArg) -> Result<(), String> {
     // FIXME: create a function "display_if_not_quiet" or something along the line.
     println!("[BUILD] sysroot");
+    if !args.config_info.use_llvm_sysroot {
+        println!("`--use-llvm-sysroot` option was used, skipping sysroot build");
+    }
     let mut config = args.config_info.clone();
     config.features.extend(args.sysroot_features.iter().cloned());
     build::build_sysroot(env, &config)?;
@@ -631,8 +638,12 @@ fn asm_tests(env: &Env, args: &TestArg) -> Result<(), String> {
         if args.is_using_gcc_master_branch() { "" } else { " -Csymbol-mangling-version=v0" };
 
     let rustc_args = format!(
-        "-Zpanic-abort-tests -Zcodegen-backend={codegen_backend_path} --sysroot {} -Cpanic=abort{extra}",
-        args.config_info.sysroot_path
+        "-Zpanic-abort-tests -Zcodegen-backend={codegen_backend_path}{} -Cpanic=abort{extra}",
+        if args.config_info.use_llvm_sysroot {
+            String::new()
+        } else {
+            format!(" --sysroot {}", args.config_info.sysroot_path)
+        },
     );
 
     run_command_with_env(
@@ -1115,10 +1126,14 @@ where
         if args.is_using_gcc_master_branch() { "" } else { " -Csymbol-mangling-version=v0" };
 
     let rustc_args = format!(
-        "{test_flags} -Zcodegen-backend={backend} --sysroot {sysroot}{extra}",
+        "{test_flags} -Zcodegen-backend={backend}{sysroot}{extra}",
         test_flags = env.get("TEST_FLAGS").unwrap_or(&String::new()),
         backend = args.config_info.cg_backend_path,
-        sysroot = args.config_info.sysroot_path,
+        sysroot = if args.config_info.use_llvm_sysroot {
+            String::new()
+        } else {
+            format!(" --sysroot {}", args.config_info.sysroot_path)
+        },
         extra = extra,
     );
 

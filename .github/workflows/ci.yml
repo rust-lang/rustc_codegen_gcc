@@ -37,6 +37,10 @@ jobs:
           "--test-successful-rustc --nb-parts 2 --current-part 1",
           "--projects",
           "--gcc-asm-tests",
+          # With the LLVM sysroot now.
+          "--test-successful-rustc --nb-parts 2 --current-part 0 --use-llvm-sysroot",
+          "--test-successful-rustc --nb-parts 2 --current-part 1 --use-llvm-sysroot",
+          "--projects --use-llvm-sysroot",
         ]
 
     steps:
