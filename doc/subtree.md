@@ -1,7 +1,7 @@
 # git subtree sync
 
 `rustc_codegen_gcc` is a subtree of the rust compiler. As such, it needs to be
-sync from time to time to ensure changes that happened on their side are also
+synced from time to time to ensure changes that happened on their side are also
 included on our side.
 
 ### How to install a forked git-subtree
