@@ -1,5 +1,5 @@
 #[cfg(feature = "master")]
-use gccjit::{FnAttribute, ToRValue};
+use gccjit::{FnAttribute, ToRValue, VarAttribute};
 use gccjit::{Function, FunctionType, GlobalKind, LValue, RValue, Type};
 use rustc_codegen_ssa::traits::BaseTypeCodegenMethods;
 use rustc_middle::ty::Ty;
@@ -24,7 +24,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 global.set_tls_model(self.tls_model);
             }
             if let Some(link_section) = link_section {
-                global.set_link_section(link_section.as_str());
+                if cfg!(feature = "master") {
+                    global.add_attribute(VarAttribute::Section(link_section.as_str()));
+                } else {
+                    global.set_link_section(link_section.as_str());
+                }
             }
             global
         } else {
@@ -73,7 +77,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             global.set_tls_model(self.tls_model);
         }
         if let Some(link_section) = link_section {
-            global.set_link_section(link_section.as_str());
+            if cfg!(feature = "master") {
+                global.add_attribute(VarAttribute::Section(link_section.as_str()));
+            } else {
+                global.set_link_section(link_section.as_str());
+            }
         }
         let global_address = global.get_address(None);
         self.globals.borrow_mut().insert(name.to_string(), global_address);
