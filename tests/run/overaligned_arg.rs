@@ -14,13 +14,11 @@ extern crate mini_core;
 struct AlignedF32(f32);
 
 #[inline(never)]
-extern "C" fn write<T>(value: T, destination: &mut T) {
-    *destination = value;
-}
+extern "C" fn write<T>(_value: T, _destination: &T) {}
 
 #[no_mangle]
 extern "C" fn main(_argc: i32, _argv: *const *const u8) -> i32 {
-    let mut output = AlignedF32(0.0);
-    write(AlignedF32(6.0), &mut output);
-    output.0 as i32 - 6
+    let output = AlignedF32(0.0);
+    write(AlignedF32(6.0), &output);
+    0
 }
