@@ -190,13 +190,32 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             return Cow::Borrowed(args);
         }
 
+        let on_stack_param_indices =
+            self.on_stack_function_params.borrow().get(&func).cloned().unwrap_or_default();
         let casted_args: Vec<_> = param_types
             .into_iter()
             .zip(args.iter())
-            .map(|(expected_ty, &actual_val)| {
+            .enumerate()
+            .map(|(index, (expected_ty, &actual_val))| {
                 let actual_ty = actual_val.get_type();
                 if expected_ty != actual_ty {
-                    self.bitcast(actual_val, expected_ty)
+                    if on_stack_param_indices.contains(&index) {
+                        // The ABI passes this argument by value, while rustc gives us a pointer to
+                        // its stack slot. Cast the pointer when the slot uses a different backend
+                        // type, then load the value expected by the function parameter.
+                        if let Some(pointee_ty) = actual_ty.get_pointee()
+                            && pointee_ty != expected_ty
+                        {
+                            self.context
+                                .new_cast(self.location, actual_val, expected_ty.make_pointer())
+                                .dereference(self.location)
+                                .to_rvalue()
+                        } else {
+                            actual_val.dereference(self.location).to_rvalue()
+                        }
+                    } else {
+                        self.bitcast(actual_val, expected_ty)
+                    }
                 } else {
                     actual_val
                 }
