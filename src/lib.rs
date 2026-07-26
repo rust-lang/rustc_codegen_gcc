@@ -101,7 +101,7 @@ use rustc_target::spec::RelocModel;
 use tempfile::TempDir;
 
 use crate::back::lto::ModuleBuffer;
-use crate::gcc_util::{target_cpu, to_gcc_features};
+use crate::gcc_util::{target_cpu, to_gcc_features, to_gcc_target_info_feature};
 
 pub struct PrintOnPanic<F: Fn() -> String>(pub F);
 
@@ -516,7 +516,8 @@ fn target_config(sess: &Session, target_info: &LockedTargetInfo) -> TargetConfig
         sess,
         |feature| to_gcc_features(sess, feature),
         |feature| {
-            target_info.cpu_supports(feature)
+            let gccjit_feature_name = to_gcc_target_info_feature(sess, feature);
+            target_info.cpu_supports(gccjit_feature_name)
             // cSpell:disable
             /*
               adx, aes, avx, avx2, avx512bf16, avx512bitalg, avx512bw, avx512cd, avx512dq, avx512er, avx512f, avx512fp16, avx512ifma,
