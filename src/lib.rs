@@ -232,6 +232,8 @@ impl CodegenBackend for GccCodegenBackend {
 
         #[cfg(feature = "master")]
         {
+            use crate::gcc_util::add_baseline_flags;
+
             gccjit::set_lang_name(c"GNU Rust");
 
             let target_cpu = target_cpu(sess);
@@ -241,6 +243,8 @@ impl CodegenBackend for GccCodegenBackend {
             if target_cpu != "generic" {
                 context.add_command_line_option(format!("-march={}", target_cpu));
             }
+
+            add_baseline_flags(&context, sess);
 
             *self.target_info.info.lock().expect("lock") =
                 IntoDynSyncSend(Some(context.get_target_info()));
