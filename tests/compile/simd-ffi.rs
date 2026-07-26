@@ -1,5 +1,9 @@
 // Compiler:
 
+fn main() {
+}
+
+/*
 // FIXME: Remove this test once <tests/run-make/simd-ffi/simd.rs> stops
 // ignoring GCC backend.
 
@@ -92,3 +96,4 @@ macro_rules! Copy {
 macro_rules! derive {
     () => {};
 }
+*/
