@@ -32,6 +32,7 @@ fn get_runners() -> Runners {
     runners.insert("--projects", ("Run the tests of popular crates", test_projects));
     runners.insert("--test-libcore", ("Run libcore tests", test_libcore));
     runners.insert("--test-release-libcore", ("Run libcore tests", test_release_libcore));
+    runners.insert("--test-libcore-doctests", ("Run libcore doc-tests", test_libcore_doctests));
     runners.insert("--alloc-tests", ("Run alloc tests", test_alloc));
     runners.insert("--clean", ("Empty cargo target directory", clean));
     runners.insert("--build-sysroot", ("Build sysroot", build_sysroot));
@@ -784,6 +785,16 @@ fn test_libcore_inner(env: &Env, args: &TestArg, release: bool) -> Result<(), St
         command.push(&"--release");
     }
     run_cargo_command(&command, Some(&path), env, args)?;
+    Ok(())
+}
+
+fn test_libcore_doctests(env: &Env, args: &TestArg) -> Result<(), String> {
+    // FIXME: create a function "display_if_not_quiet" or something along the line.
+    println!("[TEST] libcore doctests");
+    let path = get_sysroot_dir().join("sysroot_src/library/core");
+    let _ = remove_dir_all(path.join("target"));
+    // FIXME(antoyo): run in release mode when we fix the failures.
+    run_cargo_command(&[&"test"], Some(&path), env, args)?;
     Ok(())
 }
 
