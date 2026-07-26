@@ -1,5 +1,5 @@
 #[cfg(feature = "master")]
-use gccjit::FnAttribute;
+use gccjit::{FnAttribute, TypeAttribute};
 use gccjit::{ToLValue, ToRValue, Type};
 #[cfg(feature = "master")]
 use rustc_abi::{ArmCall, CanonAbi, InterruptKind, X86Call};
@@ -187,7 +187,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     let ty = cast.gcc_type(cx);
                     apply_attrs(ty, &cast.attrs, argument_tys.len())
                 }
-                PassMode::Indirect { attrs: _, meta_attrs: None, on_stack: true } => {
+                PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
                     let x86_interrupt_first_arg = {
                         #[cfg(feature = "master")]
                         {
@@ -211,7 +211,14 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     } else {
                         // This is a "byval" argument, so we don't apply the `restrict` attribute on it.
                         on_stack_param_indices.insert(argument_tys.len());
-                        arg.layout.gcc_type(cx)
+                        let ty = arg.layout.gcc_type(cx);
+                        #[cfg(feature = "master")]
+                        if let Some(align) = attrs.pointee_align {
+                            ty.add_attribute(TypeAttribute::Aligned(align.bytes() as u8));
+                        }
+                        #[cfg(not(feature = "master"))]
+                        let _ = attrs;
+                        ty
                     }
                 }
                 PassMode::Direct(attrs) => {
