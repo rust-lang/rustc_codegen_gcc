@@ -354,28 +354,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         call
     }
 
-    /// If the current block belongs to a cleanup region, adopt `targets`
-    /// (its cleanup successors) into the same region. Following the cleanup
-    /// CFG edges this way grows the region to cover the whole cleanup
-    /// subgraph, which is then emitted as one fall-through finally body.
-    #[cfg(feature = "master")]
-    fn extend_cleanup_region(&self, targets: &[Block<'gcc>]) {
-        let region = self.cleanup_regions.borrow().get(&self.block).copied();
-        if let Some(region) = region {
-            let mut regions = self.cleanup_regions.borrow_mut();
-            for &target in targets {
-                if !regions.contains_key(&target) {
-                    region.add_block(target);
-                    regions.insert(target, region);
-                }
-            }
-        }
-    }
-
-    #[cfg(not(feature = "master"))]
-    fn extend_cleanup_region(&self, _targets: &[Block<'gcc>]) {
-    }
-
     pub fn function_call(
         &mut self,
         func: Function<'gcc>,
