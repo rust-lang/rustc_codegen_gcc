@@ -686,14 +686,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         _funclet: Option<&Funclet>,
         instance: Option<Instance<'tcx>>,
     ) -> RValue<'gcc> {
-        let try_block = self.current_func().new_block("try");
+        let current_func = self.current_func();
+        let try_block = current_func.new_block("try");
 
         let current_block = self.block;
         self.block = try_block;
         let call = self.call(typ, fn_attrs, fn_abi, func, args, None, instance); // FIXME(antoyo): use funclet here?
         self.block = current_block;
 
-        let return_value = self.new_temp(self.current_func(), self.location, call.get_type());
+        let return_value = self.new_temp(current_func, self.location, call.get_type());
 
         try_block.add_assignment(self.location, return_value, call);
 
@@ -704,19 +705,23 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             // body resumes (GCC synthesizes a context-sensitive RESX). The try
             // region is just this call; the cleanup region's blocks are filled
             // in from MIR at finalization (see `populate_cleanup_regions`).
-            let enclosing_func = self.current_func();
-            let try_region = enclosing_func.new_region(self.location);
+            let try_region = current_func.new_region(self.location);
             try_region.add_block(try_block);
-            let cleanup_region = enclosing_func.new_region(self.location);
+            let cleanup_region = current_func.new_region(self.location);
             self.block.add_cleanup(self.location, try_region, cleanup_region);
             self.cx.pending_cleanups.borrow_mut().push(PendingCleanup {
-                func: enclosing_func,
+                func: current_func,
                 region: cleanup_region,
                 landing_pad: catch,
             });
         } else {
             // Edge to a catch_unwind catch or a terminate (abort) handler.
-            self.block.add_try_catch(self.location, try_block, catch);
+            let try_region = current_func.new_region(self.location);
+            try_region.add_block(try_block);
+            let catch_region = current_func.new_region(self.location);
+            catch_region.add_block(catch);
+            // FIXME: seems like this doesn't add the blocks.
+            self.block.add_try_catch(self.location, try_region, catch_region);
         }
 
         self.block.end_with_jump(self.location, then);
