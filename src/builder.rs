@@ -717,9 +717,13 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         } else {
             // Edge to a catch_unwind catch or a terminate (abort) handler.
             let try_region = current_func.new_region(self.location);
-            try_region.add_block(try_block);
+            for clone in gccjit::clone_blocks(&[try_block]) {
+                try_region.add_block(clone);
+            }
             let catch_region = current_func.new_region(self.location);
-            catch_region.add_block(catch);
+            for clone in gccjit::clone_blocks(&[catch]) {
+                catch_region.add_block(clone);
+            }
             // FIXME: seems like this doesn't add the blocks.
             self.block.add_try_catch(self.location, try_region, catch_region);
         }
