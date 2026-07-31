@@ -687,7 +687,8 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         instance: Option<Instance<'tcx>>,
     ) -> RValue<'gcc> {
         let current_func = self.current_func();
-        let try_block = current_func.new_block("try");
+        let try_region = current_func.new_region(self.location);
+        let try_block = try_region.new_block("try");
 
         let current_block = self.block;
         self.block = try_block;
@@ -716,15 +717,10 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
             });
         } else {
             // Edge to a catch_unwind catch or a terminate (abort) handler.
-            let try_region = current_func.new_region(self.location);
-            for clone in gccjit::clone_blocks(&[try_block]) {
-                try_region.add_block(clone);
-            }
             let catch_region = current_func.new_region(self.location);
             for clone in gccjit::clone_blocks(&[catch]) {
                 catch_region.add_block(clone);
             }
-            // FIXME: seems like this doesn't add the blocks.
             self.block.add_try_catch(self.location, try_region, catch_region);
         }
 
