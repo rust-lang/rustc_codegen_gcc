@@ -386,96 +386,97 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // again by a later call.
         let pending = std::mem::take(&mut *self.pending_cleanups.borrow_mut());
 
-        let targets = self.landing_pad_targets.borrow();
-        let mir_blocks = self.mir_blocks.borrow();
-        let reverse = self.function_instances_reverse.borrow();
+        {
+            let targets = self.landing_pad_targets.borrow();
+            let mir_blocks = self.mir_blocks.borrow();
+            let reverse = self.function_instances_reverse.borrow();
 
-        // Functions whose `"bbN"` block map has already been checked against
-        // their MIR (the check only needs to run once per function).
-        let mut validated = FxHashSet::default();
+            // Functions whose `"bbN"` block map has already been checked against
+            // their MIR (the check only needs to run once per function).
+            let mut validated = FxHashSet::default();
 
-        for cleanup in pending.iter() {
-            // None of these lookups may legitimately fail: each one is an
-            // invariant established when the cleanup was recorded. Failing
-            // loudly matters, because silently skipping a cleanup leaves its
-            // region empty, which drops the destructors from the unwind path —
-            // a miscompilation rather than an error. In particular this is how
-            // a change to the `"bbN"` naming in `rustc_codegen_ssa`'s
-            // `try_llbb` surfaces (see `parse_mir_block_name`).
-            let Some(&entry_block) = targets.get(&cleanup.landing_pad) else {
-                bug!("cleanup landing pad has no recorded branch target");
-            };
-            let Some(maps) = mir_blocks.get(&cleanup.func) else {
-                bug!("no MIR block map for a function with a pending cleanup");
-            };
-            let Some(&entry_bb) = maps.block_to_bb.get(&entry_block) else {
-                bug!("cleanup entry block was not recorded as a MIR block");
-            };
-            let Some(&instance) = reverse.get(&cleanup.func) else {
-                bug!("no instance recorded for a function with a pending cleanup");
-            };
-            let mir = self.tcx.instance_mir(instance.def);
+            for cleanup in pending.iter() {
+                // None of these lookups may legitimately fail: each one is an
+                // invariant established when the cleanup was recorded. Failing
+                // loudly matters, because silently skipping a cleanup leaves its
+                // region empty, which drops the destructors from the unwind path —
+                // a miscompilation rather than an error. In particular this is how
+                // a change to the `"bbN"` naming in `rustc_codegen_ssa`'s
+                // `try_llbb` surfaces (see `parse_mir_block_name`).
+                let Some(&entry_block) = targets.get(&cleanup.landing_pad) else {
+                    bug!("cleanup landing pad has no recorded branch target");
+                };
+                let Some(maps) = mir_blocks.get(&cleanup.func) else {
+                    bug!("no MIR block map for a function with a pending cleanup");
+                };
+                let Some(&entry_bb) = maps.block_to_bb.get(&entry_block) else {
+                    bug!("cleanup entry block was not recorded as a MIR block");
+                };
+                let Some(&instance) = reverse.get(&cleanup.func) else {
+                    bug!("no instance recorded for a function with a pending cleanup");
+                };
+                let mir = self.tcx.instance_mir(instance.def);
 
-            // Check the `"bbN"` naming assumption once per function: if the
-            // recovered indexes do not address the MIR we re-fetch here, the
-            // reconstruction below would walk the wrong graph and build a
-            // plausible-looking but wrong cleanup region.
-            if validated.insert(cleanup.func) {
-                if maps.bb_to_block.is_empty() {
-                    bug!(
-                        "a function with a pending cleanup recorded no MIR blocks: \
+                // Check the `"bbN"` naming assumption once per function: if the
+                // recovered indexes do not address the MIR we re-fetch here, the
+                // reconstruction below would walk the wrong graph and build a
+                // plausible-looking but wrong cleanup region.
+                if validated.insert(cleanup.func) {
+                    if maps.bb_to_block.is_empty() {
+                        bug!(
+                            "a function with a pending cleanup recorded no MIR blocks: \
                          `parse_mir_block_name` recognized none of the block names \
                          rustc_codegen_ssa's `try_llbb` produced"
-                    );
-                }
-                let block_count = mir.basic_blocks.len();
-                for &bb in maps.bb_to_block.keys() {
-                    if bb.as_usize() >= block_count {
-                        bug!(
-                            "recovered MIR block {bb:?} is out of range for a body with \
+                     );
+                    }
+                    let block_count = mir.basic_blocks.len();
+                    for &bb in maps.bb_to_block.keys() {
+                        if bb.as_usize() >= block_count {
+                            bug!(
+                                "recovered MIR block {bb:?} is out of range for a body with \
                              {block_count} blocks: the block naming in \
                              rustc_codegen_ssa's `try_llbb` no longer matches \
                              `parse_mir_block_name`"
-                        );
+                         );
+                        }
                     }
+                }
+
+                // The landing pad is the region's entry (it jumps to `entry_bb`),
+                // followed by the cleanup-block closure reachable from `entry_bb`.
+                let mut blocks = vec![cleanup.landing_pad];
+                let mut visited = FxHashSet::default();
+                let mut stack = vec![entry_bb];
+                while let Some(bb) = stack.pop() {
+                    if !visited.insert(bb) {
+                        continue;
+                    }
+                    // A block may have been elided (unreachable); only collect
+                    // emitted ones, but keep walking the MIR graph regardless.
+                    if let Some(&block) = maps.bb_to_block.get(&bb) {
+                        blocks.push(block);
+                    }
+                    for succ in mir.basic_blocks[bb].terminator().successors() {
+                        if mir.basic_blocks[succ].is_cleanup {
+                            stack.push(succ);
+                        }
+                    }
+                }
+
+                // Clone the closure so each unwind edge gets its own self-contained
+                // copy (the originals stay as top-level blocks), then adopt the
+                // clones into the region as its body (the first clone — of the
+                // landing pad — is the region's entry).
+                for clone in gccjit::clone_blocks(&blocks) {
+                    cleanup.region.add_block(clone);
                 }
             }
 
-            // The landing pad is the region's entry (it jumps to `entry_bb`),
-            // followed by the cleanup-block closure reachable from `entry_bb`.
-            let mut blocks = vec![cleanup.landing_pad];
-            let mut visited = FxHashSet::default();
-            let mut stack = vec![entry_bb];
-            while let Some(bb) = stack.pop() {
-                if !visited.insert(bb) {
-                    continue;
-                }
-                // A block may have been elided (unreachable); only collect
-                // emitted ones, but keep walking the MIR graph regardless.
-                if let Some(&block) = maps.bb_to_block.get(&bb) {
-                    blocks.push(block);
-                }
-                for succ in mir.basic_blocks[bb].terminator().successors() {
-                    if mir.basic_blocks[succ].is_cleanup {
-                        stack.push(succ);
-                    }
-                }
-            }
-
-            // Clone the closure so each unwind edge gets its own self-contained
-            // copy (the originals stay as top-level blocks), then adopt the
-            // clones into the region as its body (the first clone — of the
-            // landing pad — is the region's entry).
-            for clone in gccjit::clone_blocks(&blocks) {
-                cleanup.region.add_block(clone);
-            }
         }
-
         // These maps describe blocks of functions that are now fully codegened
         // and whose cleanups have just been built, so drop them instead of
         // letting them grow with every function in the codegen unit. The
         // `"bbN"` map in particular holds an entry per MIR block.
-        drop((targets, mir_blocks, reverse));
         self.mir_blocks.borrow_mut().clear();
         self.landing_pads.borrow_mut().clear();
         self.landing_pad_targets.borrow_mut().clear();
