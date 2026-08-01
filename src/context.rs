@@ -358,9 +358,14 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         cx
     }
 
-    /// Fill in the member blocks of every pending cleanup region. Called once
-    /// after all functions in the codegen unit have been defined, so that every
-    /// MIR block referenced by a cleanup subgraph has an emitted gccjit block.
+    /// Fill in the member blocks of every pending cleanup region, then release
+    /// the per-function state used to reconstruct them.
+    ///
+    /// Called after each function is defined, at which point that function's
+    /// blocks all exist — a cleanup subgraph never crosses a function boundary,
+    /// so nothing is needed from a function that has not been defined yet.
+    /// Processing eagerly keeps the reconstruction state proportional to a
+    /// single function rather than to the whole codegen unit.
     ///
     /// Each cleanup region is made *self-contained*: it holds a clone of the
     /// landing pad plus a clone of every cleanup block reachable from the
@@ -376,7 +381,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     /// avoids reconstructing scopes from the emitted CFG.
     #[cfg(feature = "master")]
     pub fn populate_cleanup_regions(&self) {
-        let pending = self.pending_cleanups.borrow();
+        // Take the pending cleanups: everything recorded so far belongs to
+        // functions that are now fully codegened, and must not be processed
+        // again by a later call.
+        let pending = std::mem::take(&mut *self.pending_cleanups.borrow_mut());
+
         let targets = self.landing_pad_targets.borrow();
         let mir_blocks = self.mir_blocks.borrow();
         let reverse = self.function_instances_reverse.borrow();
@@ -412,6 +421,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             // reconstruction below would walk the wrong graph and build a
             // plausible-looking but wrong cleanup region.
             if validated.insert(cleanup.func) {
+                if maps.bb_to_block.is_empty() {
+                    bug!(
+                        "a function with a pending cleanup recorded no MIR blocks: \
+                         `parse_mir_block_name` recognized none of the block names \
+                         rustc_codegen_ssa's `try_llbb` produced"
+                    );
+                }
                 let block_count = mir.basic_blocks.len();
                 for &bb in maps.bb_to_block.keys() {
                     if bb.as_usize() >= block_count {
@@ -454,6 +470,15 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 cleanup.region.add_block(clone);
             }
         }
+
+        // These maps describe blocks of functions that are now fully codegened
+        // and whose cleanups have just been built, so drop them instead of
+        // letting them grow with every function in the codegen unit. The
+        // `"bbN"` map in particular holds an entry per MIR block.
+        drop((targets, mir_blocks, reverse));
+        self.mir_blocks.borrow_mut().clear();
+        self.landing_pads.borrow_mut().clear();
+        self.landing_pad_targets.borrow_mut().clear();
     }
 
     pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {

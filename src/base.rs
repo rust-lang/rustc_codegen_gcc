@@ -149,12 +149,13 @@ pub fn compile_codegen_unit(
             // ... and now that we have everything pre-defined, fill out those definitions.
             for &(mono_item, item_data) in &mono_items {
                 mono_item.define::<Builder<'_, '_, '_>>(&mut cx, cgu_name.as_str(), item_data);
-            }
 
-            // Now that every function's blocks exist, fill in the cleanup regions
-            // reconstructed from MIR while lowering `invoke` (structured EH).
-            #[cfg(feature = "master")]
-            cx.populate_cleanup_regions();
+                // Now that this function's blocks all exist, fill in the cleanup
+                // regions reconstructed from MIR while lowering its `invoke`s
+                // (structured EH), and release the state used to do so.
+                #[cfg(feature = "master")]
+                cx.populate_cleanup_regions();
+            }
 
             // If this codegen unit contains the main function, also create the
             // wrapper here
