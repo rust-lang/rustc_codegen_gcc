@@ -14,7 +14,7 @@ use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::BasicBlock;
 use rustc_middle::mir::interpret::Allocation;
 use rustc_middle::mono::CodegenUnit;
-use rustc_middle::span_bug;
+use rustc_middle::{bug, span_bug};
 use rustc_middle::ty::layout::{
     FnAbiError, FnAbiOf, FnAbiOfHelpers, FnAbiRequest, HasTyCtxt, HasTypingEnv, LayoutError,
     LayoutOfHelpers,
@@ -381,12 +381,49 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let mir_blocks = self.mir_blocks.borrow();
         let reverse = self.function_instances_reverse.borrow();
 
+        // Functions whose `"bbN"` block map has already been checked against
+        // their MIR (the check only needs to run once per function).
+        let mut validated = FxHashSet::default();
+
         for cleanup in pending.iter() {
-            let Some(&entry_block) = targets.get(&cleanup.landing_pad) else { continue };
-            let Some(maps) = mir_blocks.get(&cleanup.func) else { continue };
-            let Some(&entry_bb) = maps.block_to_bb.get(&entry_block) else { continue };
-            let Some(&instance) = reverse.get(&cleanup.func) else { continue };
+            // None of these lookups may legitimately fail: each one is an
+            // invariant established when the cleanup was recorded. Failing
+            // loudly matters, because silently skipping a cleanup leaves its
+            // region empty, which drops the destructors from the unwind path —
+            // a miscompilation rather than an error. In particular this is how
+            // a change to the `"bbN"` naming in `rustc_codegen_ssa`'s
+            // `try_llbb` surfaces (see `parse_mir_block_name`).
+            let Some(&entry_block) = targets.get(&cleanup.landing_pad) else {
+                bug!("cleanup landing pad has no recorded branch target");
+            };
+            let Some(maps) = mir_blocks.get(&cleanup.func) else {
+                bug!("no MIR block map for a function with a pending cleanup");
+            };
+            let Some(&entry_bb) = maps.block_to_bb.get(&entry_block) else {
+                bug!("cleanup entry block was not recorded as a MIR block");
+            };
+            let Some(&instance) = reverse.get(&cleanup.func) else {
+                bug!("no instance recorded for a function with a pending cleanup");
+            };
             let mir = self.tcx.instance_mir(instance.def);
+
+            // Check the `"bbN"` naming assumption once per function: if the
+            // recovered indexes do not address the MIR we re-fetch here, the
+            // reconstruction below would walk the wrong graph and build a
+            // plausible-looking but wrong cleanup region.
+            if validated.insert(cleanup.func) {
+                let block_count = mir.basic_blocks.len();
+                for &bb in maps.bb_to_block.keys() {
+                    if bb.as_usize() >= block_count {
+                        bug!(
+                            "recovered MIR block {bb:?} is out of range for a body with \
+                             {block_count} blocks: the block naming in \
+                             rustc_codegen_ssa's `try_llbb` no longer matches \
+                             `parse_mir_block_name`"
+                        );
+                    }
+                }
+            }
 
             // The landing pad is the region's entry (it jumps to `entry_bb`),
             // followed by the cleanup-block closure reachable from `entry_bb`.

@@ -52,15 +52,40 @@ enum ExtremumOperation {
 }
 
 /// Recover the MIR basic block a gccjit block corresponds to from its name.
-/// The SSA driver names MIR blocks `"bbN"` (via `format!("{bb:?}")`); auxiliary
-/// blocks cg_gcc creates (`"try"`, `"catch"`, `"cleanup"`, ...) do not match.
+/// Recover the MIR `BasicBlock` a gccjit block corresponds to from its name.
+///
+/// This relies on an implementation detail of `rustc_codegen_ssa` that is not
+/// part of any public API: `FunctionCx::try_llbb`
+/// (`compiler/rustc_codegen_ssa/src/mir/block.rs`) creates each MIR block with
+/// `Bx::append_block(.., &format!("{bb:?}"))`, and `mir::BasicBlock` is a
+/// `newtype_index!` declared `#[debug_format = "bb{}"]`
+/// (`compiler/rustc_middle/src/mir/mod.rs`). So the name is exactly `"bb"`
+/// followed by the block's index in canonical decimal. Keep this in sync with
+/// those two places; the proper fix is for the driver to hand the backend the
+/// correspondence directly, which would remove this function entirely.
+///
+/// Only that exact form is accepted, so no other block can be mistaken for a
+/// MIR block: neither the driver's own auxiliary blocks (`"start"`,
+/// `"cleanup"`, `"terminate"`, `"unreachable"`, `"funclet_bb3"`, ...) nor the
+/// ones cg_gcc creates (`"try"`, `"catch"`, `"case"`, `"b0"`, ...). If rustc
+/// ever changes the naming, every name stops parsing and
+/// `CodegenCx::populate_cleanup_regions` reports it instead of silently
+/// building empty cleanup regions.
 #[cfg(feature = "master")]
 fn parse_mir_block_name(name: &str) -> Option<BasicBlock> {
     let digits = name.strip_prefix("bb")?;
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+    // Accept only the canonical rendering of the index: at least one digit, no
+    // sign, and no redundant leading zeros (so `"bb+7"` and `"bb007"` are
+    // rejected even though they would `parse()` fine).
+    if digits.is_empty()
+        || !digits.bytes().all(|byte| byte.is_ascii_digit())
+        || (digits.len() > 1 && digits.starts_with('0'))
+    {
         return None;
     }
-    Some(BasicBlock::from_usize(digits.parse().ok()?))
+    let index: u32 = digits.parse().ok()?;
+    // `BasicBlock::from_u32` asserts on an out-of-range index.
+    (index <= BasicBlock::MAX_AS_U32).then(|| BasicBlock::from_u32(index))
 }
 
 pub struct Builder<'a, 'gcc, 'tcx> {
@@ -588,6 +613,15 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     }
 
     fn append_sibling_block(&mut self, name: &str) -> Block<'gcc> {
+        // Auxiliary blocks must not be named like a MIR block, or the cleanup
+        // reconstruction would mistake one for the other (see
+        // `parse_mir_block_name`).
+        #[cfg(feature = "master")]
+        debug_assert!(
+            parse_mir_block_name(name).is_none(),
+            "auxiliary block name `{name}` collides with the `bbN` names that \
+             rustc_codegen_ssa gives MIR blocks"
+        );
         let func = self.current_func();
         func.new_block(name)
     }
