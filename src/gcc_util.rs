@@ -193,6 +193,8 @@ pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
     context.add_command_line_option("-fno-strict-aliasing");
     // NOTE: Rust relies on LLVM doing wrapping on overflow.
     context.add_command_line_option("-fwrapv");
+    // NOTE: This is needed to hide a warning caused by the alignment fix on byval arguments.
+    context.add_command_line_option("-Wno-psabi");
 
     if let Some(model) = sess.code_model() {
         use rustc_target::spec::CodeModel;
