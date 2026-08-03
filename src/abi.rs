@@ -214,7 +214,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                         let ty = arg.layout.gcc_type(cx);
                         #[cfg(feature = "master")]
                         if let Some(align) = attrs.pointee_align {
-                            ty.add_attribute(TypeAttribute::Aligned(align.bytes() as u8));
+                            ty.add_attribute(TypeAttribute::Aligned(align.bytes() as u32));
                         }
                         #[cfg(not(feature = "master"))]
                         let _ = attrs;
