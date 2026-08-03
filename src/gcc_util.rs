@@ -157,8 +157,9 @@ pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
             version,
         ));
     }
-    // FIXME(antoyo): check if this should only be added when using -Cforce-unwind-tables=n.
-    context.add_command_line_option("-fno-asynchronous-unwind-tables");
+    if !sess.must_emit_unwind_tables() {
+        context.add_command_line_option("-fno-asynchronous-unwind-tables");
+    }
 
     if sess.panic_strategy().unwinds() {
         context.add_command_line_option("-fexceptions");
