@@ -10,11 +10,9 @@ use rustc_codegen_ssa::diagnostics as ssa_errors;
 use rustc_codegen_ssa::traits::{BackendTypes, BaseTypeCodegenMethods, MiscCodegenMethods};
 use rustc_data_structures::base_n::{ALPHANUMERIC_ONLY, ToBaseN};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
-#[cfg(feature = "master")]
-use rustc_middle::mir::BasicBlock;
 use rustc_middle::mir::interpret::Allocation;
 use rustc_middle::mono::CodegenUnit;
-use rustc_middle::{bug, span_bug};
+use rustc_middle::span_bug;
 use rustc_middle::ty::layout::{
     FnAbiError, FnAbiOf, FnAbiOfHelpers, FnAbiRequest, HasTyCtxt, HasTypingEnv, LayoutError,
     LayoutOfHelpers,
@@ -31,24 +29,12 @@ use crate::abi::conv_to_fn_attribute;
 use crate::callee::get_fn;
 use crate::common::SignType;
 
-/// Per-function correspondence between MIR basic blocks and the gccjit blocks
-/// the SSA driver names `"bbN"`. Used to reconstruct a cleanup's block subgraph
-/// from MIR when lowering `invoke` to a structured cleanup (see
-/// `CodegenCx::populate_cleanup_regions`).
-#[cfg(feature = "master")]
-#[derive(Default)]
-pub struct MirBlockMap<'gcc> {
-    pub bb_to_block: FxHashMap<BasicBlock, Block<'gcc>>,
-    pub block_to_bb: FxHashMap<Block<'gcc>, BasicBlock>,
-}
-
-/// A cleanup region whose member blocks are filled in at finalization, once
-/// every MIR block has been codegened. `landing_pad` is the block the SSA
-/// driver created for the unwind edge; it jumps to the cleanup's entry MIR
-/// block, from which the cleanup subgraph is reconstructed.
+/// A cleanup region whose member blocks are filled in once the function is
+/// fully codegened. `landing_pad` is the block the SSA driver created for the
+/// unwind edge; it is the entry of the cleanup's block subgraph, which
+/// `CodegenCx::populate_cleanup_regions` walks to build the region body.
 #[cfg(feature = "master")]
 pub struct PendingCleanup<'gcc> {
-    pub func: Function<'gcc>,
     pub region: Region<'gcc>,
     pub landing_pad: Block<'gcc>,
 }
@@ -149,21 +135,11 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
-    /// Reverse of `function_instances`: lets the cleanup reconstruction recover
-    /// the MIR of the function currently being codegened.
-    #[cfg(feature = "master")]
-    pub function_instances_reverse: RefCell<FxHashMap<Function<'gcc>, Instance<'tcx>>>,
-    /// Per-function `"bbN"` <-> gccjit block correspondence.
-    #[cfg(feature = "master")]
-    pub mir_blocks: RefCell<FxHashMap<Function<'gcc>, MirBlockMap<'gcc>>>,
     /// Blocks that are cleanup landing pads (seeded by `cleanup_landing_pad`),
     /// so `invoke` can tell an unwind edge into a cleanup from a catch/terminate.
     #[cfg(feature = "master")]
     pub landing_pads: RefCell<FxHashSet<Block<'gcc>>>,
-    /// The cleanup-entry block each landing pad jumps to (recorded in `br`).
-    #[cfg(feature = "master")]
-    pub landing_pad_targets: RefCell<FxHashMap<Block<'gcc>, Block<'gcc>>>,
-    /// Cleanup regions to be filled in once all MIR blocks exist
+    /// Cleanup regions to be filled in once the function is fully codegened
     /// (`populate_cleanup_regions`).
     #[cfg(feature = "master")]
     pub pending_cleanups: RefCell<Vec<PendingCleanup<'gcc>>>,
@@ -343,13 +319,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             rust_try_fn: Cell::new(None),
             pointee_infos: Default::default(),
             #[cfg(feature = "master")]
-            function_instances_reverse: Default::default(),
-            #[cfg(feature = "master")]
-            mir_blocks: Default::default(),
-            #[cfg(feature = "master")]
             landing_pads: Default::default(),
-            #[cfg(feature = "master")]
-            landing_pad_targets: Default::default(),
             #[cfg(feature = "master")]
             pending_cleanups: Default::default(),
         };
@@ -359,26 +329,37 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     }
 
     /// Fill in the member blocks of every pending cleanup region, then release
-    /// the per-function state used to reconstruct them.
+    /// the per-function state used to build them.
     ///
     /// Called after each function is defined, at which point that function's
-    /// blocks all exist — a cleanup subgraph never crosses a function boundary,
-    /// so nothing is needed from a function that has not been defined yet.
-    /// Processing eagerly keeps the reconstruction state proportional to a
-    /// single function rather than to the whole codegen unit.
+    /// blocks all exist and are terminated — a cleanup subgraph never crosses a
+    /// function boundary, so nothing is needed from a function that has not
+    /// been defined yet. Processing eagerly also keeps the state proportional
+    /// to a single function rather than to the whole codegen unit.
     ///
-    /// Each cleanup region is made *self-contained*: it holds a clone of the
-    /// landing pad plus a clone of every cleanup block reachable from the
-    /// cleanup's entry (following MIR successor edges while staying in cleanup
-    /// blocks). Two invokes whose cleanup continuations overlap therefore each
-    /// get their own copy of the shared tail — the duplication policy lives
-    /// here, in the frontend, exactly as LLVM's WinEH lowering
+    /// A cleanup region's body is the block closure reachable from its landing
+    /// pad in the *emitted* control-flow graph: the landing pad, the cleanup
+    /// blocks it branches to, and the auxiliary blocks cg_gcc itself creates
+    /// while lowering them (comparisons, 128-bit switch ladders, ...). Reading
+    /// the emitted graph rather than MIR is what makes those auxiliary blocks —
+    /// which have no MIR counterpart — part of the region.
+    ///
+    /// The closure cannot escape the cleanup, because MIR guarantees that
+    /// everything reachable from a cleanup block is itself a cleanup block
+    /// (`rustc_middle::mir::syntax`'s inverted-forest invariant), and the two
+    /// ways a cleanup chain ends are both dead ends here: `UnwindResume` is
+    /// lowered to a fall-through, which has no successors, and the
+    /// `UnwindTerminate` abort handler is reached through a nested try/catch
+    /// rather than through a successor edge. A nested guarded call is included
+    /// the same way: its try and catch blocks hang off the `add_try_catch`
+    /// statement, so cloning the block that carries it clones them too.
+    ///
+    /// Each region gets its own *clone* of that closure, so two invokes whose
+    /// cleanup continuations overlap do not share blocks — the duplication
+    /// policy lives here, in the frontend, exactly as LLVM's WinEH lowering
     /// (`cloneCommonBlocks`) and `rustc_codegen_clr` do it. The *originals* are
     /// left untouched, so they are still emitted as ordinary (dead, DCE'd)
-    /// top-level blocks and continue to resolve any residual reference to
-    /// their canonical labels — e.g. a normal-path goto into shared drop code.
-    /// Being a direct read of MIR's inverted-forest cleanup contract, this
-    /// avoids reconstructing scopes from the emitted CFG.
+    /// top-level blocks.
     #[cfg(feature = "master")]
     pub fn populate_cleanup_regions(&self) {
         // Take the pending cleanups: everything recorded so far belongs to
@@ -386,100 +367,32 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         // again by a later call.
         let pending = std::mem::take(&mut *self.pending_cleanups.borrow_mut());
 
-        {
-            let targets = self.landing_pad_targets.borrow();
-            let mir_blocks = self.mir_blocks.borrow();
-            let reverse = self.function_instances_reverse.borrow();
-
-            // Functions whose `"bbN"` block map has already been checked against
-            // their MIR (the check only needs to run once per function).
-            let mut validated = FxHashSet::default();
-
-            for cleanup in pending.iter() {
-                // None of these lookups may legitimately fail: each one is an
-                // invariant established when the cleanup was recorded. Failing
-                // loudly matters, because silently skipping a cleanup leaves its
-                // region empty, which drops the destructors from the unwind path —
-                // a miscompilation rather than an error. In particular this is how
-                // a change to the `"bbN"` naming in `rustc_codegen_ssa`'s
-                // `try_llbb` surfaces (see `parse_mir_block_name`).
-                let Some(&entry_block) = targets.get(&cleanup.landing_pad) else {
-                    bug!("cleanup landing pad has no recorded branch target");
-                };
-                let Some(maps) = mir_blocks.get(&cleanup.func) else {
-                    bug!("no MIR block map for a function with a pending cleanup");
-                };
-                let Some(&entry_bb) = maps.block_to_bb.get(&entry_block) else {
-                    bug!("cleanup entry block was not recorded as a MIR block");
-                };
-                let Some(&instance) = reverse.get(&cleanup.func) else {
-                    bug!("no instance recorded for a function with a pending cleanup");
-                };
-                let mir = self.tcx.instance_mir(instance.def);
-
-                // Check the `"bbN"` naming assumption once per function: if the
-                // recovered indexes do not address the MIR we re-fetch here, the
-                // reconstruction below would walk the wrong graph and build a
-                // plausible-looking but wrong cleanup region.
-                if validated.insert(cleanup.func) {
-                    if maps.bb_to_block.is_empty() {
-                        bug!(
-                            "a function with a pending cleanup recorded no MIR blocks: \
-                         `parse_mir_block_name` recognized none of the block names \
-                         rustc_codegen_ssa's `try_llbb` produced"
-                     );
-                    }
-                    let block_count = mir.basic_blocks.len();
-                    for &bb in maps.bb_to_block.keys() {
-                        if bb.as_usize() >= block_count {
-                            bug!(
-                                "recovered MIR block {bb:?} is out of range for a body with \
-                             {block_count} blocks: the block naming in \
-                             rustc_codegen_ssa's `try_llbb` no longer matches \
-                             `parse_mir_block_name`"
-                         );
-                        }
-                    }
+        for cleanup in pending {
+            // The landing pad is the region's entry, so it must come first;
+            // the order of the rest is irrelevant, since every block is laid
+            // out in the region body behind its own label.
+            let mut blocks = vec![];
+            let mut visited = FxHashSet::default();
+            let mut stack = vec![cleanup.landing_pad];
+            while let Some(block) = stack.pop() {
+                if !visited.insert(block) {
+                    continue;
                 }
-
-                // The landing pad is the region's entry (it jumps to `entry_bb`),
-                // followed by the cleanup-block closure reachable from `entry_bb`.
-                let mut blocks = vec![cleanup.landing_pad];
-                let mut visited = FxHashSet::default();
-                let mut stack = vec![entry_bb];
-                while let Some(bb) = stack.pop() {
-                    if !visited.insert(bb) {
-                        continue;
-                    }
-                    // A block may have been elided (unreachable); only collect
-                    // emitted ones, but keep walking the MIR graph regardless.
-                    if let Some(&block) = maps.bb_to_block.get(&bb) {
-                        blocks.push(block);
-                    }
-                    for succ in mir.basic_blocks[bb].terminator().successors() {
-                        if mir.basic_blocks[succ].is_cleanup {
-                            stack.push(succ);
-                        }
-                    }
-                }
-
-                // Clone the closure so each unwind edge gets its own self-contained
-                // copy (the originals stay as top-level blocks), then adopt the
-                // clones into the region as its body (the first clone — of the
-                // landing pad — is the region's entry).
-                for clone in gccjit::clone_blocks(&blocks) {
-                    cleanup.region.add_block(clone);
-                }
+                blocks.push(block);
+                stack.extend(block.get_successors());
             }
 
+            // Clone the closure so each unwind edge gets its own self-contained
+            // copy, then adopt the clones into the region as its body.
+            for clone in gccjit::clone_blocks(&blocks) {
+                cleanup.region.add_block(clone);
+            }
         }
-        // These maps describe blocks of functions that are now fully codegened
-        // and whose cleanups have just been built, so drop them instead of
-        // letting them grow with every function in the codegen unit. The
-        // `"bbN"` map in particular holds an entry per MIR block.
-        self.mir_blocks.borrow_mut().clear();
+
+        // This set describes blocks of functions that are now fully codegened
+        // and whose cleanups have just been built, so drop it instead of
+        // letting it grow with every function in the codegen unit.
         self.landing_pads.borrow_mut().clear();
-        self.landing_pad_targets.borrow_mut().clear();
     }
 
     pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {
