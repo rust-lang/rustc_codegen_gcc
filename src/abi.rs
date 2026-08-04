@@ -1,5 +1,5 @@
 #[cfg(feature = "master")]
-use gccjit::{FnAttribute, TypeAttribute};
+use gccjit::FnAttribute;
 use gccjit::{ToLValue, ToRValue, Type};
 #[cfg(feature = "master")]
 use rustc_abi::{ArmCall, CanonAbi, InterruptKind, X86Call};
@@ -73,7 +73,9 @@ impl GccType for CastTarget {
             args.push(cx.type_ix(rem_bytes * 8));
         }
 
-        cx.type_struct(&args, false)
+        // A cast target describes registers, so its alignment is whatever GCC computes from
+        // them rather than the alignment of the Rust type being cast.
+        cx.type_struct(&args, false, None)
     }
 }
 
@@ -187,7 +189,7 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     let ty = cast.gcc_type(cx);
                     apply_attrs(ty, &cast.attrs, argument_tys.len())
                 }
-                PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
+                PassMode::Indirect { attrs: _, meta_attrs: None, on_stack: true } => {
                     let x86_interrupt_first_arg = {
                         #[cfg(feature = "master")]
                         {
@@ -210,15 +212,15 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                         cx.type_ptr_to(arg.layout.gcc_type(cx))
                     } else {
                         // This is a "byval" argument, so we don't apply the `restrict` attribute on it.
+                        //
+                        // GCC picks the argument's stack slot from the alignment of this type,
+                        // which `LayoutGccExt::gcc_type` sets from `layout.align.abi`. We
+                        // deliberately do not use `attrs.pointee_align` here: when it differs
+                        // from the type's alignment it describes the *slot*, not the type, and
+                        // rustc already copies the argument to a sufficiently aligned alloca on
+                        // whichever side needs it.
                         on_stack_param_indices.insert(argument_tys.len());
-                        let ty = arg.layout.gcc_type(cx);
-                        #[cfg(feature = "master")]
-                        if let Some(align) = attrs.pointee_align {
-                            ty.add_attribute(TypeAttribute::Aligned(align.bytes() as u32));
-                        }
-                        #[cfg(not(feature = "master"))]
-                        let _ = attrs;
-                        ty
+                        arg.layout.gcc_type(cx)
                     }
                 }
                 PassMode::Direct(attrs) => {

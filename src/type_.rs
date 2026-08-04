@@ -101,9 +101,15 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.bool_type
     }
 
-    pub fn type_struct(&self, fields: &[Type<'gcc>], packed: bool) -> Type<'gcc> {
-        let types = fields.to_vec();
-        if let Some(typ) = self.struct_types.borrow().get(fields) {
+    pub fn type_struct(
+        &self,
+        fields: &[Type<'gcc>],
+        packed: bool,
+        align: Option<Align>,
+    ) -> Type<'gcc> {
+        let align = normalize_struct_alignment(align);
+        let key = StructTypeKey { fields: fields.to_vec(), packed, align };
+        if let Some(typ) = self.struct_types.borrow().get(&key) {
             return *typ;
         }
         let fields: Vec<_> = fields
@@ -118,10 +124,58 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             #[cfg(feature = "master")]
             typ.add_attribute(TypeAttribute::Packed);
         }
-        self.struct_types.borrow_mut().insert(types, typ);
+        set_struct_alignment(typ, align);
+        self.struct_types.borrow_mut().insert(key, typ);
         typ
     }
 }
+
+/// Identifies an anonymous struct type in `CodegenCx::struct_types`.
+///
+/// Everything that can make two of them distinct has to be part of it. In particular the
+/// alignment: two Rust types can have the same field list and still differ in alignment (for
+/// instance `struct { a: u64, b: u64 }` with and without `repr(align(16))`), and they must not
+/// end up sharing a GCC type.
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct StructTypeKey<'gcc> {
+    pub fields: Vec<Type<'gcc>>,
+    pub packed: bool,
+    pub align: Option<Align>,
+}
+
+/// Discard an alignment that GCC would give the struct anyway.
+///
+/// One byte is the minimum alignment of a GCC struct, so requesting it explicitly changes
+/// nothing; mapping it to `None` keeps types that do not care about their alignment sharing a
+/// single entry in `CodegenCx::struct_types`.
+fn normalize_struct_alignment(align: Option<Align>) -> Option<Align> {
+    align.filter(|align| align.bytes() > 1)
+}
+
+/// Give a struct type the alignment that Rust computed for it.
+///
+/// GCC derives a struct's alignment from its field list, so a `repr(align(N))` that is larger
+/// than what the fields require would otherwise be lost. That is not only a layout concern: the
+/// ABI of a by-value ("byval") argument depends on it, since `ix86_function_arg_boundary` reads
+/// `TYPE_ALIGN` to pick the argument's stack slot. An over-aligned aggregate whose GCC type has
+/// lost its alignment is therefore passed at an offset a C caller does not agree on.
+///
+/// This has to be set on the struct type itself. `Type::get_aligned` is not enough: it builds a
+/// type *variant*, and the argument-passing code looks at `TYPE_MAIN_VARIANT` first, which
+/// discards it.
+///
+/// This never under-aligns a struct whose fields need more: GCC starts the record layout from
+/// `TYPE_ALIGN` and the fields can only raise it.
+#[cfg(feature = "master")]
+fn set_struct_alignment(typ: Type<'_>, align: Option<Align>) {
+    if let Some(align) = normalize_struct_alignment(align) {
+        typ.add_attribute(TypeAttribute::Aligned(align.bytes() as u32));
+    }
+}
+
+/// Without the `master` feature, libgccjit has no way to set a type's alignment.
+#[cfg(not(feature = "master"))]
+fn set_struct_alignment(_typ: Type<'_>, _align: Option<Align>) {}
 
 impl<'gcc, 'tcx> BaseTypeCodegenMethods for CodegenCx<'gcc, 'tcx> {
     fn type_i8(&self) -> Type<'gcc> {
@@ -324,7 +378,13 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.type_array(self.type_from_integer(unit), size / unit_size)
     }
 
-    pub fn set_struct_body(&self, typ: Struct<'gcc>, fields: &[Type<'gcc>], packed: bool) {
+    pub fn set_struct_body(
+        &self,
+        typ: Struct<'gcc>,
+        fields: &[Type<'gcc>],
+        packed: bool,
+        align: Option<Align>,
+    ) {
         let fields: Vec<_> = fields
             .iter()
             .enumerate()
@@ -335,6 +395,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             #[cfg(feature = "master")]
             typ.as_type().add_attribute(TypeAttribute::Packed);
         }
+        set_struct_alignment(typ.as_type(), align);
     }
 
     pub fn type_named_struct(&self, name: &str) -> Struct<'gcc> {
