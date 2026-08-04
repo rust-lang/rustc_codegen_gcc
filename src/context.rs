@@ -26,6 +26,7 @@ use rustc_target::spec::{HasTargetSpec, HasX86AbiOpt, Target, TlsModel, X86Abi};
 use crate::abi::conv_to_fn_attribute;
 use crate::callee::get_fn;
 use crate::common::SignType;
+use crate::type_::StructTypeKey;
 
 #[cfg_attr(not(feature = "master"), expect(dead_code))]
 pub struct CodegenCx<'gcc, 'tcx> {
@@ -85,7 +86,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
     pub types: RefCell<FxHashMap<(Ty<'tcx>, Option<VariantIdx>), Type<'gcc>>>,
     pub tcx: TyCtxt<'tcx>,
 
-    pub struct_types: RefCell<FxHashMap<Vec<Type<'gcc>>, Type<'gcc>>>,
+    /// Cache of the anonymous struct types.
+    pub struct_types: RefCell<FxHashMap<StructTypeKey<'gcc>, Type<'gcc>>>,
 
     /// Cache instances of monomorphic and polymorphic items
     pub instances: RefCell<FxHashMap<Instance<'tcx>, LValue<'gcc>>>,

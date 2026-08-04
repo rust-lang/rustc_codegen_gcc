@@ -82,6 +82,7 @@ fn uncached_gcc_type<'gcc, 'tcx>(
                     layout.scalar_pair_element_gcc_type(cx, 1),
                 ],
                 false,
+                Some(layout.align.abi),
             );
         }
         BackendRepr::Memory { .. } => {}
@@ -130,10 +131,10 @@ fn uncached_gcc_type<'gcc, 'tcx>(
             let fill = cx.type_padding_filler(layout.size, layout.align.abi);
             let packed = false;
             match name {
-                None => cx.type_struct(&[fill], packed),
+                None => cx.type_struct(&[fill], packed, Some(layout.align.abi)),
                 Some(ref name) => {
                     let gcc_type = cx.type_named_struct(name);
-                    cx.set_struct_body(gcc_type, &[fill], packed);
+                    cx.set_struct_body(gcc_type, &[fill], packed, Some(layout.align.abi));
                     gcc_type.as_type()
                 }
             }
@@ -142,7 +143,7 @@ fn uncached_gcc_type<'gcc, 'tcx>(
         FieldsShape::Arbitrary { .. } => match name {
             None => {
                 let (gcc_fields, packed) = struct_fields(cx, layout);
-                cx.type_struct(&gcc_fields, packed)
+                cx.type_struct(&gcc_fields, packed, Some(layout.align.abi))
             }
             Some(ref name) => {
                 let gcc_type = cx.type_named_struct(name);
@@ -240,7 +241,7 @@ impl<'tcx> LayoutGccExt<'tcx> for TyAndLayout<'tcx> {
 
         if let Some((deferred_ty, layout)) = defer {
             let (fields, packed) = struct_fields(cx, layout);
-            cx.set_struct_body(deferred_ty, &fields, packed);
+            cx.set_struct_body(deferred_ty, &fields, packed, Some(layout.align.abi));
         }
 
         ty
