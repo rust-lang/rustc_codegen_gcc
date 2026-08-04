@@ -36,7 +36,7 @@ use rustc_session::Session;
 use tempfile::{TempDir, tempdir};
 
 use crate::back::write::{codegen, save_temp_bitcode};
-use crate::errors::LtoBitcodeFromRlib;
+use crate::diagnostics::LtoBitcodeFromRlib;
 use crate::gcc_util::new_context;
 use crate::{GccCodegenBackend, GccContext, LtoMode, SyncContext, to_gcc_opt_level};
 

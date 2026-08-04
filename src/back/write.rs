@@ -11,7 +11,7 @@ use rustc_log::tracing::debug;
 use rustc_session::config::OutputType;
 use rustc_target::spec::SplitDebuginfo;
 
-use crate::errors::CopyBitcode;
+use crate::diagnostics::CopyBitcode;
 use crate::gcc_util::add_pic_option;
 use crate::{GccContext, LtoMode};
 

@@ -111,3 +111,4 @@ tests/ui/drop/enum-destructor-on-unwind.rs
 tests/ui/drop/drop-trait-enum.rs
 tests/ui/drop/panic-during-slice-init.rs
 tests/ui/drop/terminate-in-initializer.rs
+tests/ui/std/add-spawn-hook-reentrancy-159923.rs
