@@ -8,3 +8,5 @@ tests/ui/panic-handler/catch-unwind-during-unwind-68696.rs
 tests/ui/threads-sendsync/task-stderr.rs
 tests/ui/extern/issue-64655-allow-unwind-when-calling-panic-directly.rs
 tests/ui/extern/issue-64655-extern-rust-must-allow-unwind.rs
+tests/ui/threads-sendsync/unwind-resource.rs
+tests/ui/drop/drop-trait-enum.rs
