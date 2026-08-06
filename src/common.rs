@@ -12,6 +12,7 @@ use rustc_session::PointerAuthSchema;
 
 use crate::consts::const_alloc_to_gcc;
 use crate::context::{CodegenCx, new_array_type};
+use crate::type_::struct_attributes;
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -290,7 +291,7 @@ impl<'gcc, 'tcx> ConstCodegenMethods for CodegenCx<'gcc, 'tcx> {
         // FIXME(antoyo): cache the type? It's anonymous, so probably not.
         // The alignment of a constant aggregate is the one GCC derives from its fields: the Rust
         // layout this comes from is not available here.
-        let typ = self.type_struct(&fields, packed, None);
+        let typ = self.type_struct(&fields, &struct_attributes(packed, None));
         let struct_type = typ.is_struct().expect("struct type");
         self.context.new_struct_constructor(None, struct_type.as_type(), None, values)
     }
