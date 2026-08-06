@@ -73,9 +73,9 @@ impl GccType for CastTarget {
             args.push(cx.type_ix(rem_bytes * 8));
         }
 
-        // A cast target describes registers, so its alignment is whatever GCC computes from
-        // them rather than the alignment of the Rust type being cast.
-        cx.type_struct(&args, false, None)
+        // A cast target describes registers, so its layout is whatever GCC computes from them
+        // rather than the layout of the Rust type being cast.
+        cx.type_struct(&args, &[])
     }
 }
 
