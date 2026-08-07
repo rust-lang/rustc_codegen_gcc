@@ -4,7 +4,6 @@ mod simd;
 #[cfg(feature = "master")]
 use std::iter;
 
-#[cfg(feature = "master")]
 use gccjit::{CType, ComparisonOp, Function, FunctionType, RValue, ToRValue, Type, UnaryOp};
 use rustc_abi::{Align, BackendRepr, HasDataLayout, WrappingRange};
 use rustc_codegen_ssa::base::wants_msvc_seh;
