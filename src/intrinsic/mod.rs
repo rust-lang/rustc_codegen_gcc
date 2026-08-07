@@ -646,10 +646,18 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
     }
 
     fn assume(&mut self, value: Self::Value) {
-        // FIXME(antoyo): switch to assume when it exists.
-        // Or use something like this:
-        // #define __assume(cond) do { if (!(cond)) __builtin_unreachable(); } while (0)
-        self.expect(value, true);
+        // libgccjit currently has no direct equivalent of LLVM's `llvm.assume`,
+        // so use the idiom `if (!cond) __builtin_unreachable()`.
+        // FIXME: this should use IFN_ASSUME when we have internal functions in
+        // libgccjit.
+        let then_block = self.append_sibling_block("assume_holds");
+        let unreachable_block = self.append_sibling_block("assume_violated");
+        self.block.end_with_conditional(self.location, value, then_block, unreachable_block);
+
+        self.switch_to_block(unreachable_block);
+        self.unreachable();
+
+        self.switch_to_block(then_block);
     }
 
     fn expect(&mut self, cond: Self::Value, _expected: bool) -> Self::Value {
