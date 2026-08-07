@@ -25,6 +25,7 @@ use rustc_middle::ty::layout::FnAbiOf;
 use rustc_middle::ty::layout::LayoutOf;
 use rustc_middle::ty::{self, Instance, Ty};
 use rustc_middle::{bug, span_bug};
+use rustc_session::config::OptLevel;
 use rustc_span::{Span, Symbol, sym};
 use rustc_target::callconv::{ArgAbi, PassMode};
 
@@ -650,6 +651,9 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         // so use the idiom `if (!cond) __builtin_unreachable()`.
         // FIXME: this should use IFN_ASSUME when we have internal functions in
         // libgccjit.
+        if self.sess().opts.optimize == OptLevel::No {
+            return;
+        }
         let then_block = self.append_sibling_block("assume_holds");
         let unreachable_block = self.append_sibling_block("assume_violated");
         self.block.end_with_conditional(self.location, value, then_block, unreachable_block);
