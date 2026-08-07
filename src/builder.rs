@@ -64,6 +64,30 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.value_counter.get()
     }
 
+    fn with_non_zero_size(
+        &mut self,
+        size: RValue<'gcc>,
+        builtin_block_name: &str,
+        emit_builtin: impl FnOnce(&mut Self),
+    ) {
+        let size_is_zero = self.context.new_comparison(
+            self.location,
+            ComparisonOp::Equals,
+            size,
+            self.const_usize(0),
+        );
+        let func = self.current_func();
+        let builtin_block = func.new_block(builtin_block_name);
+        let after_block = func.new_block("after_memory_builtin");
+        self.llbb().end_with_conditional(self.location, size_is_zero, after_block, builtin_block);
+
+        self.switch_to_block(builtin_block);
+        emit_builtin(self);
+        self.llbb().end_with_jump(self.location, after_block);
+
+        self.switch_to_block(after_block);
+    }
+
     fn atomic_extremum(
         &mut self,
         operation: ExtremumOperation,
@@ -1445,12 +1469,12 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let dst = self.pointercast(dst, self.type_i8p());
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
-        let memcpy = self.context.get_builtin_function("memcpy");
-        // FIXME(antoyo): handle aligns and is_volatile.
-        self.block.add_eval(
-            self.location,
-            self.context.new_call(self.location, memcpy, &[dst, src, size]),
-        );
+        self.with_non_zero_size(size, "memcpy", |bx| {
+            let memcpy = bx.context.get_builtin_function("memcpy");
+            // FIXME(antoyo): handle aligns and is_volatile.
+            bx.block
+                .add_eval(bx.location, bx.context.new_call(bx.location, memcpy, &[dst, src, size]));
+        });
     }
 
     fn memmove(
@@ -1468,12 +1492,14 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         let dst = self.pointercast(dst, self.type_i8p());
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
 
-        let memmove = self.context.get_builtin_function("memmove");
-        // FIXME(antoyo): handle is_volatile.
-        self.block.add_eval(
-            self.location,
-            self.context.new_call(self.location, memmove, &[dst, src, size]),
-        );
+        self.with_non_zero_size(size, "memmove", |bx| {
+            let memmove = bx.context.get_builtin_function("memmove");
+            // FIXME(antoyo): handle is_volatile.
+            bx.block.add_eval(
+                bx.location,
+                bx.context.new_call(bx.location, memmove, &[dst, src, size]),
+            );
+        });
     }
 
     fn memset(
@@ -1487,14 +1513,16 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         assert!(!flags.contains(MemFlags::NONTEMPORAL), "non-temporal memset not supported");
         let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let ptr = self.pointercast(ptr, self.type_i8p());
-        let memset = self.context.get_builtin_function("memset");
         // FIXME(antoyo): handle align and is_volatile.
         let fill_byte = self.context.new_cast(self.location, fill_byte, self.i32_type);
         let size = self.intcast(size, self.type_size_t(), false);
-        self.block.add_eval(
-            self.location,
-            self.context.new_call(self.location, memset, &[ptr, fill_byte, size]),
-        );
+        self.with_non_zero_size(size, "memset", |bx| {
+            let memset = bx.context.get_builtin_function("memset");
+            bx.block.add_eval(
+                bx.location,
+                bx.context.new_call(bx.location, memset, &[ptr, fill_byte, size]),
+            );
+        });
     }
 
     fn vscale(&mut self, _: Self::Type) -> Self::Value {
