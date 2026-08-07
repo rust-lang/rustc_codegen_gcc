@@ -12,21 +12,23 @@
  * alignment the ABI gives a stack slot is target-specific, but caller and callee agreeing on it
  * is not. A disagreement makes the arguments arrive as garbage. */
 
+#include <stdint.h>
+
 struct Big {
-    long a, b, c;
+    int64_t a, b, c;
 };
 
 struct __attribute__((aligned(64))) Aligned {
-    int x;
+    int32_t x;
 };
 
 /* Defined on the Rust side. */
-extern int rust_take_both(struct Big first, struct Aligned second, struct Big third,
-                          struct Aligned fourth);
+extern int32_t rust_take_both(struct Big first, struct Aligned second, struct Big third,
+                              struct Aligned fourth);
 
 /* Called from Rust: checks what a cg_gcc caller passed. */
-int c_take_both(struct Big first, struct Aligned second, struct Big third,
-                struct Aligned fourth)
+int32_t c_take_both(struct Big first, struct Aligned second, struct Big third,
+                    struct Aligned fourth)
 {
     if (first.a != 1 || first.b != 2 || first.c != 3)
         return 1;
@@ -40,7 +42,7 @@ int c_take_both(struct Big first, struct Aligned second, struct Big third,
 }
 
 /* Called from Rust: passes the arguments the way the ABI says, for a cg_gcc callee to read. */
-int c_call_rust(void)
+int32_t c_call_rust(void)
 {
     struct Big first = {1, 2, 3};
     struct Big third = {4, 5, 6};
