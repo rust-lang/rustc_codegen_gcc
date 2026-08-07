@@ -169,11 +169,22 @@ pub fn struct_attributes(packed: bool, align: Option<Align>) -> Vec<StructAttrib
     }
     if let Some(align) = align
         && align.bytes() > 1
+        && align.bytes() <= MAX_STRUCT_ALIGNMENT
     {
         attributes.push(StructAttribute::Aligned(align.bytes() as u32));
     }
     attributes
 }
+
+/// The largest alignment GCC accepts on a type, in bytes.
+///
+/// This is `MAX_OFILE_ALIGNMENT / BITS_PER_UNIT` for ELF targets. Rust allows alignments up to
+/// `1 << 29`, so a `repr(align(N))` beyond this simply cannot be expressed: asking for it makes
+/// libgccjit fail the whole compilation with "requested alignment `N` exceeds maximum". Such a
+/// type keeps whatever alignment GCC derives from its fields instead, which is what every type
+/// got before alignments were set at all. See `tests/ui/abi/large-byval-align.rs`, which upstream
+/// marks `ignore-backends: gcc` for this reason.
+const MAX_STRUCT_ALIGNMENT: u64 = 1 << 28;
 
 /// Put an attribute list into a canonical form so that it can be used as a cache key.
 ///
