@@ -1,9 +1,7 @@
 tests/ui/asm/may_unwind.rs
 tests/ui/asm/x86_64/may_unwind.rs
-tests/ui/drop/dynamic-drop-async.rs
 tests/ui/intrinsics/panic-uninitialized-zeroed.rs
 tests/ui/consts/missing_span_in_backtrace.rs
-tests/ui/drop/dynamic-drop.rs
 tests/ui/simd/issue-17170.rs
 tests/ui/simd/issue-39720.rs
 tests/ui/process/println-with-broken-pipe.rs
@@ -11,7 +9,6 @@ tests/ui/lto/thin-lto-inlines2.rs
 tests/ui/panic-runtime/lto-abort.rs
 tests/ui/lto/lto-thin-rustc-loads-linker-plugin.rs
 tests/ui/async-await/deep-futures-are-freeze.rs
-tests/ui/coroutine/resume-after-return.rs
 tests/ui/simd/repr_packed.rs
 tests/ui/async-await/in-trait/dont-project-to-specializable-projection.rs
 tests/ui/consts/const_cmp_type_id.rs
@@ -30,7 +27,6 @@ tests/ui/sanitizer/cfi/sized-associated-ty.rs
 tests/ui/sanitizer/cfi/can-reveal-opaques.rs
 tests/ui/consts/const-eval/parse_ints.rs
 tests/ui/simd/intrinsic/generic-as.rs
-tests/ui/runtime/rt-explody-panic-payloads.rs
 tests/ui/codegen/equal-pointers-unequal/as-cast/inline1.rs
 tests/ui/codegen/equal-pointers-unequal/as-cast/inline2.rs
 tests/ui/codegen/equal-pointers-unequal/as-cast/segfault.rs
@@ -51,7 +47,6 @@ tests/ui/attributes/fn-align-dyn.rs
 tests/ui/linkage-attr/raw-dylib/elf/glibc-x86_64.rs
 tests/ui/statics/const_generics.rs
 tests/ui/thir-print/offset_of.rs
-tests/ui/iterators/iter-filter-count-debug-check.rs
 tests/ui/eii/default/call_impl.rs
 tests/ui/asm/x86_64/global_asm_escape.rs
 tests/ui/lto/all-crates.rs
@@ -67,4 +62,3 @@ tests/ui/explicit-tail-calls/tailcc-no-signature-restriction.rs
 tests/ui/abi/rust-tail-cc.rs
 tests/ui/abi/rust-preserve-none-cc.rs
 tests/ui/extern/extern-types-field-offset.rs
-tests/ui/std/add-spawn-hook-reentrancy-159923.rs
