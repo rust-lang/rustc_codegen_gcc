@@ -116,8 +116,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             })
             .collect();
         let typ = self.context.new_struct_type(None, "struct", &fields).as_type();
-        // The attributes that are applied are the very ones the type is keyed on, so the two
-        // cannot drift apart.
         apply_struct_attributes(typ, &key.attributes);
         self.struct_types.borrow_mut().insert(key, typ);
         typ
@@ -132,8 +130,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 /// attribute part of the cache key: there is no second place to remember to update.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StructAttribute {
-    /// Alignment, in bytes. This can only ever raise a type's alignment: GCC starts the record
-    /// layout from `TYPE_ALIGN` and the fields can only push it further up.
+    /// Alignment, in bytes.
     Aligned(u32),
     /// Lay the fields out without inserting padding between them.
     Packed,
@@ -152,16 +149,6 @@ pub struct StructTypeKey<'gcc> {
 }
 
 /// The attributes a GCC struct needs in order to match the Rust layout it is built from.
-///
-/// GCC derives a struct's alignment from its field list, so a `repr(align(N))` larger than what
-/// the fields require would otherwise be lost. That is not only a layout concern: the ABI of a
-/// by-value ("byval") argument depends on it, since `ix86_function_arg_boundary` reads
-/// `TYPE_ALIGN` to pick the argument's stack slot. An over-aligned aggregate whose GCC type has
-/// lost its alignment is passed at an offset a C caller does not agree on.
-///
-/// An alignment of one byte is dropped: it is the minimum a GCC struct gets anyway, so asking for
-/// it explicitly changes nothing, and dropping it keeps every alignment-indifferent type sharing a
-/// single entry in `CodegenCx::struct_types`.
 pub fn struct_attributes(packed: bool, align: Option<Align>) -> Vec<StructAttribute> {
     let mut attributes = Vec::new();
     if packed {
@@ -177,13 +164,6 @@ pub fn struct_attributes(packed: bool, align: Option<Align>) -> Vec<StructAttrib
 }
 
 /// The largest alignment GCC accepts on a type, in bytes.
-///
-/// This is `MAX_OFILE_ALIGNMENT / BITS_PER_UNIT` for ELF targets. Rust allows alignments up to
-/// `1 << 29`, so a `repr(align(N))` beyond this simply cannot be expressed: asking for it makes
-/// libgccjit fail the whole compilation with "requested alignment `N` exceeds maximum". Such a
-/// type keeps whatever alignment GCC derives from its fields instead, which is what every type
-/// got before alignments were set at all. See `tests/ui/abi/large-byval-align.rs`, which upstream
-/// marks `ignore-backends: gcc` for this reason.
 const MAX_STRUCT_ALIGNMENT: u64 = 1 << 28;
 
 /// Put an attribute list into a canonical form so that it can be used as a cache key.
@@ -207,10 +187,6 @@ fn canonical_attributes(attributes: &[StructAttribute]) -> Vec<StructAttribute> 
 /// everywhere else. An attribute set on a type that `CodegenCx::struct_types` handed out would
 /// change every other use of that type, so attributes have to be decided when the type is created
 /// and be part of its cache key. Going through [`StructAttribute`] is what enforces that.
-///
-/// Note that the alignment has to be set on the struct type itself: `Type::get_aligned` is not
-/// enough, since it builds a type *variant* and the argument-passing code looks at
-/// `TYPE_MAIN_VARIANT` first, which discards it.
 #[cfg(feature = "master")]
 #[allow(clippy::disallowed_methods)]
 pub fn apply_struct_attributes(typ: Type<'_>, attributes: &[StructAttribute]) {
@@ -222,7 +198,6 @@ pub fn apply_struct_attributes(typ: Type<'_>, attributes: &[StructAttribute]) {
     }
 }
 
-/// Without the `master` feature, libgccjit cannot set attributes on a type.
 #[cfg(not(feature = "master"))]
 pub fn apply_struct_attributes(_typ: Type<'_>, _attributes: &[StructAttribute]) {}
 

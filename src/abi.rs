@@ -73,8 +73,6 @@ impl GccType for CastTarget {
             args.push(cx.type_ix(rem_bytes * 8));
         }
 
-        // A cast target describes registers, so its layout is whatever GCC computes from them
-        // rather than the layout of the Rust type being cast.
         cx.type_struct(&args, &[])
     }
 }
@@ -212,13 +210,6 @@ impl<'gcc, 'tcx> FnAbiGccExt<'gcc, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                         cx.type_ptr_to(arg.layout.gcc_type(cx))
                     } else {
                         // This is a "byval" argument, so we don't apply the `restrict` attribute on it.
-                        //
-                        // GCC picks the argument's stack slot from the alignment of this type,
-                        // which `LayoutGccExt::gcc_type` sets from `layout.align.abi`. We
-                        // deliberately do not use `attrs.pointee_align` here: when it differs
-                        // from the type's alignment it describes the *slot*, not the type, and
-                        // rustc already copies the argument to a sufficiently aligned alloca on
-                        // whichever side needs it.
                         on_stack_param_indices.insert(argument_tys.len());
                         arg.layout.gcc_type(cx)
                     }

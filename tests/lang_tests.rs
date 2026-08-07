@@ -10,9 +10,6 @@ use tempfile::TempDir;
 /// Directory holding the C files that the `tests/run` tests can link against.
 ///
 /// A `tests/c/<name>.c` is compiled by the real GCC and linked into `tests/run/<name>.rs`.
-/// This is what makes it possible to test the ABI: with cg_gcc on both sides of a call, caller
-/// and callee agree even when they are both wrong, so a pure-Rust test cannot notice. A C
-/// caller or callee built by GCC is an independent reference.
 const C_TESTS_DIR: &str = "tests/c";
 
 /// The m68k cross toolchain is not on the default `PATH` in CI.
@@ -26,10 +23,7 @@ fn target_path(test_target: &Option<String>) -> Option<String> {
     })
 }
 
-/// Compile every C file in `tests/c` to an object file in `objects_dir`, named after the C file.
-///
-/// The C files are compiled by the real GCC (the cross one when testing another target), not by
-/// cg_gcc: they are the reference the Rust side is checked against.
+/// Compile every C file in `tests/c` to an object file in `objects_dir`.
 fn compile_c_files(objects_dir: &Path, test_target: &Option<String>) {
     let c_tests_dir = Path::new(C_TESTS_DIR);
     if !c_tests_dir.is_dir() {
@@ -54,7 +48,7 @@ fn compile_c_files(objects_dir: &Path, test_target: &Option<String>) {
         // Optimize: an unoptimized C caller can happen to agree with a wrong callee.
         command.arg("-O1");
         // GCC notes that the ABI of over-aligned arguments changed in GCC 4.6. That is the ABI
-        // being tested here, so the note is expected rather than a problem.
+        // being tested in overaligned_byval_abi, so the note is expected rather than a problem.
         command.arg("-Wno-psabi");
         command.arg("-o");
         command.arg(&object);
@@ -147,6 +141,7 @@ impl TestMode {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_test_runner(
     tempdir: PathBuf,
     c_objects_dir: PathBuf,

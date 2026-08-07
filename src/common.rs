@@ -289,8 +289,6 @@ impl<'gcc, 'tcx> ConstCodegenMethods for CodegenCx<'gcc, 'tcx> {
     fn const_struct(&self, values: &[RValue<'gcc>], packed: bool) -> RValue<'gcc> {
         let fields: Vec<_> = values.iter().map(|value| value.get_type()).collect();
         // FIXME(antoyo): cache the type? It's anonymous, so probably not.
-        // The alignment of a constant aggregate is the one GCC derives from its fields: the Rust
-        // layout this comes from is not available here.
         let typ = self.type_struct(&fields, &struct_attributes(packed, None));
         let struct_type = typ.is_struct().expect("struct type");
         self.context.new_struct_constructor(None, struct_type.as_type(), None, values)
