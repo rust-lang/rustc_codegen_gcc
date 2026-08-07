@@ -12,6 +12,7 @@ use rustc_session::PointerAuthSchema;
 
 use crate::consts::const_alloc_to_gcc;
 use crate::context::{CodegenCx, new_array_type};
+use crate::type_::struct_attributes;
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -288,7 +289,7 @@ impl<'gcc, 'tcx> ConstCodegenMethods for CodegenCx<'gcc, 'tcx> {
     fn const_struct(&self, values: &[RValue<'gcc>], packed: bool) -> RValue<'gcc> {
         let fields: Vec<_> = values.iter().map(|value| value.get_type()).collect();
         // FIXME(antoyo): cache the type? It's anonymous, so probably not.
-        let typ = self.type_struct(&fields, packed);
+        let typ = self.type_struct(&fields, &struct_attributes(packed, None));
         let struct_type = typ.is_struct().expect("struct type");
         self.context.new_struct_constructor(None, struct_type.as_type(), None, values)
     }
