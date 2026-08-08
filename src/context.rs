@@ -1,6 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
+#[cfg(feature = "master")]
+use gccjit::Region;
 use gccjit::{Block, CType, Context, Function, FunctionType, LValue, Location, RValue, Type};
 use rustc_abi::{Align, HasDataLayout, PointeeInfo, Size, TargetDataLayout, VariantIdx};
 use rustc_codegen_ssa::base::wants_msvc_seh;
@@ -27,6 +29,12 @@ use crate::abi::conv_to_fn_attribute;
 use crate::callee::get_fn;
 use crate::common::SignType;
 use crate::type_::StructTypeKey;
+
+#[cfg(feature = "master")]
+pub struct PendingCleanup<'gcc> {
+    pub region: Region<'gcc>,
+    pub landing_pad: Block<'gcc>,
+}
 
 #[cfg_attr(not(feature = "master"), expect(dead_code))]
 pub struct CodegenCx<'gcc, 'tcx> {
@@ -128,8 +136,14 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
+    /// Blocks that are cleanup landing pads, so `invoke` can tell an unwind
+    /// edge into a cleanup from a catch/terminate.
     #[cfg(feature = "master")]
-    pub cleanup_blocks: RefCell<FxHashSet<Block<'gcc>>>,
+    pub landing_pads: RefCell<FxHashSet<Block<'gcc>>>,
+    /// Cleanup regions to be filled in once the function is fully codegened
+    /// (done in `populate_cleanup_regions`).
+    #[cfg(feature = "master")]
+    pub pending_cleanups: RefCell<Vec<PendingCleanup<'gcc>>>,
     /// The alignment of a u128/i128 type.
     // We cache this, since it is needed for alignment checks during loads.
     pub int128_align: Align,
@@ -307,11 +321,41 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             rust_try_fn: Cell::new(None),
             pointee_infos: Default::default(),
             #[cfg(feature = "master")]
-            cleanup_blocks: Default::default(),
+            landing_pads: Default::default(),
+            #[cfg(feature = "master")]
+            pending_cleanups: Default::default(),
         };
         // FIXME(antoyo): instead of doing this, add SsizeT to libgccjit.
         cx.isize_type = usize_type.to_signed(&cx);
         cx
+    }
+
+    /// Fill in the member blocks of every pending cleanup region.
+    ///
+    /// Clone all blocks reachable from a cleanup block into the cleanup region.
+    #[cfg(feature = "master")]
+    pub fn populate_cleanup_regions(&self) {
+        let pending = std::mem::take(&mut *self.pending_cleanups.borrow_mut());
+
+        for cleanup in pending {
+            // The landing pad is the region's entry, so it must come first.
+            let mut blocks = vec![];
+            let mut visited = FxHashSet::default();
+            let mut stack = vec![cleanup.landing_pad];
+            while let Some(block) = stack.pop() {
+                if !visited.insert(block) {
+                    continue;
+                }
+                blocks.push(block);
+                stack.extend(block.get_successors());
+            }
+
+            for clone in gccjit::clone_blocks(&blocks) {
+                cleanup.region.add_block(clone);
+            }
+        }
+
+        self.landing_pads.borrow_mut().clear();
     }
 
     pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {
