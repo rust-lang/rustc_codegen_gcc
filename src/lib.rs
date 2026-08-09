@@ -288,7 +288,7 @@ impl CodegenBackend for GccCodegenBackend {
     }
 
     fn target_cpu(&self, sess: &Session) -> String {
-        target_cpu(sess).to_owned()
+        target_cpu(sess).into_owned()
     }
 
     fn codegen_crate(&self, tcx: TyCtxt<'_>) -> Box<dyn Any> {

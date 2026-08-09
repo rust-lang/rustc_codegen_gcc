@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::env;
 
@@ -119,22 +120,22 @@ fn arch_to_gcc(name: &str) -> &str {
     }
 }
 
-fn handle_native(name: &str) -> &str {
+fn handle_native(name: &str) -> Cow<'_, str> {
     if name != NATIVE_CPU {
-        return arch_to_gcc(name);
+        return arch_to_gcc(name).into();
     }
 
     #[cfg(feature = "master")]
     {
         // Get the native arch.
         let context = Context::default();
-        context.get_target_info().arch().unwrap().to_str().unwrap()
+        Cow::Owned(context.get_target_info().arch().to_str().unwrap().to_string())
     }
     #[cfg(not(feature = "master"))]
     unimplemented!();
 }
 
-pub fn target_cpu(sess: &Session) -> &str {
+pub fn target_cpu(sess: &Session) -> Cow<'_, str> {
     match sess.opts.cg.target_cpu {
         Some(ref name) => handle_native(name),
         None => handle_native(sess.target.cpu.as_ref()),
