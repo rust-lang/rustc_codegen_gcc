@@ -178,6 +178,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         } else {
             debug_assert!(a_type.dyncast_array().is_some());
             debug_assert!(b_type.dyncast_array().is_some());
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let signed = a_type.is_compatible_with(self.i128_type);
             let func_name = match (operation, signed) {
                 (BinaryOp::Plus, true) => "__rust_i128_add",
@@ -187,7 +190,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 _ => unreachable!("unexpected additive operation {:?}", operation),
             };
             let param_a = self.context.new_parameter(self.location, a_type, "a");
-            let param_b = self.context.new_parameter(self.location, b_type, "b");
+            let param_b = self.context.new_parameter(self.location, a_type, "b");
             let func = self.context.new_function(
                 self.location,
                 FunctionType::Extern,
@@ -238,10 +241,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         } else {
             debug_assert!(a_type.dyncast_array().is_some());
             debug_assert!(b_type.dyncast_array().is_some());
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let sign = if signed { "" } else { "u" };
             let func_name = format!("__{}{}ti3", sign, operation_name);
             let param_a = self.context.new_parameter(self.location, a_type, "a");
-            let param_b = self.context.new_parameter(self.location, b_type, "b");
+            let param_b = self.context.new_parameter(self.location, a_type, "b");
             let func = self.context.new_function(
                 self.location,
                 FunctionType::Extern,
@@ -470,7 +476,10 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     lhs_high = self.context.new_cast(self.location, lhs_high, signed_type);
                     rhs_high = self.context.new_cast(self.location, rhs_high, signed_type);
                 }
-                IntPredicate::IntEQ | IntPredicate::IntNE => (),
+                IntPredicate::IntEQ | IntPredicate::IntNE => {
+                    lhs_high = self.context.new_cast(self.location, lhs_high, unsigned_type);
+                    rhs_high = self.context.new_cast(self.location, rhs_high, unsigned_type);
+                }
             }
 
             let condition = self.context.new_comparison(
@@ -637,6 +646,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
             a ^ b
         } else {
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             self.concat_low_high_rvalues(
                 a_type,
                 self.low(a) ^ self.low(b),
@@ -846,6 +858,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 !a_native && !b_native,
                 "both types should either be native or non-native for or operation"
             );
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let native_int_type = a_type.dyncast_array().expect("get element type");
             self.concat_low_high_rvalues(
                 a_type,
