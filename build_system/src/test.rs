@@ -1002,6 +1002,8 @@ fn contains_ui_error_patterns(file_path: &Path, keep_lto_tests: bool) -> Result<
 // * `prepare_files_callback`: A callback function that prepares the files needed for the test. Its used to remove/retain tests giving Error to run various rust test suits.
 // * `run_error_pattern_test`: A boolean that determines whether to run only error pattern tests.
 // * `test_type`: A string that indicates the type of the test being run.
+// * `retained_tests_list_path`: The list of tests that `prepare_files_callback` retained, if any.
+//   It is checked against the tests remaining after the filtering to report dead lines.
 //
 fn test_rustc_inner<F>(
     env: &Env,
@@ -1009,7 +1011,7 @@ fn test_rustc_inner<F>(
     prepare_files_callback: F,
     run_error_pattern_test: bool,
     test_type: &str,
-    run_ignored_tests: bool,
+    retained_tests_list_path: Option<&str>,
 ) -> Result<(), String>
 where
     F: Fn(&Path) -> Result<bool, String>,
@@ -1079,6 +1081,9 @@ where
                 false,
             )?;
         }
+        if let Some(retained_tests_list_path) = retained_tests_list_path {
+            check_for_dead_listed_tests(&rust_path, retained_tests_list_path)?;
+        }
         let nb_parts = args.nb_parts.unwrap_or(0);
         if nb_parts > 0 {
             let current_part = args.current_part.unwrap();
@@ -1137,7 +1142,7 @@ where
     env.get_mut("RUSTFLAGS").unwrap().clear();
 
     let test_dir = format!("tests/{test_type}");
-    let mut command: Vec<&dyn AsRef<OsStr>> = vec![
+    let command: Vec<&dyn AsRef<OsStr>> = vec![
         &"./x.py",
         &"test",
         &"--run",
@@ -1152,19 +1157,36 @@ where
         &"--bypass-ignore-backends",
     ];
 
-    if run_ignored_tests {
-        command.push(&"--");
-        command.push(&"--ignored");
-    }
-
     run_command_with_output_and_env(&command, Some(&rust_path), Some(&env))?;
     Ok(())
 }
 
+/// Checks that every test listed in `list_path` survived the filtering done by
+/// `contains_ui_error_patterns`.
+fn check_for_dead_listed_tests(rust_path: &Path, list_path: &str) -> Result<(), String> {
+    let listed_tests = std::fs::read_to_string(list_path)
+        .map_err(|error| format!("Failed to read `{list_path}`: {error:?}"))?;
+    let dead_tests = listed_tests
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !rust_path.join(line).exists())
+        .collect::<Vec<_>>();
+    if dead_tests.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "The following tests listed in `{list_path}` are filtered out before the tests are run, \
+         so listing them has no effect:\n{}\n\nThis happens when a test contains an error pattern \
+         (like `//~` or `//@ known-bug`), in which case it should be removed from `{list_path}`, \
+         or when it uses LTO, in which case it should be moved to `tests/failing-lto-tests.txt`.",
+        dead_tests.join("\n")
+    ))
+}
+
 fn test_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
-    test_rustc_inner(env, args, |_| Ok(false), false, "run-make", false)?;
-    test_rustc_inner(env, args, |_| Ok(false), false, "run-make-cargo", false)?;
-    test_rustc_inner(env, args, |_| Ok(false), false, "ui", false)
+    test_rustc_inner(env, args, |_| Ok(false), false, "run-make", None)?;
+    test_rustc_inner(env, args, |_| Ok(false), false, "run-make-cargo", None)?;
+    test_rustc_inner(env, args, |_| Ok(false), false, "ui", None)
 }
 
 fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
@@ -1174,7 +1196,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         retain_files_callback("tests/failing-run-make-tests.txt", "run-make"),
         false,
         "run-make",
-        true,
+        None,
     );
 
     let run_make_cargo_result = test_rustc_inner(
@@ -1182,8 +1204,8 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         args,
         retain_files_callback("tests/failing-run-make-tests.txt", "run-make-cargo"),
         false,
-        "run-make",
-        true,
+        "run-make-cargo",
+        None,
     );
 
     let ui_result = test_rustc_inner(
@@ -1192,7 +1214,7 @@ fn test_failing_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         retain_files_callback("tests/failing-ui-tests.txt", "ui"),
         false,
         "ui",
-        true,
+        Some("tests/failing-ui-tests.txt"),
     );
 
     run_make_result.and(run_make_cargo_result).and(ui_result)
@@ -1205,7 +1227,7 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         remove_files_callback("tests/failing-ui-tests.txt", "ui"),
         false,
         "ui",
-        false,
+        None,
     )?;
     test_rustc_inner(
         env,
@@ -1213,7 +1235,7 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         remove_files_callback("tests/failing-run-make-tests.txt", "run-make"),
         false,
         "run-make",
-        false,
+        None,
     )?;
     test_rustc_inner(
         env,
@@ -1221,7 +1243,7 @@ fn test_successful_rustc(env: &Env, args: &TestArg) -> Result<(), String> {
         remove_files_callback("tests/failing-run-make-tests.txt", "run-make-cargo"),
         false,
         "run-make-cargo",
-        false,
+        None,
     )
 }
 
@@ -1232,7 +1254,7 @@ fn test_failing_ui_pattern_tests(env: &Env, args: &TestArg) -> Result<(), String
         remove_files_callback("tests/failing-ice-tests.txt", "ui"),
         true,
         "ui",
-        false,
+        None,
     )
 }
 
