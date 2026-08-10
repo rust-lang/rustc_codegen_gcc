@@ -205,7 +205,7 @@ impl CodegenBackend for GccCodegenBackend {
                 .join(rustlib_path)
                 .join("codegen-backends")
                 .join("lib")
-                .join(sess.target.llvm_target.as_ref())
+                .join(sess.opts.target_triple.tuple())
                 .join("libgccjit.so")
         }
 
