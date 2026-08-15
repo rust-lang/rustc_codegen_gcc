@@ -70,11 +70,11 @@ mod type_of;
 use std::any::Any;
 use std::ffi::CString;
 use std::fmt::Debug;
-use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{env, fs};
 
 #[cfg(feature = "master")]
 use gccjit::TargetInfo;
@@ -210,6 +210,10 @@ impl CodegenBackend for GccCodegenBackend {
                     lib_path.join(sess.target.llvm_target.as_ref()).join("libgccjit.so");
                 paths.push(llvm_target_path);
             }
+            if let Ok(custom_path) = env::var("CG_GCCJIT_SEARCH_PATH").as_deref() {
+                paths.push(PathBuf::from(custom_path).join("libgccjit.so"));
+            }
+
             paths
         }
 
