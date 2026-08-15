@@ -204,13 +204,16 @@ pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
     if let Some(model) = sess.code_model() {
         use rustc_target::spec::CodeModel;
 
-        context.add_command_line_option(match model {
-            CodeModel::Tiny => "-mcmodel=tiny",
-            CodeModel::Small => "-mcmodel=small",
-            CodeModel::Kernel => "-mcmodel=kernel",
-            CodeModel::Medium => "-mcmodel=medium",
-            CodeModel::Large => "-mcmodel=large",
-        });
+        // NOTE: GCC m68k has no option for configuring the code model, so this should be ignored.
+        if sess.target.arch != Arch::M68k {
+            context.add_command_line_option(match model {
+                CodeModel::Tiny => "-mcmodel=tiny",
+                CodeModel::Small => "-mcmodel=small",
+                CodeModel::Kernel => "-mcmodel=kernel",
+                CodeModel::Medium => "-mcmodel=medium",
+                CodeModel::Large => "-mcmodel=large",
+            });
+        }
     }
 
     match sess.stack_protector() {
