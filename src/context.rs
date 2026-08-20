@@ -97,6 +97,12 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// Cache of the anonymous struct types.
     pub struct_types: RefCell<FxHashMap<StructTypeKey<'gcc>, Type<'gcc>>>,
 
+    /// Cache of the array types used for runs of constant bytes, keyed by element type and count.
+    ///
+    /// libgccjit mints a fresh type on every `new_array_type`, and struct types are keyed on their
+    /// field types, so without this two equal byte runs would yield two distinct anonymous structs.
+    pub byte_array_types: RefCell<FxHashMap<(Type<'gcc>, u64), Type<'gcc>>>,
+
     /// Cache instances of monomorphic and polymorphic items
     pub instances: RefCell<FxHashMap<Instance<'tcx>, LValue<'gcc>>>,
     /// Cache function instances of monomorphic and polymorphic items
@@ -314,6 +320,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             types: Default::default(),
             tcx,
             struct_types: Default::default(),
+            byte_array_types: Default::default(),
             local_gen_sym_counter: Cell::new(0),
             global_gen_sym_counter: Cell::new(0),
             eh_personality: Cell::new(None),
