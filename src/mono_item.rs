@@ -166,6 +166,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
         attributes::from_fn_attrs(self, fn_decl, instance, Some(fn_abi));
 
+        #[cfg(feature = "master")]
+        if linkage == Linkage::WeakAny {
+            fn_decl.add_attribute(FnAttribute::Weak);
+        }
+
         // If we're compiling the compiler-builtins crate, e.g., the equivalent of
         // compiler-rt, then we want to implicitly compile everything with hidden
         // visibility as we're going to link this object all over the place but
