@@ -1,6 +1,6 @@
 use gccjit::Function;
 #[cfg(feature = "master")]
-use gccjit::{FnAttribute, LValue, ToRValue, VarAttribute};
+use gccjit::{FnAttribute, GlobalKind, ToRValue, Type, VarAttribute};
 use rustc_codegen_ssa::traits::PreDefineCodegenMethods;
 use rustc_hir::attrs::Linkage;
 use rustc_hir::def::DefKind;
@@ -47,19 +47,13 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         };
 
         let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
-
-        let create_global = |this: &CodegenCx<'gcc, 'tcx>, name: &str, visibility: Visibility| {
-            let global = this.define_global(name, gcc_type, is_tls, attrs.link_section);
-            #[cfg(feature = "master")]
-            global.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
-            // FIXME(antoyo): set linkage.
-            global
-        };
-        let global = create_global(self, global_name, visibility);
-
-        let attrs = self.tcx.codegen_instance_attrs(instance.def);
+        let global = self.define_global(global_name, gcc_type, is_tls, attrs.link_section);
         #[cfg(feature = "master")]
-        self.add_static_aliases(&attrs.foreign_item_symbol_aliases, global_name, &create_global);
+        global.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
+        // FIXME(antoyo): set linkage.
+
+        #[cfg(feature = "master")]
+        self.add_static_aliases(gcc_type, global_name, attrs, &attrs.foreign_item_symbol_aliases);
 
         self.instances.borrow_mut().insert(instance, global);
     }
@@ -88,20 +82,31 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
     #[cfg(feature = "master")]
-    fn add_static_aliases<F>(
+    fn add_static_aliases(
         &self,
-        aliases: &[(DefId, Linkage, Visibility)],
+        gcc_type: Type<'gcc>,
         aliased: &str,
-        create_global: &F,
-    ) where
-        F: Fn(&CodegenCx<'gcc, 'tcx>, &str, Visibility) -> LValue<'gcc>,
-    {
-        for &(alias, _linkage, visibility) in aliases {
+        attrs: &CodegenFnAttrs,
+        aliases: &[(DefId, Linkage, Visibility)],
+    ) {
+        let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
+
+        for &(alias, linkage, visibility) in aliases {
             let instance = Instance::mono(self.tcx, alias);
             let symbol_name = self.tcx.symbol_name(instance);
 
-            let alias = create_global(self, symbol_name.name, visibility);
+            let alias = self.declare_global(
+                symbol_name.name,
+                gcc_type,
+                GlobalKind::Imported,
+                is_tls,
+                attrs.link_section,
+            );
+            alias.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
             alias.add_attribute(VarAttribute::Alias(aliased));
+            if linkage == Linkage::WeakAny {
+                alias.add_attribute(VarAttribute::Weak);
+            }
 
             // Add the alias name to the set of cached items, so there is no duplicate
             // instance added to it during the normal `external static` codegen
