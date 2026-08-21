@@ -719,7 +719,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         if return_type == void_type {
             self.block.end_with_void_return(self.location)
         } else {
-            let abort = self.context.get_builtin_function("abort");
+            let abort = self.cx.get_abort_function();
             self.block.add_eval(self.location, self.context.new_call(self.location, abort, &[]));
             let return_value = self.new_temp(self.current_func(), self.location, return_type);
             self.block.end_with_return(self.location, return_value)

@@ -242,12 +242,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let isize_type = usize_type;
         let bool_type = context.new_type::<bool>();
 
-        let mut functions = FxHashMap::default();
-        let builtins = ["abort"];
-
-        for builtin in builtins.iter() {
-            functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
-        }
+        let functions = FxHashMap::default();
 
         let mut cx = Self {
             int128_align: tcx
