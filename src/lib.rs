@@ -222,7 +222,7 @@ impl CodegenBackend for GccCodegenBackend {
             load_libgccjit_if_needed(&PathBuf::from(custom_path));
 
             if !gccjit::is_loaded() {
-                println!("Could not load gccjit from CG_GCCJIT_LIBRARY_PATH: {}.", custom_path);
+                println!("Could not load gccjit from CG_GCCJIT_LIBRARY_PATH: {}", custom_path);
             }
         }
 
