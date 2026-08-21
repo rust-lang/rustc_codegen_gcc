@@ -82,8 +82,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             AtomicOrdering::AcqRel | AtomicOrdering::Release => AtomicOrdering::Acquire,
             _ => order,
         };
-        let previous_value =
-            self.atomic_load(dst.get_type(), dst, load_ordering, Size::from_bytes(size));
+        let previous_value = self.atomic_load(
+            dst.get_type(),
+            dst,
+            load_ordering,
+            /* volatile */ false,
+            Size::from_bytes(size),
+        );
         let previous_var =
             func.new_local(self.location, previous_value.get_type(), "previous_value");
         let return_value = self.new_temp(func, self.location, previous_value.get_type());
@@ -1060,6 +1065,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         _ty: Type<'gcc>,
         ptr: RValue<'gcc>,
         order: AtomicOrdering,
+        _volatile: bool, // FIXME we are always making the load volatile
         size: Size,
     ) -> RValue<'gcc> {
         // FIXME(antoyo): use ty.
@@ -1229,6 +1235,7 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         value: RValue<'gcc>,
         ptr: RValue<'gcc>,
         order: AtomicOrdering,
+        _volatile: bool, // FIXME we are always making the store volatile
         size: Size,
     ) {
         // FIXME(antoyo): handle alignment.
