@@ -58,6 +58,10 @@ fn get_simple_intrinsic<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     name: Symbol,
 ) -> Option<Function<'gcc>> {
+    if name == sym::abort {
+        return Some(cx.get_abort_function());
+    }
+
     let gcc_name = match name {
         sym::sqrtf32 => "sqrtf",
         sym::sqrtf64 => "sqrt",
@@ -103,7 +107,6 @@ fn get_simple_intrinsic<'gcc, 'tcx>(
         sym::round_ties_even_f64 => "rint",
         sym::roundf32 => "roundf",
         sym::roundf64 => "round",
-        sym::abort => "abort",
         _ => return None,
     };
     Some(cx.context.get_builtin_function(gcc_name))
@@ -641,7 +644,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
     }
 
     fn abort(&mut self) {
-        let func = self.context.get_builtin_function("abort");
+        let func = self.cx.get_abort_function();
         let func: RValue<'gcc> = unsafe { std::mem::transmute(func) };
         self.call(self.type_void(), None, None, func, &[], None, None);
     }

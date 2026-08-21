@@ -63,6 +63,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         declare_raw_fn(self, name, None, return_type, params, variadic)
     }
 
+    /// Declare `abort` as a regular function instead of using GCC's builtin, so that a
+    /// user-provided definition (e.g. on bare-metal targets) takes precedence.
+    pub fn get_abort_function(&self) -> Function<'gcc> {
+        self.declare_func("abort", self.type_void(), &[], false)
+    }
+
     pub fn declare_global(
         &self,
         name: &str,
