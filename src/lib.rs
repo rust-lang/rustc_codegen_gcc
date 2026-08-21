@@ -220,6 +220,10 @@ impl CodegenBackend for GccCodegenBackend {
             && let Ok(true) = fs::exists(custom_path)
         {
             load_libgccjit_if_needed(&PathBuf::from(custom_path));
+
+            if !gccjit::is_loaded() {
+                println!("Could not load gccjit from CG_GCCJIT_LIBRARY_PATH: {}.", custom_path);
+            }
         }
 
         // We use all_paths() instead of only path() in case the path specified by --sysroot is
