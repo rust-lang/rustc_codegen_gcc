@@ -210,11 +210,16 @@ impl CodegenBackend for GccCodegenBackend {
                     lib_path.join(sess.target.llvm_target.as_ref()).join("libgccjit.so");
                 paths.push(llvm_target_path);
             }
-            if let Ok(custom_path) = env::var("CG_GCCJIT_SEARCH_PATH").as_deref() {
-                paths.push(PathBuf::from(custom_path).join("libgccjit.so"));
-            }
 
             paths
+        }
+
+        // If the user set the CG_GCCJIT_LIBRARY_PATH environment variable, then we'll load the
+        // library first from there.
+        if let Ok(custom_path) = env::var("CG_GCCJIT_LIBRARY_PATH").as_deref()
+            && let Ok(true) = fs::exists(custom_path)
+        {
+            load_libgccjit_if_needed(&PathBuf::from(custom_path));
         }
 
         // We use all_paths() instead of only path() in case the path specified by --sysroot is
@@ -231,6 +236,13 @@ impl CodegenBackend for GccCodegenBackend {
 
         if !gccjit::is_loaded() {
             let mut paths = vec![];
+
+            // Add the path from the environment variable to tell the user that we tried to load
+            // the library from there.
+            if let Ok(custom_path) = env::var("CG_GCCJIT_LIBRARY_PATH").as_deref() {
+                paths.push(PathBuf::from(custom_path));
+            }
+
             for path in sess.opts.sysroot.all_paths() {
                 for libgccjit_target_lib_file in file_paths(path, sess) {
                     paths.push(libgccjit_target_lib_file);
