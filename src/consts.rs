@@ -228,12 +228,19 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             Some(kind) if !self.tcx.sess.fewer_names() => {
                 let name = self.generate_local_symbol_name(kind);
                 // FIXME(antoyo): check if it's okay that no link_section is set.
-
-                let typ = self.val_ty(cv).get_aligned(align.bytes());
+                let mut typ = self.val_ty(cv);
+                // FIXME(GuillaumeGomez): is it only structs or could be other types?
+                if typ.is_struct().is_some() {
+                    typ = typ.get_aligned(align.bytes());
+                }
                 self.declare_private_global(&name[..], typ)
             }
             _ => {
-                let typ = self.val_ty(cv).get_aligned(align.bytes());
+                let mut typ = self.val_ty(cv);
+                // FIXME(GuillaumeGomez): is it only structs or could be other types?
+                if typ.is_struct().is_some() {
+                    typ = typ.get_aligned(align.bytes());
+                }
                 self.declare_unnamed_global(typ)
             }
         };
@@ -449,8 +456,7 @@ pub(crate) fn const_alloc_to_gcc_uncached<'gcc>(
         })
         .collect();
 
-    // FIXME(bjorn3) avoid wrapping in a struct when there is only a single element.
-    cx.const_struct(&llvals, true)
+    if let &[data] = &*llvals { data } else { cx.const_struct(&llvals, true) }
 }
 
 fn codegen_static_initializer<'gcc, 'tcx>(
