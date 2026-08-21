@@ -17,14 +17,17 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os.image }}
 
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - { image: ubuntu-24.04, asset_name_suffix: "" }
+          - { image: ubuntu-24.04-arm, asset_name_suffix: "-aarch64" }
         libgccjit_version:
-          - { gcc: "gcc-15.deb" }
-          - { gcc: "gcc-15-without-int128.deb" }
+          - { gcc: "gcc-15" }
+          - { gcc: "gcc-15-without-int128" }
         commands: [
           "--std-tests --alloc-tests",
           # FIXME: re-enable asm tests when GCC can emit in the right syntax.
@@ -54,18 +57,37 @@ jobs:
       run: sudo apt-get install ninja-build ripgrep llvm-14-tools llvm
 
     - name: Download artifact
-      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${{ matrix.libgccjit_version.gcc }}
+      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${{ matrix.libgccjit_version.gcc }}${{ matrix.os.asset_name_suffix }}.deb
 
     - name: Setup path to libgccjit
       run: |
-          sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}
+          sudo dpkg --force-overwrite -i ${{ matrix.libgccjit_version.gcc }}${{ matrix.os.asset_name_suffix }}.deb
           echo 'gcc-path = "/usr/lib/"' > config.toml
 
     # Some run-make tests fail if we use our forked GCC because it doesn't
     # bundle libstdc++, so we switch to gcc-14 to have a GCC that has
     # libstdc++.
+    #
+    # We cannot do this on Aarch64: on x86-64, rustc links with rust-lld, which
+    # ignores the LTO bytecode that our GCC puts in the object files, while on
+    # Aarch64, it links via `cc`. Since LTO requires the same GCC version for
+    # the whole compilation, gcc-14 would run its own lto1 on that bytecode and
+    # fail with:
+    # lto1: fatal error: bytecode stream in file '...rcgu.o' generated with LTO
+    # version 17.0 instead of the expected 14.0
     - name: Set default GCC to gcc-14
+      if: ${{ matrix.os.image == 'ubuntu-24.04' }}
       run: sudo update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-14 30
+
+    # Since we keep our GCC as the linker on Aarch64 (see above) and it is
+    # built without C++ support, it ships neither libubsan (needed by the tests
+    # compiled with `-Cllvm-args=sanitize-undefined`) nor libstdc++ (needed by
+    # some run-make tests). Take those from gcc-14 instead: LIBRARY_PATH is
+    # only used to resolve `-l` options, so the startup files still come from
+    # our GCC.
+    - name: Use the libraries from gcc-14 that our GCC doesn't bundle
+      if: ${{ matrix.os.image == 'ubuntu-24.04-arm' }}
+      run: echo "LIBRARY_PATH=$(dirname "$(gcc-14 -print-file-name=libubsan.so)")" >> $GITHUB_ENV
 
     - name: Set env
       run: |
@@ -113,7 +135,7 @@ jobs:
         ./y.sh prepare
 
     - name: Add more failing tests for GCC without 128-bit integers support
-      if: ${{ matrix.libgccjit_version.gcc == 'gcc-15-without-int128.deb' }}
+      if: ${{ matrix.libgccjit_version.gcc == 'gcc-15-without-int128' }}
       run: cat tests/failing-ui-tests-without-128bit-integers.txt >> tests/failing-ui-tests.txt
 
     - name: Run tests

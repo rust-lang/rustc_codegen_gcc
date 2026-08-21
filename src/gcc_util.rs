@@ -112,6 +112,15 @@ pub fn to_gcc_features<'a>(sess: &Session, s: &'a str) -> SmallVec<[&'a str; 2]>
     // cSpell:enable
 }
 
+/// Translate a Rust feature name to the name libgccjit reports in its target
+/// info (see gcc/config/aarch64/aarch64-jit.cc and aarch64-option-extensions.def).
+pub fn to_gcc_target_info_feature<'a>(sess: &Session, feature: &'a str) -> &'a str {
+    match (&sess.target.arch, feature) {
+        (&Arch::AArch64, "neon") => "asimd",
+        (_, feature) => feature,
+    }
+}
+
 fn arch_to_gcc(name: &str) -> &str {
     match name {
         "M68000" => "68000",
@@ -145,6 +154,23 @@ pub fn target_cpu(sess: &Session) -> Cow<'_, str> {
         None => handle_native(sess.target.cpu.as_ref()),
     }
 }
+
+/*pub fn add_baseline_flags<'gcc>(context: &Context<'gcc>, sess: &Session) {
+    if sess.target.features.is_empty() {
+        return;
+    }
+
+    for feature in sess.target.features.split(',') {
+        let flag = match feature {
+            "+v8a" => "-march=armv8-a",
+            "+outline-atomics" => "-moutline-atomics",
+            // FIXME: do not panic here.
+            _ => panic!("Feature: {feature}"),
+        };
+        context.add_command_line_option(flag);
+        context.add_driver_option(flag);
+    }
+}*/
 
 pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
     let context = Context::default();
@@ -235,6 +261,8 @@ pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
     if target_cpu != "generic" {
         context.add_command_line_option(format!("-march={}", target_cpu));
     }
+
+    // add_baseline_flags(&context, sess);
 
     if sess.opts.unstable_opts.function_sections.unwrap_or(sess.target.function_sections) {
         context.add_command_line_option("-ffunction-sections");
