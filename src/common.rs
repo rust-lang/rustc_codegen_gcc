@@ -12,6 +12,7 @@ use rustc_session::PointerAuthSchema;
 
 use crate::consts::const_alloc_to_gcc;
 use crate::context::{CodegenCx, new_array_type};
+use crate::type_::struct_attributes;
 use crate::type_of::LayoutGccExt;
 
 impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
@@ -135,17 +136,12 @@ pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) ->
     // or is it using a more efficient representation?
     match bytes.len() % 8 {
         0 => {
-            debug_assert_eq!(
-                bytes.len() % 8,
-                0,
-                "bytes length is not a multiple of 8, so bytes.as_chunks will have a remainder"
-            );
             let context = &cx.context;
             let byte_type = context.new_type::<u64>();
             let typ = new_array_type(context, None, byte_type, bytes.len() as u64 / 8);
-            let elements: Vec<_> = bytes
-                .as_chunks::<8>()
-                .0
+            let (arrays, remainder) = bytes.as_chunks::<8>();
+            debug_assert!(remainder.is_empty());
+            let elements: Vec<_> = arrays
                 .iter()
                 .map(|&arr| {
                     context.new_rvalue_from_long(
@@ -162,17 +158,12 @@ pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) ->
             context.new_array_constructor(None, typ, &elements)
         }
         4 => {
-            debug_assert_eq!(
-                bytes.len() % 4,
-                0,
-                "bytes length is not a multiple of 4, so bytes.as_chunks will have a remainder"
-            );
             let context = &cx.context;
             let byte_type = context.new_type::<u32>();
             let typ = new_array_type(context, None, byte_type, bytes.len() as u64 / 4);
-            let elements: Vec<_> = bytes
-                .as_chunks::<4>()
-                .0
+            let (arrays, remainder) = bytes.as_chunks::<4>();
+            debug_assert!(remainder.is_empty());
+            let elements: Vec<_> = arrays
                 .iter()
                 .map(|&arr| {
                     context.new_rvalue_from_int(
@@ -298,7 +289,7 @@ impl<'gcc, 'tcx> ConstCodegenMethods for CodegenCx<'gcc, 'tcx> {
     fn const_struct(&self, values: &[RValue<'gcc>], packed: bool) -> RValue<'gcc> {
         let fields: Vec<_> = values.iter().map(|value| value.get_type()).collect();
         // FIXME(antoyo): cache the type? It's anonymous, so probably not.
-        let typ = self.type_struct(&fields, packed);
+        let typ = self.type_struct(&fields, &struct_attributes(packed, None));
         let struct_type = typ.is_struct().expect("struct type");
         self.context.new_struct_constructor(None, struct_type.as_type(), None, values)
     }

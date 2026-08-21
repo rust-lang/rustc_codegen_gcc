@@ -178,6 +178,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         } else {
             debug_assert!(a_type.dyncast_array().is_some());
             debug_assert!(b_type.dyncast_array().is_some());
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let signed = a_type.is_compatible_with(self.i128_type);
             let func_name = match (operation, signed) {
                 (BinaryOp::Plus, true) => "__rust_i128_add",
@@ -187,7 +190,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                 _ => unreachable!("unexpected additive operation {:?}", operation),
             };
             let param_a = self.context.new_parameter(self.location, a_type, "a");
-            let param_b = self.context.new_parameter(self.location, b_type, "b");
+            let param_b = self.context.new_parameter(self.location, a_type, "b");
             let func = self.context.new_function(
                 self.location,
                 FunctionType::Extern,
@@ -238,10 +241,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         } else {
             debug_assert!(a_type.dyncast_array().is_some());
             debug_assert!(b_type.dyncast_array().is_some());
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let sign = if signed { "" } else { "u" };
             let func_name = format!("__{}{}ti3", sign, operation_name);
             let param_a = self.context.new_parameter(self.location, a_type, "a");
-            let param_b = self.context.new_parameter(self.location, b_type, "b");
+            let param_b = self.context.new_parameter(self.location, a_type, "b");
             let func = self.context.new_function(
                 self.location,
                 FunctionType::Extern,
@@ -432,7 +438,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         if self.is_non_native_int_type(a_type) || self.is_non_native_int_type(b_type) {
             // This algorithm is based on compiler-rt's __cmpti2:
             // https://github.com/llvm-mirror/compiler-rt/blob/f0745e8476f069296a7c71accedd061dce4cdf79/lib/builtins/cmpti2.c#L21
-            let result = self.current_func().new_local(self.location, self.int_type, "icmp_result");
+            let result = self.new_temp(self.current_func(), self.location, self.int_type);
             let block1 = self.current_func().new_block("block1");
             let block2 = self.current_func().new_block("block2");
             let block3 = self.current_func().new_block("block3");
@@ -462,9 +468,18 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                     lhs_high = self.context.new_cast(self.location, lhs_high, unsigned_type);
                     rhs_high = self.context.new_cast(self.location, rhs_high, unsigned_type);
                 }
-                // FIXME(antoyo): we probably need to handle signed comparison for unsigned
-                // integers.
-                _ => (),
+                IntPredicate::IntSGT
+                | IntPredicate::IntSGE
+                | IntPredicate::IntSLT
+                | IntPredicate::IntSLE => {
+                    let signed_type = native_int_type.to_signed(self.cx);
+                    lhs_high = self.context.new_cast(self.location, lhs_high, signed_type);
+                    rhs_high = self.context.new_cast(self.location, rhs_high, signed_type);
+                }
+                IntPredicate::IntEQ | IntPredicate::IntNE => {
+                    lhs_high = self.context.new_cast(self.location, lhs_high, unsigned_type);
+                    rhs_high = self.context.new_cast(self.location, rhs_high, unsigned_type);
+                }
             }
 
             let condition = self.context.new_comparison(
@@ -602,9 +617,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
                         rhs = self.context.new_cast(self.location, rhs, unsigned_type);
                     }
                 }
-                // FIXME(antoyo): we probably need to handle signed comparison for unsigned
-                // integers.
-                _ => (),
+                IntPredicate::IntSGT
+                | IntPredicate::IntSGE
+                | IntPredicate::IntSLT
+                | IntPredicate::IntSLE => {
+                    if !a_type.is_vector() {
+                        let signed_type = a_type.to_signed(self.cx);
+                        lhs = self.context.new_cast(self.location, lhs, signed_type);
+                        rhs = self.context.new_cast(self.location, rhs, signed_type);
+                    }
+                }
+                IntPredicate::IntEQ | IntPredicate::IntNE => (),
             }
             self.context.new_comparison(self.location, op.to_gcc_comparison(), lhs, rhs)
         }
@@ -623,6 +646,9 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
             a ^ b
         } else {
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             self.concat_low_high_rvalues(
                 a_type,
                 self.low(a) ^ self.low(b),
@@ -832,6 +858,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 !a_native && !b_native,
                 "both types should either be native or non-native for or operation"
             );
+            if a_type != b_type {
+                b = self.gcc_int_cast(b, a_type);
+            }
             let native_int_type = a_type.dyncast_array().expect("get element type");
             self.concat_low_high_rvalues(
                 a_type,
@@ -862,7 +891,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.bitwise_operation(BinaryOp::BitwiseOr, a, b, loc)
     }
 
-    // FIXME(antoyo): can we use https://github.com/rust-lang/compiler-builtins/blob/master/src/int/mod.rs#L379 instead?
+    // FIXME(antoyo): can we use https://github.com/rust-lang/compiler-builtins/blob/1a99c2aa295bb2d507fa0e67a3b5eef64fba92a0/libm/src/math/support/int_traits.rs#L485 instead?
     pub fn gcc_int_cast(&self, value: RValue<'gcc>, dest_typ: Type<'gcc>) -> RValue<'gcc> {
         let value_type = value.get_type();
         if self.is_native_int_type_or_bool(dest_typ) && self.is_native_int_type_or_bool(value_type)
