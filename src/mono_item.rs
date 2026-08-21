@@ -11,6 +11,7 @@ use rustc_middle::mono::Visibility;
 use rustc_middle::ty::layout::{FnAbiOf, HasTypingEnv, LayoutOf};
 use rustc_middle::ty::{self, Instance, TypeVisitableExt};
 
+use crate::consts::const_alloc_type;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
 use crate::{attributes, base};
@@ -26,12 +27,24 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     ) {
         let attrs = self.tcx.codegen_fn_attrs(def_id);
         let instance = Instance::mono(self.tcx, def_id);
-        let DefKind::Static { nested, .. } = self.tcx.def_kind(def_id) else { bug!() };
-        // Nested statics do not have a type, so pick a dummy type and let `codegen_static` figure out
-        // the gcc type from the actual evaluated initializer.
-        let ty =
-            if nested { self.tcx.types.unit } else { instance.ty(self.tcx, self.typing_env()) };
-        let gcc_type = self.layout_of(ty).gcc_type(self);
+        // Declare the global with the type its initializer will have, so that `codegen_static`
+        // never has to retype it afterwards. The initializer is lowered as a packed struct of byte
+        // runs and relocations, which almost never matches the layout type.
+        let gcc_type = match self.tcx.eval_static_initializer(def_id) {
+            Ok(alloc) => const_alloc_type(self, alloc),
+            // The initializer failed to evaluate; `codegen_static` bails out on it too, so this
+            // type is never used to hold one.
+            Err(_) => {
+                let DefKind::Static { nested, .. } = self.tcx.def_kind(def_id) else { bug!() };
+                // Nested statics do not have a type, so pick a dummy one.
+                let ty = if nested {
+                    self.tcx.types.unit
+                } else {
+                    instance.ty(self.tcx, self.typing_env())
+                };
+                self.layout_of(ty).gcc_type(self)
+            }
+        };
 
         let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
 
