@@ -14,6 +14,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         &self,
         name: &str,
         ty: Type<'gcc>,
+        global_kind: GlobalKind,
         is_tls: bool,
         link_section: Option<Symbol>,
     ) -> LValue<'gcc> {
@@ -31,7 +32,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             }
             global
         } else {
-            self.declare_global(name, ty, GlobalKind::Exported, is_tls, link_section)
+            self.declare_global(name, ty, global_kind, is_tls, link_section)
         }
     }
 
@@ -141,10 +142,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         &self,
         name: &str,
         ty: Type<'gcc>,
+        global_kind: GlobalKind,
         is_tls: bool,
         link_section: Option<Symbol>,
     ) -> LValue<'gcc> {
-        self.get_or_insert_global(name, ty, is_tls, link_section)
+        self.get_or_insert_global(name, ty, global_kind, is_tls, link_section)
     }
 
     pub fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {

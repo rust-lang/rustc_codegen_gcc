@@ -39,22 +39,24 @@ pub fn symbol_visibility_to_gcc(visibility: SymbolVisibility) -> gccjit::Visibil
     }
 }
 
-/// The kind of a global declared with an explicit `#[linkage]`.
+/// The kind of a global *definition* with an explicit `#[linkage]`.
 ///
-/// This is only reached for imports (`extern { #[linkage = "..."] static X: *const T; }`), where
-/// every flavour but `internal` is an undefined reference. `extern_weak` additionally gets
-/// `VarAttribute::Weak` from the caller, so that an unresolved symbol reads as null.
+/// The flavours that another object file is allowed to override also need
+/// `linkage_needs_weak_attribute` from the caller: `GlobalKind` alone cannot express weakness.
 pub fn global_linkage_to_gcc(linkage: Linkage) -> GlobalKind {
     match linkage {
-        Linkage::Internal => GlobalKind::Internal,
-        Linkage::External
-        | Linkage::AvailableExternally
-        | Linkage::LinkOnceAny
+        Linkage::External => GlobalKind::Exported,
+        // libgccjit cannot emit a definition that the linker discards in favour of the one in
+        // another object file, so emit a private copy of it instead.
+        Linkage::AvailableExternally | Linkage::Internal => GlobalKind::Internal,
+        // libgccjit exposes neither comdat nor common storage, so `weak` stands in for every
+        // overridable flavour.
+        Linkage::LinkOnceAny
         | Linkage::LinkOnceODR
         | Linkage::WeakAny
         | Linkage::WeakODR
         | Linkage::ExternalWeak
-        | Linkage::Common => GlobalKind::Imported,
+        | Linkage::Common => GlobalKind::Exported,
     }
 }
 

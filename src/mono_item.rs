@@ -21,7 +21,7 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
     fn predefine_static(
         &mut self,
         def_id: DefId,
-        _linkage: Linkage,
+        linkage: Linkage,
         visibility: Visibility,
         global_name: &str,
     ) {
@@ -47,10 +47,20 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         };
 
         let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
-        let global = self.define_global(global_name, gcc_type, is_tls, attrs.link_section);
+        let global_kind = base::global_linkage_to_gcc(linkage);
+        let global =
+            self.define_global(global_name, gcc_type, global_kind, is_tls, attrs.link_section);
         #[cfg(feature = "master")]
-        global.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
-        // FIXME(antoyo): set linkage.
+        {
+            // GCC warns that it ignores `visibility` on an internal global, and cg_gcc turns
+            // libgccjit warnings into errors.
+            if !matches!(global_kind, GlobalKind::Internal) {
+                global.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
+            }
+            if base::linkage_needs_weak_attribute(linkage) {
+                global.add_attribute(VarAttribute::Weak);
+            }
+        }
 
         #[cfg(feature = "master")]
         self.add_static_aliases(gcc_type, global_name, attrs, &attrs.foreign_item_symbol_aliases);

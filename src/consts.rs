@@ -21,7 +21,6 @@ use rustc_middle::ty::{self, Instance};
 use rustc_middle::{bug, span_bug};
 use rustc_span::def_id::DefId;
 
-use crate::base;
 use crate::common::bytes_type_in_context;
 use crate::context::CodegenCx;
 use crate::type_::struct_attributes;
@@ -469,10 +468,10 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
 ) -> LValue<'gcc> {
     let is_tls = attrs.flags.contains(CodegenFnAttrFlags::THREAD_LOCAL);
     if let Some(linkage) = attrs.import_linkage {
-        // Declare a symbol `foo` with the desired linkage.
-        let global1 =
-            cx.declare_global_with_linkage(sym, cx.type_i8(), base::global_linkage_to_gcc(linkage));
+        // Whatever the flavour, an import is an undefined reference to a symbol defined elsewhere.
+        let global1 = cx.declare_global_with_linkage(sym, cx.type_i8(), GlobalKind::Imported);
 
+        // Only `extern_weak` lets the symbol stay unresolved, in which case it reads as null.
         if linkage == Linkage::ExternalWeak {
             #[cfg(feature = "master")]
             global1.add_attribute(VarAttribute::Weak);
@@ -486,8 +485,14 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
         // zero.
         let real_name =
             format!("_rust_extern_with_linkage_{:016x}_{sym}", cx.tcx.stable_crate_id(LOCAL_CRATE));
-        let global2 = cx.define_global(&real_name, gcc_type, is_tls, attrs.link_section);
-        // FIXME(antoyo): set linkage.
+        let global2 = cx.define_global(
+            &real_name,
+            gcc_type,
+            GlobalKind::Exported,
+            is_tls,
+            attrs.link_section,
+        );
+        // FIXME(antoyo): set linkage: cg_llvm makes this helper global internal.
         let value = cx.const_ptrcast(global1.get_address(None), gcc_type);
         global2.global_set_initializer_rvalue(value);
         global2
