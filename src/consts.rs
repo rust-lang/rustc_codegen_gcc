@@ -488,11 +488,10 @@ fn check_and_apply_linkage<'gcc, 'tcx>(
         let global2 = cx.define_global(
             &real_name,
             gcc_type,
-            GlobalKind::Exported,
+            GlobalKind::Internal,
             is_tls,
             attrs.link_section,
         );
-        // FIXME(antoyo): set linkage: cg_llvm makes this helper global internal.
         let value = cx.const_ptrcast(global1.get_address(None), gcc_type);
         global2.global_set_initializer_rvalue(value);
         global2
