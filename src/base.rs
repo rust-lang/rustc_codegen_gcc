@@ -39,32 +39,57 @@ pub fn symbol_visibility_to_gcc(visibility: SymbolVisibility) -> gccjit::Visibil
     }
 }
 
+/// The kind of a global declared with an explicit `#[linkage]`.
+///
+/// This is only reached for imports (`extern { #[linkage = "..."] static X: *const T; }`), where
+/// every flavour but `internal` is an undefined reference. `extern_weak` additionally gets
+/// `VarAttribute::Weak` from the caller, so that an unresolved symbol reads as null.
 pub fn global_linkage_to_gcc(linkage: Linkage) -> GlobalKind {
     match linkage {
-        Linkage::External => GlobalKind::Imported,
-        Linkage::AvailableExternally => GlobalKind::Imported,
-        Linkage::LinkOnceAny => unimplemented!(),
-        Linkage::LinkOnceODR => unimplemented!(),
-        Linkage::WeakAny => unimplemented!(),
-        Linkage::WeakODR => unimplemented!(),
         Linkage::Internal => GlobalKind::Internal,
-        Linkage::ExternalWeak => GlobalKind::Imported, // FIXME(antoyo): should be weak linkage.
-        Linkage::Common => unimplemented!(),
+        Linkage::External
+        | Linkage::AvailableExternally
+        | Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak
+        | Linkage::Common => GlobalKind::Imported,
     }
 }
 
+/// The type of a function *definition* with an explicit `#[linkage]`.
+///
+/// The flavours that another object file is allowed to override also need
+/// `linkage_needs_weak_attribute` from the caller: `FunctionType` alone cannot express weakness.
 pub fn linkage_to_gcc(linkage: Linkage) -> FunctionType {
     match linkage {
         Linkage::External => FunctionType::Exported,
-        // FIXME(antoyo): set the attribute externally_visible.
-        Linkage::AvailableExternally => FunctionType::Extern,
-        Linkage::LinkOnceAny => unimplemented!(),
-        Linkage::LinkOnceODR => unimplemented!(),
-        Linkage::WeakAny => FunctionType::Exported, // FIXME(antoyo): should be similar to linkonce.
-        Linkage::WeakODR => unimplemented!(),
-        Linkage::Internal => FunctionType::Internal,
-        Linkage::ExternalWeak => unimplemented!(),
-        Linkage::Common => unimplemented!(),
+        // libgccjit cannot emit a definition that the linker discards in favour of the one in
+        // another object file, so emit a private copy of it instead.
+        Linkage::AvailableExternally | Linkage::Internal => FunctionType::Internal,
+        // libgccjit exposes no comdat, so `weak` stands in for every overridable flavour.
+        Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak
+        | Linkage::Common => FunctionType::Exported,
+    }
+}
+
+/// Whether a definition with this linkage must carry the `weak` attribute, so that a strong
+/// definition in another object file wins over it instead of clashing with it.
+#[cfg(feature = "master")]
+pub fn linkage_needs_weak_attribute(linkage: Linkage) -> bool {
+    match linkage {
+        Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak
+        | Linkage::Common => true,
+        Linkage::External | Linkage::AvailableExternally | Linkage::Internal => false,
     }
 }
 

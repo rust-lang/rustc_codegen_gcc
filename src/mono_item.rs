@@ -172,7 +172,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         attributes::from_fn_attrs(self, fn_decl, instance, Some(fn_abi));
 
         #[cfg(feature = "master")]
-        if linkage == Linkage::WeakAny {
+        if base::linkage_needs_weak_attribute(linkage) {
             fn_decl.add_attribute(FnAttribute::Weak);
         }
 
