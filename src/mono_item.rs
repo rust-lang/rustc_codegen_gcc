@@ -55,7 +55,16 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             // GCC warns that it ignores `visibility` on an internal global, and cg_gcc turns
             // libgccjit warnings into errors.
             if !matches!(global_kind, GlobalKind::Internal) {
-                global.add_attribute(VarAttribute::Visibility(base::visibility_to_gcc(visibility)));
+                // If we're compiling the compiler-builtins crate, e.g., the equivalent of
+                // compiler-rt, then we want to implicitly compile everything with hidden
+                // visibility as we're going to link this object all over the place but
+                // don't want the symbols to get exported.
+                let visibility = if self.tcx.is_compiler_builtins(LOCAL_CRATE) {
+                    gccjit::Visibility::Hidden
+                } else {
+                    base::visibility_to_gcc(visibility)
+                };
+                global.add_attribute(VarAttribute::Visibility(visibility));
             }
             if base::linkage_needs_weak_attribute(linkage) {
                 global.add_attribute(VarAttribute::Weak);

@@ -64,6 +64,16 @@ extern "C" fn available_externally_function() -> i32 {
     7
 }
 
+// GCC warns that `inline` and `weak` conflict, and cg_gcc turns libgccjit warnings into errors, so
+// this used to fail to compile at all. The inline hint is what gives way: rustc lints it as ignored
+// on a function with an explicit `#[linkage]` anyway, hence the `allow`.
+#[linkage = "weak"]
+#[inline]
+#[allow(unused_attributes)]
+extern "C" fn weak_inline_function() -> i32 {
+    8
+}
+
 extern "C" {
     fn c_call_all() -> i32;
 }
@@ -95,6 +105,9 @@ extern "C" fn main(_argc: i32, _argv: *const *const u8) -> i32 {
     }
     if available_externally_function() != 7 {
         return 7;
+    }
+    if weak_inline_function() != 8 {
+        return 8;
     }
     0
 }
