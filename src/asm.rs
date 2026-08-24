@@ -1,8 +1,10 @@
 // cSpell:ignoreRegExp [afkspqvwy]reg
 
 use std::borrow::Cow;
+use std::fmt::Write;
 
 use gccjit::{LValue, RValue, ToRValue, Type};
+use rustc_abi::Size;
 use rustc_ast::ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_codegen_ssa::mir::operand::OperandValue;
 use rustc_codegen_ssa::mir::place::PlaceRef;
@@ -11,14 +13,16 @@ use rustc_codegen_ssa::traits::{
     GlobalAsmOperandRef, InlineAsmOperandRef,
 };
 use rustc_middle::bug;
+use rustc_middle::mir::interpret::{GlobalAlloc, PointerArithmetic, Scalar};
 use rustc_middle::ty::Instance;
+use rustc_middle::ty::layout::LayoutOf;
 use rustc_span::{DUMMY_SP, Span};
 use rustc_target::asm::*;
 
 use crate::builder::Builder;
 use crate::callee::get_fn;
 use crate::context::CodegenCx;
-use crate::errors::{NulBytesInAsm, UnwindingInlineAsm};
+use crate::diagnostics::{NulBytesInAsm, UnwindingInlineAsm};
 use crate::type_of::LayoutGccExt;
 
 // Rust asm! and GCC Extended Asm semantics differ substantially.
@@ -142,6 +146,9 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
 
         // Clobbers collected from `out("explicit register") _` and `inout("explicit_reg") var => _`
         let mut clobbers = vec![];
+
+        // Symbols name that needs to be inserted to asm const ptr template string.
+        let mut const_syms = vec![];
 
         // We're trying to preallocate space for the template
         let mut constants_len = 0;
@@ -291,9 +298,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         out_place,
                     });
 
-                    if readwrite {
-                        self.llbb().add_assignment(None, tmp_var, in_value.immediate());
-                    } else {
+                    if !readwrite {
                         let out_gcc_idx = outputs.len() - 1;
                         let constraint = Cow::Owned(out_gcc_idx.to_string());
 
@@ -305,17 +310,12 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     }
                 }
 
-                InlineAsmOperandRef::Const { ref string } => {
-                    constants_len += string.len() + att_dialect as usize;
+                InlineAsmOperandRef::Const { .. } => {
+                    // We don't know the size at this point, just some estimate.
+                    constants_len += 20;
                 }
 
-                InlineAsmOperandRef::SymFn { instance } => {
-                    // FIXME(@Amanieu): Additional mangling is needed on
-                    // some targets to add a leading underscore (Mach-O)
-                    // or byte count suffixes (x86 Windows).
-                    constants_len += self.tcx.symbol_name(instance).name.len();
-                }
-                InlineAsmOperandRef::SymStatic { def_id } => {
+                InlineAsmOperandRef::SymThreadLocalStatic { def_id } => {
                     // FIXME(@Amanieu): Additional mangling is needed on
                     // some targets to add a leading underscore (Mach-O).
                     constants_len +=
@@ -364,14 +364,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         let ty = value.layout.gcc_type(self.cx);
                         let reg_var = self.current_func().new_local(None, ty, "input_register");
                         reg_var.set_register_name(reg_name);
-                        // FIXME: We should remove this when switching to "untyped" pointers
-                        let value = value.immediate();
-                        let value = if value.get_type() != ty {
-                            self.context.new_cast(None, value, ty)
-                        } else {
-                            value
-                        };
-                        self.llbb().add_assignment(None, reg_var, value);
+                        self.llbb().add_assignment(None, reg_var, value.immediate());
 
                         inputs.push(AsmInOperand {
                             constraint: "r".into(),
@@ -411,24 +404,22 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                     // processed in the previous pass
                 }
 
-                InlineAsmOperandRef::SymFn { instance } => {
-                    inputs.push(AsmInOperand {
-                        constraint: "X".into(),
-                        rust_idx,
-                        val: get_fn(self.cx, instance).get_address(None),
-                    });
-                }
+                InlineAsmOperandRef::Const { value, ty: _ } => match value {
+                    Scalar::Int(_) => (),
+                    Scalar::Ptr(ptr, _) => {
+                        let (prov, _) = ptr.prov_and_relative_offset();
+                        let global_alloc = self.tcx.global_alloc(prov.alloc_id());
+                        let (val, sym) = self.cx.alloc_to_backend(global_alloc, true).unwrap();
+                        const_syms.push(sym.unwrap());
+                        inputs.push(AsmInOperand { constraint: "X".into(), rust_idx, val });
+                    }
+                },
 
-                InlineAsmOperandRef::SymStatic { def_id } => {
-                    inputs.push(AsmInOperand {
-                        constraint: "X".into(),
-                        rust_idx,
-                        val: self.cx.get_static(def_id).get_address(None),
-                    });
-                }
-
-                InlineAsmOperandRef::Const { .. } => {
-                    // processed in the previous pass
+                InlineAsmOperandRef::SymThreadLocalStatic { def_id } => {
+                    // FIXME(@Amanieu): Additional mangling is needed on
+                    // some targets to add a leading underscore (MachO).
+                    constants_len +=
+                        self.tcx.symbol_name(Instance::mono(self.tcx, def_id)).name.len();
                 }
 
                 InlineAsmOperandRef::Label { .. } => {
@@ -462,7 +453,7 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                         template_str.push_str(escaped_char);
                     }
                 }
-                InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span: _ } => {
+                InlineAsmTemplatePiece::Placeholder { operand_idx, modifier, span } => {
                     let mut push_to_template = |modifier, gcc_idx| {
                         use std::fmt::Write;
 
@@ -504,24 +495,42 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
                             push_to_template(modifier, gcc_index);
                         }
 
-                        InlineAsmOperandRef::SymFn { instance } => {
-                            // FIXME(@Amanieu): Additional mangling is needed on
-                            // some targets to add a leading underscore (Mach-O)
-                            // or byte count suffixes (x86 Windows).
-                            let name = self.tcx.symbol_name(instance).name;
-                            template_str.push_str(name);
+                        InlineAsmOperandRef::Const { value, ty } => {
+                            match value {
+                                Scalar::Int(int) => {
+                                    // Const operands get injected directly into the template
+                                    let string = rustc_codegen_ssa::common::asm_const_to_str(
+                                        self.tcx,
+                                        span,
+                                        int,
+                                        self.layout_of(ty),
+                                    );
+                                    template_str.push_str(&string);
+                                }
+
+                                Scalar::Ptr(ptr, _) => {
+                                    let (_, offset) = ptr.prov_and_relative_offset();
+                                    let sym = const_syms.remove(0);
+                                    // FIXME(@Amanieu): Additional mangling is needed on
+                                    // some targets to add a leading underscore (Mach-O)
+                                    // or byte count suffixes (x86 Windows).
+                                    template_str.push_str(sym.name);
+
+                                    if offset != Size::ZERO {
+                                        let offset =
+                                            self.sign_extend_to_target_isize(offset.bytes());
+                                        write!(template_str, "{offset:+}").unwrap();
+                                    }
+                                }
+                            }
                         }
 
-                        InlineAsmOperandRef::SymStatic { def_id } => {
+                        InlineAsmOperandRef::SymThreadLocalStatic { def_id } => {
                             // FIXME(@Amanieu): Additional mangling is needed on
                             // some targets to add a leading underscore (Mach-O).
                             let instance = Instance::mono(self.tcx, def_id);
                             let name = self.tcx.symbol_name(instance).name;
                             template_str.push_str(name);
-                        }
-
-                        InlineAsmOperandRef::Const { ref string } => {
-                            template_str.push_str(string);
                         }
 
                         InlineAsmOperandRef::Label { label } => {
@@ -592,12 +601,6 @@ impl<'a, 'gcc, 'tcx> AsmBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tcx> {
         if dest.is_none() && options.contains(InlineAsmOptions::NORETURN) {
             let builtin_unreachable = self.context.get_builtin_function("__builtin_unreachable");
             self.llbb().add_eval(None, self.context.new_call(None, builtin_unreachable, &[]));
-        }
-
-        if !options.contains(InlineAsmOptions::NORETURN)
-            && let Some(dest) = dest
-        {
-            self.switch_to_block(dest);
         }
 
         // Write results to outputs.
@@ -787,6 +790,9 @@ fn reg_class_to_gcc(reg_class: InlineAsmRegClass) -> &'static str {
             unreachable!("clobber-only")
         }
         InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::reg) => "r",
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::freg) => "f",
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::dreg) => "e",
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::qreg) => "e",
         InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::yreg) => unreachable!("clobber-only"),
         InlineAsmRegClass::Err => unreachable!(),
     }
@@ -893,6 +899,9 @@ fn dummy_output_type<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, reg: InlineAsmRegCl
             unreachable!("clobber-only")
         }
         InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::reg) => cx.type_i32(),
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::freg) => cx.type_f32(),
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::dreg) => cx.type_f64(),
+        InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::qreg) => cx.type_f128(),
         InlineAsmRegClass::Sparc(SparcInlineAsmRegClass::yreg) => unreachable!("clobber-only"),
         InlineAsmRegClass::Msp430(Msp430InlineAsmRegClass::reg) => cx.type_i16(),
         InlineAsmRegClass::M68k(M68kInlineAsmRegClass::reg) => cx.type_i32(),
@@ -948,26 +957,55 @@ impl<'gcc, 'tcx> AsmCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                             .unwrap_or(string.len());
                     }
                 }
-                InlineAsmTemplatePiece::Placeholder { operand_idx, modifier: _, span: _ } => {
+                InlineAsmTemplatePiece::Placeholder { operand_idx, modifier: _, span } => {
                     match operands[operand_idx] {
-                        GlobalAsmOperandRef::Const { ref string } => {
-                            // Const operands get injected directly into the
-                            // template. Note that we don't need to escape %
-                            // here unlike normal inline assembly.
-                            template_str.push_str(string);
-                        }
+                        GlobalAsmOperandRef::Const { value, ty } => {
+                            match value {
+                                Scalar::Int(int) => {
+                                    // Const operands get injected directly into the
+                                    // template. Note that we don't need to escape %
+                                    // here unlike normal inline assembly.
+                                    let string = rustc_codegen_ssa::common::asm_const_to_str(
+                                        self.tcx,
+                                        span,
+                                        int,
+                                        self.layout_of(ty),
+                                    );
+                                    template_str.push_str(&string);
+                                }
 
-                        GlobalAsmOperandRef::SymFn { instance } => {
-                            let function = get_fn(self, instance);
-                            self.add_used_function(function);
-                            // FIXME(@Amanieu): Additional mangling is needed on
-                            // some targets to add a leading underscore (Mach-O)
-                            // or byte count suffixes (x86 Windows).
-                            let name = self.tcx.symbol_name(instance).name;
-                            template_str.push_str(name);
-                        }
+                                Scalar::Ptr(ptr, _) => {
+                                    let (prov, offset) = ptr.prov_and_relative_offset();
+                                    let global_alloc = self.tcx.global_alloc(prov.alloc_id());
+                                    let symbol_name = match global_alloc {
+                                        GlobalAlloc::Function { instance } => {
+                                            let function = get_fn(self, instance);
+                                            self.add_used_function(function);
+                                            // FIXME(@Amanieu): Additional mangling is needed on
+                                            // some targets to add a leading underscore (Mach-O)
+                                            // or byte count suffixes (x86 Windows).
+                                            self.tcx.symbol_name(instance)
+                                        }
+                                        _ => {
+                                            let (_, syms) =
+                                                self.alloc_to_backend(global_alloc, true).unwrap();
+                                            // FIXME(antoyo): set the global variable as used.
+                                            // FIXME(@Amanieu): Additional mangling is needed on
+                                            // some targets to add a leading underscore (Mach-O).
+                                            syms.unwrap()
+                                        }
+                                    };
+                                    template_str.push_str(symbol_name.name);
 
-                        GlobalAsmOperandRef::SymStatic { def_id } => {
+                                    if offset != Size::ZERO {
+                                        let offset =
+                                            self.sign_extend_to_target_isize(offset.bytes());
+                                        write!(template_str, "{offset:+}").unwrap();
+                                    }
+                                }
+                            }
+                        }
+                        GlobalAsmOperandRef::SymThreadLocalStatic { def_id } => {
                             // FIXME(antoyo): set the global variable as used.
                             // FIXME(@Amanieu): Additional mangling is needed on
                             // some targets to add a leading underscore (Mach-O).

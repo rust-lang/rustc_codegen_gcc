@@ -73,7 +73,7 @@ fn uncached_gcc_type<'gcc, 'tcx>(
                 else {
                     element
                 };
-            return cx.context.new_vector_type(element, count);
+            return cx.context.new_vector_type(element, count.as_u64());
         }
         BackendRepr::ScalarPair { .. } => {
             return cx.type_struct(
@@ -346,8 +346,8 @@ impl<'gcc, 'tcx> LayoutTypeCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         fn_abi.ptr_to_gcc_type(self)
     }
 
-    fn reg_backend_type(&self, _ty: &Reg) -> Type<'gcc> {
-        unimplemented!();
+    fn reg_backend_type(&self, ty: &Reg) -> Type<'gcc> {
+        ty.gcc_type(self)
     }
 
     fn fn_decl_backend_type(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>) -> Type<'gcc> {

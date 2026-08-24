@@ -59,7 +59,7 @@ mod context;
 mod coverageinfo;
 mod debuginfo;
 mod declare;
-mod errors;
+mod diagnostics;
 mod gcc_util;
 mod int;
 mod intrinsic;
@@ -76,16 +76,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "master")]
-use gccjit::TargetInfo;
 use gccjit::{CType, Context, OptimizationLevel};
+#[cfg(feature = "master")]
+use gccjit::{TargetInfo, Version};
 use rustc_ast::expand::allocator::AllocatorMethod;
 use rustc_codegen_ssa::back::lto::ThinModule;
 use rustc_codegen_ssa::back::write::{
     CodegenContext, FatLtoInput, ModuleConfig, SharedEmitter, TargetMachineFactoryFn, ThinLtoInput,
 };
 use rustc_codegen_ssa::base::codegen_crate;
-use rustc_codegen_ssa::target_features::cfg_target_feature;
+use rustc_codegen_ssa::target_features::internal_target_features;
 use rustc_codegen_ssa::traits::{CodegenBackend, ExtraBackendMethods, WriteBackendMethods};
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo, ModuleCodegen, TargetConfig};
 use rustc_data_structures::profiling::SelfProfilerRef;
@@ -94,10 +94,10 @@ use rustc_errors::{DiagCtxt, DiagCtxtHandle};
 use rustc_middle::dep_graph::{WorkProduct, WorkProductMap};
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::util::Providers;
-use rustc_session::Session;
 use rustc_session::config::{OptLevel, OutputFilenames};
+use rustc_session::{IncrCompSession, Session};
 use rustc_span::{Symbol, sym};
-use rustc_target::spec::RelocModel;
+use rustc_target::spec::{Arch, RelocModel};
 use tempfile::TempDir;
 
 use crate::back::lto::ModuleBuffer;
@@ -197,10 +197,8 @@ impl CodegenBackend for GccCodegenBackend {
 
     fn init(&self, sess: &Session) {
         fn file_path(sysroot_path: &Path, sess: &Session) -> PathBuf {
-            let rustlib_path = rustc_target::relative_target_rustlib_path(
-                sysroot_path,
-                rustc_session::config::host_tuple(),
-            );
+            let rustlib_path =
+                rustc_target::relative_target_rustlib_path(sysroot_path, &sess.host.llvm_target);
             sysroot_path
                 .join(rustlib_path)
                 .join("codegen-backends")
@@ -299,13 +297,14 @@ impl CodegenBackend for GccCodegenBackend {
         &self,
         ongoing_codegen: Box<dyn Any>,
         sess: &Session,
+        incr_comp_session: Option<&IncrCompSession>,
         _outputs: &OutputFilenames,
         crate_info: &CrateInfo,
     ) -> (CompiledModules, WorkProductMap) {
         ongoing_codegen
             .downcast::<rustc_codegen_ssa::back::write::OngoingCodegen<GccCodegenBackend>>()
             .expect("Expected GccCodegenBackend's OngoingCodegen, found Box<Any>")
-            .join(sess, crate_info)
+            .join(sess, incr_comp_session, crate_info)
     }
 
     fn target_config(&self, sess: &Session) -> TargetConfig {
@@ -315,6 +314,27 @@ impl CodegenBackend for GccCodegenBackend {
     fn fallback_intrinsics(&self) -> Vec<Symbol> {
         vec![sym::type_id_eq]
     }
+}
+
+fn new_context<'gcc, 'tcx>(tcx: TyCtxt<'tcx>) -> Context<'gcc> {
+    let context = Context::default();
+    if matches!(tcx.sess.target.arch, Arch::X86 | Arch::X86_64) {
+        context.add_command_line_option("-masm=intel");
+    }
+    #[cfg(feature = "master")]
+    {
+        context.set_special_chars_allowed_in_func_names("$.*");
+        let version = Version::get();
+        let version = format!("{}.{}.{}", version.major, version.minor, version.patch);
+        context.set_output_ident(&format!(
+            "rustc version {} with libgccjit {}",
+            rustc_interface::util::rustc_version_str().unwrap_or("unknown version"),
+            version,
+        ));
+    }
+    // FIXME(antoyo): check if this should only be added when using -Cforce-unwind-tables=n.
+    context.add_command_line_option("-fno-asynchronous-unwind-tables");
+    context
 }
 
 impl ExtraBackendMethods for GccCodegenBackend {
@@ -328,7 +348,7 @@ impl ExtraBackendMethods for GccCodegenBackend {
     ) -> Self::Module {
         let lto_supported = self.lto_supported.load(Ordering::SeqCst);
         let mut mods = GccContext {
-            context: Arc::new(SyncContext::new(gcc_util::new_context(tcx.sess))),
+            context: Arc::new(SyncContext::new(new_context(tcx))),
             relocation_model: tcx.sess.relocation_model(),
             lto_mode: LtoMode::None,
             lto_supported,
@@ -425,7 +445,7 @@ impl WriteBackendMethods for GccCodegenBackend {
         each_linked_rlib_for_lto: &[PathBuf],
         modules: Vec<FatLtoInput<Self>>,
     ) -> CompiledModule {
-        back::lto::run_fat(sess, cgcx, shared_emitter, each_linked_rlib_for_lto, modules)
+        back::lto::run_fat(cgcx, &sess.prof, shared_emitter, each_linked_rlib_for_lto, modules)
     }
 
     fn run_thin_lto(
@@ -512,7 +532,7 @@ fn to_gcc_opt_level(optlevel: Option<OptLevel>) -> OptimizationLevel {
 
 /// Returns the features that should be set in `cfg(target_feature)`.
 fn target_config(sess: &Session, target_info: &LockedTargetInfo) -> TargetConfig {
-    let (unstable_target_features, target_features) = cfg_target_feature(
+    let internal_target_features = internal_target_features(
         sess,
         |feature| to_gcc_features(sess, feature),
         |feature| {
@@ -536,8 +556,7 @@ fn target_config(sess: &Session, target_info: &LockedTargetInfo) -> TargetConfig
     let has_reliable_f128 = target_info.supports_target_dependent_type(CType::Float128);
 
     TargetConfig {
-        target_features,
-        unstable_target_features,
+        internal_target_features,
         // There are no known bugs with GCC support for f16 or f128
         has_reliable_f16,
         has_reliable_f16_math: has_reliable_f16,

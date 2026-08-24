@@ -6,7 +6,7 @@
 )]
 #![no_core]
 #![allow(dead_code, internal_features, non_camel_case_types)]
-#![cfg_attr(rustfmt, rustfmt_skip)]
+#![rustfmt_skip]
 
 extern crate mini_core;
 
