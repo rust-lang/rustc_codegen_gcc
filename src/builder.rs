@@ -66,6 +66,33 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.value_counter.get()
     }
 
+    /// Tell GCC that `pointer` is `align`-aligned, so that the bulk memory builtins can widen their
+    /// accesses: a pointer cast to an aligned type would be dropped as a useless conversion.
+    fn assume_aligned(&mut self, pointer: RValue<'gcc>, align: Align) -> RValue<'gcc> {
+        if align.bytes() <= 1 {
+            return pointer;
+        }
+        let assume_aligned = self.context.get_builtin_function("__builtin_assume_aligned");
+        let alignment = self.context.new_rvalue_from_long(self.type_size_t(), align.bytes() as i64);
+        let pointer_type = pointer.get_type();
+        let const_void_ptr_type = self.context.new_type::<()>().make_const().make_pointer();
+        let pointer = self.context.new_cast(self.location, pointer, const_void_ptr_type);
+        let aligned = self.context.new_call(self.location, assume_aligned, &[pointer, alignment]);
+        self.context.new_cast(self.location, aligned, pointer_type)
+    }
+
+    /// GCC ignores a volatile qualifier on the pointers given to `memcpy`/`memmove`/`memset` and
+    /// happily deletes the call, so a barrier is what keeps the operation observable. The pointers
+    /// are fed to it because a clobber alone does not reach memory GCC believes never escapes.
+    fn volatile_barrier(&mut self, pointers: &[RValue<'gcc>]) {
+        let barrier = self.block.add_extended_asm(self.location, "");
+        for pointer in pointers {
+            barrier.add_input_operand(None, "r", *pointer);
+        }
+        barrier.add_clobber("memory");
+        barrier.set_volatile_flag(true);
+    }
+
     fn atomic_extremum(
         &mut self,
         operation: ExtremumOperation,
@@ -1455,47 +1482,53 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
     fn memcpy(
         &mut self,
         dst: RValue<'gcc>,
-        _dst_align: Align,
+        dst_align: Align,
         src: RValue<'gcc>,
-        _src_align: Align,
+        src_align: Align,
         size: RValue<'gcc>,
         flags: MemFlags,
         _tt: Option<rustc_ast::expand::typetree::FncTree>, // Autodiff TypeTrees are LLVM-only, ignored in GCC backend
     ) {
         assert!(!flags.contains(MemFlags::NONTEMPORAL), "non-temporal memcpy not supported");
         let size = self.intcast(size, self.type_size_t(), false);
-        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let dst = self.pointercast(dst, self.type_i8p());
+        let dst = self.assume_aligned(dst, dst_align);
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
+        let src = self.assume_aligned(src, src_align);
         let memcpy = self.context.get_builtin_function("memcpy");
-        // FIXME(antoyo): handle aligns and is_volatile.
         self.block.add_eval(
             self.location,
             self.context.new_call(self.location, memcpy, &[dst, src, size]),
         );
+        if flags.contains(MemFlags::VOLATILE) {
+            self.volatile_barrier(&[dst, src]);
+        }
     }
 
     fn memmove(
         &mut self,
         dst: RValue<'gcc>,
-        _dst_align: Align,
+        dst_align: Align,
         src: RValue<'gcc>,
-        _src_align: Align,
+        src_align: Align,
         size: RValue<'gcc>,
         flags: MemFlags,
     ) {
         assert!(!flags.contains(MemFlags::NONTEMPORAL), "non-temporal memmove not supported");
         let size = self.intcast(size, self.type_size_t(), false);
-        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let dst = self.pointercast(dst, self.type_i8p());
+        let dst = self.assume_aligned(dst, dst_align);
         let src = self.pointercast(src, self.type_ptr_to(self.type_void()));
+        let src = self.assume_aligned(src, src_align);
 
         let memmove = self.context.get_builtin_function("memmove");
-        // FIXME(antoyo): handle is_volatile.
         self.block.add_eval(
             self.location,
             self.context.new_call(self.location, memmove, &[dst, src, size]),
         );
+        if flags.contains(MemFlags::VOLATILE) {
+            self.volatile_barrier(&[dst, src]);
+        }
     }
 
     fn memset(
@@ -1503,20 +1536,22 @@ impl<'a, 'gcc, 'tcx> BuilderMethods<'a, 'tcx> for Builder<'a, 'gcc, 'tcx> {
         ptr: RValue<'gcc>,
         fill_byte: RValue<'gcc>,
         size: RValue<'gcc>,
-        _align: Align,
+        align: Align,
         flags: MemFlags,
     ) {
         assert!(!flags.contains(MemFlags::NONTEMPORAL), "non-temporal memset not supported");
-        let _is_volatile = flags.contains(MemFlags::VOLATILE);
         let ptr = self.pointercast(ptr, self.type_i8p());
+        let ptr = self.assume_aligned(ptr, align);
         let memset = self.context.get_builtin_function("memset");
-        // FIXME(antoyo): handle align and is_volatile.
         let fill_byte = self.context.new_cast(self.location, fill_byte, self.i32_type);
         let size = self.intcast(size, self.type_size_t(), false);
         self.block.add_eval(
             self.location,
             self.context.new_call(self.location, memset, &[ptr, fill_byte, size]),
         );
+        if flags.contains(MemFlags::VOLATILE) {
+            self.volatile_barrier(&[ptr]);
+        }
     }
 
     fn vscale(&mut self, _: Self::Type) -> Self::Value {
