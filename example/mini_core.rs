@@ -710,6 +710,8 @@ pub mod intrinsics {
     #[rustc_intrinsic]
     pub unsafe fn copy<T>(src: *const T, dst: *mut T, count: usize);
     #[rustc_intrinsic]
+    pub unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize);
+    #[rustc_intrinsic]
     pub unsafe fn transmute<T, U>(e: T) -> U;
     #[rustc_intrinsic]
     pub unsafe fn ctlz_nonzero<T>(x: T) -> u32;
