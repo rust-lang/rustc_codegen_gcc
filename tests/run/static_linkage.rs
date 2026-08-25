@@ -6,9 +6,9 @@
 // Checks that `#[linkage]` on a static that this crate defines reaches the symbol, against
 // `tests/c/static_linkage.c`, which defines the overridable ones strongly.
 //
-// `predefine_static` used to ignore its `linkage` argument outright, so every static came out as
-// an ordinary global symbol: the overridable ones clashed with the C definitions at link time, and
-// `internal` exported a symbol it should have kept private.
+// If `predefine_static` were to ignore its `linkage` argument outright, every static would come out as
+// an ordinary global symbol: the overridable ones would clash with the C definitions at link time, and
+// `internal` would export a symbol it should have kept private.
 
 #![feature(linkage, no_core)]
 #![no_std]

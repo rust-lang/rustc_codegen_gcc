@@ -4,8 +4,7 @@
 //   status: 0
 
 // Checks the `#[linkage]` flavours an `extern` static can be imported with, against the symbols
-// `tests/c/import_linkage.c` defines. `linkonce`, `linkonce_odr`, `weak`, `weak_odr` and `common`
-// used to reach an `unimplemented!()` in `global_linkage_to_gcc`.
+// `tests/c/import_linkage.c` defines.
 //
 // The value of such an import is the address of the symbol rather than its contents, which is why
 // the types are pointers: an `extern_weak` import of a symbol nobody defines reads as null instead
@@ -36,8 +35,7 @@ extern "C" {
     static common_value: *const i32;
     #[linkage = "extern_weak"]
     static extern_weak_value: *const i32;
-    // An import is an undefined reference whatever the flavour says; this used to declare a
-    // private zeroed object of its own instead of reaching the definition in the C file.
+    // An import is an undefined reference whatever the flavour says.
     #[linkage = "internal"]
     static internal_value: *const i32;
 

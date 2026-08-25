@@ -6,11 +6,6 @@
 // Checks that the `#[linkage]` flavours another object file is allowed to override are emitted as
 // weak symbols, by linking against `tests/c/weak_function_linkage.c`, which defines the same
 // symbols strongly.
-//
-// `weak` used to be emitted as an ordinary global symbol, which the C definitions clash with, and
-// `weak_odr`, `linkonce`, `linkonce_odr` and `common` reached an `unimplemented!()` in
-// `linkage_to_gcc`. `available_externally` reached libgccjit, which rejects a body on an imported
-// function.
 
 #![feature(linkage, no_core)]
 #![no_std]
