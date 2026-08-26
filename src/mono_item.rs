@@ -66,8 +66,8 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 };
                 global.add_attribute(VarAttribute::Visibility(visibility));
             }
-            if base::linkage_needs_weak_attribute(linkage) {
-                global.add_attribute(VarAttribute::Weak);
+            if let Some(attribute) = base::global_linkage_attribute(linkage) {
+                global.add_attribute(attribute);
             }
         }
 

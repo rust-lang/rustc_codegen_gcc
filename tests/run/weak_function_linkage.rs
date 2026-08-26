@@ -41,13 +41,8 @@ extern "C" fn linkonce_odr_function() -> i32 {
     4
 }
 
-// Upstream bug: LLVM rejects `common` on a function ("Functions may not have common linkage"), and
-// with its verifier off inlines this body over the strong C one at -O3, so cg_llvm fails here.
-#[linkage = "common"]
-#[no_mangle]
-extern "C" fn common_function() -> i32 {
-    0
-}
+// `#[linkage = "common"]` is absent on purpose: a common symbol is `SHN_COMMON`, which the object
+// format only allows for objects, so no backend can give a function that linkage.
 
 // Not overridden by the C side: the definition here is the one that runs.
 #[linkage = "weak"]
@@ -96,9 +91,6 @@ extern "C" fn main(_argc: i32, _argv: *const *const u8) -> i32 {
     }
     if linkonce_odr_function() != 4 {
         return 4;
-    }
-    if common_function() != 5 {
-        return 5;
     }
     if only_weak_function() != 6 {
         return 6;

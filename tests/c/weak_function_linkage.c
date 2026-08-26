@@ -26,11 +26,6 @@ int32_t linkonce_odr_function(void)
     return 4;
 }
 
-int32_t common_function(void)
-{
-    return 5;
-}
-
 /* `available_externally` promises the real definition lives elsewhere: a backend may call this one
  * or emit an equivalent copy of the Rust body, so the two have to return the same value. */
 int32_t available_externally_function(void)
@@ -50,7 +45,5 @@ int32_t c_call_all(void)
         return 13;
     if (linkonce_odr_function() != 4)
         return 14;
-    if (common_function() != 5)
-        return 15;
     return 0;
 }
