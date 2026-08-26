@@ -52,8 +52,8 @@ impl<'gcc, 'tcx> PreDefineCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
             self.define_global(global_name, gcc_type, global_kind, is_tls, attrs.link_section);
         #[cfg(feature = "master")]
         {
-            // GCC warns that it ignores `visibility` on an internal global, and cg_gcc turns
-            // libgccjit warnings into errors.
+            // Visibility is meaningless on an internal global: GCC ignores the attribute and
+            // warns about it.
             if !matches!(global_kind, GlobalKind::Internal) {
                 // If we're compiling the compiler-builtins crate, e.g., the equivalent of
                 // compiler-rt, then we want to implicitly compile everything with hidden

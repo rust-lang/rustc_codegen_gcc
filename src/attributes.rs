@@ -118,9 +118,8 @@ pub fn from_fn_attrs<'gcc, 'tcx>(
         } else {
             codegen_fn_attrs.inline
         };
-        // GCC warns that `inline` and `weak` conflict, and cg_gcc turns libgccjit warnings into
-        // errors. The linkage is what has to survive: rustc lints `#[inline]` as ignored on a
-        // function with an explicit `#[linkage]` anyway. `inline(never)` does not conflict.
+        // GCC drops `weak` from a function that is also `inline`, leaving the symbol strong, and
+        // the linkage is what has to survive. `inline(never)` does not conflict.
         let inline = match inline {
             InlineAttr::Always | InlineAttr::Hint | InlineAttr::Force { .. }
                 if codegen_fn_attrs.linkage.is_some_and(base::linkage_needs_weak_attribute) =>

@@ -59,14 +59,15 @@ extern "C" fn available_externally_function() -> i32 {
     7
 }
 
-// GCC warns that `inline` and `weak` conflict, and cg_gcc turns libgccjit warnings into errors, so
-// this used to fail to compile at all. The inline hint is what gives way: rustc lints it as ignored
-// on a function with an explicit `#[linkage]` anyway, hence the `allow`.
+// GCC drops `weak` from a function that is also `inline`: a backend that keeps the hint emits this
+// as an ordinary global symbol and clashes with the C definition. rustc lints the hint as ignored
+// on a function with an explicit `#[linkage]`, hence the `allow`.
 #[linkage = "weak"]
 #[inline]
+#[no_mangle]
 #[allow(unused_attributes)]
 extern "C" fn weak_inline_function() -> i32 {
-    8
+    0
 }
 
 extern "C" {

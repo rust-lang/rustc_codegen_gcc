@@ -26,6 +26,11 @@ int32_t linkonce_odr_function(void)
     return 4;
 }
 
+int32_t weak_inline_function(void)
+{
+    return 8;
+}
+
 /* `available_externally` promises the real definition lives elsewhere: a backend may call this one
  * or emit an equivalent copy of the Rust body, so the two have to return the same value. */
 int32_t available_externally_function(void)
