@@ -21,10 +21,12 @@ extern "C" fn weak_function() -> i32 {
     0
 }
 
+// `_odr` promises every definition of the symbol is equivalent, which lets a backend call this body
+// instead of the one in the C file. They spell the same value for that reason.
 #[linkage = "weak_odr"]
 #[no_mangle]
 extern "C" fn weak_odr_function() -> i32 {
-    0
+    2
 }
 
 #[linkage = "linkonce"]
@@ -36,9 +38,11 @@ extern "C" fn linkonce_function() -> i32 {
 #[linkage = "linkonce_odr"]
 #[no_mangle]
 extern "C" fn linkonce_odr_function() -> i32 {
-    0
+    4
 }
 
+// Upstream bug: LLVM rejects `common` on a function ("Functions may not have common linkage"), and
+// with its verifier off inlines this body over the strong C one at -O3, so cg_llvm fails here.
 #[linkage = "common"]
 #[no_mangle]
 extern "C" fn common_function() -> i32 {
@@ -52,7 +56,8 @@ extern "C" fn only_weak_function() -> i32 {
     6
 }
 
-// Emitted as a private copy of a definition that lives elsewhere, so it must still be callable.
+// The real definition is the one in the C file; a backend may call it or emit an equivalent copy of
+// this body, so both spell the same value.
 #[linkage = "available_externally"]
 #[no_mangle]
 extern "C" fn available_externally_function() -> i32 {

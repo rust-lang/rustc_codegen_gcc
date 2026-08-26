@@ -14,6 +14,10 @@ int32_t linkonce_odr_static = 4;
 int32_t common_static = 5;
 int32_t internal_static = 200;
 
+/* `available_externally` promises the real definition lives elsewhere: a backend may read this one
+ * or emit an equivalent copy of the Rust initializer, so the two have to hold the same value. */
+int32_t available_externally_static = 7;
+
 /* Called from Rust, so that the reads also happen in a translation unit GCC compiled. */
 int32_t c_read_all(void)
 {

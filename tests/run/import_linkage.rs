@@ -35,7 +35,9 @@ extern "C" {
     static common_value: *const i32;
     #[linkage = "extern_weak"]
     static extern_weak_value: *const i32;
-    // An import is an undefined reference whatever the flavour says.
+    // An import is an undefined reference whatever the flavour says. Upstream bug: rustc lowers
+    // this one to an internal declaration, which LLVM's verifier rejects ("Global is external, but
+    // doesn't have external or weak linkage!") and which crashes cg_llvm at -O3.
     #[linkage = "internal"]
     static internal_value: *const i32;
 

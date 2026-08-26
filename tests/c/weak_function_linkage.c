@@ -31,6 +31,13 @@ int32_t common_function(void)
     return 5;
 }
 
+/* `available_externally` promises the real definition lives elsewhere: a backend may call this one
+ * or emit an equivalent copy of the Rust body, so the two have to return the same value. */
+int32_t available_externally_function(void)
+{
+    return 7;
+}
+
 /* Called from Rust, so that the calls also go through a caller that GCC compiled: a cg_gcc caller
  * could inline the weak body it can see instead of calling the symbol. */
 int32_t c_call_all(void)

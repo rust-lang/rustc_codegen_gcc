@@ -34,9 +34,10 @@ pub static linkonce_static: i32 = 0;
 #[no_mangle]
 pub static linkonce_odr_static: i32 = 0;
 
+// `common` is only valid on a mutable global: LLVM rejects a constant one.
 #[linkage = "common"]
 #[no_mangle]
-pub static common_static: i32 = 0;
+pub static mut common_static: i32 = 0;
 
 // Private to this crate, so the C definition of the same name is a different object.
 #[linkage = "internal"]
@@ -48,7 +49,8 @@ pub static internal_static: i32 = 100;
 #[no_mangle]
 pub static only_weak_static: i32 = 6;
 
-// Emitted as a private copy of a definition that lives elsewhere, so it must still be readable.
+// The real definition is the one in the C file; a backend may read it or emit an equivalent copy of
+// this initializer, so both spell the same value.
 #[linkage = "available_externally"]
 #[no_mangle]
 pub static available_externally_static: i32 = 7;
