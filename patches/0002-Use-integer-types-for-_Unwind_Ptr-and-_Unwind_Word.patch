@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: None <none@example.com>
+Date: Thu, 27 Aug 2026 18:00:00 -0400
+Subject: [PATCH] Use integer types for _Unwind_Ptr and _Unwind_Word
+
+---
+diff --git a/library/panic_unwind/src/gcc.rs b/library/panic_unwind/src/gcc.rs
+index adcbe51..56d520a 100644
+--- a/library/panic_unwind/src/gcc.rs
++++ b/library/panic_unwind/src/gcc.rs
+@@ -63,7 +63,7 @@ pub(crate) unsafe fn panic(data: Box<dyn Any + Send>) -> u32 {
+         _uwe: uw::_Unwind_Exception {
+             exception_class: RUST_EXCEPTION_CLASS,
+             exception_cleanup: Some(exception_cleanup),
+-            private: [core::ptr::null(); _],
++            private: [0; _],
+         },
+         canary: &CANARY,
+         cause: data,
+diff --git a/library/std/src/sys/personality/gcc.rs b/library/std/src/sys/personality/gcc.rs
+index 0e20a41..22be57d 100644
+--- a/library/std/src/sys/personality/gcc.rs
++++ b/library/std/src/sys/personality/gcc.rs
+@@ -41,6 +41,7 @@ use unwind as uw;
+ 
+ use super::dwarf::eh::{self, EHAction, EHContext};
+ use crate::ffi::c_int;
++use crate::ptr;
+ 
+ // Register ids were lifted from LLVM's TargetLowering::getExceptionPointerRegister()
+ // and TargetLowering::getExceptionSelectorRegister() for each architecture,
+@@ -138,7 +139,7 @@ cfg_select! {
+                 // take only the context pointer, GCC personality routines stash a pointer to
+                 // exception_object in the context, using location reserved for ARM's
+                 // "scratch register" (r12).
+-                uw::_Unwind_SetGR(context, uw::UNWIND_POINTER_REG, exception_object as uw::_Unwind_Ptr);
++                uw::_Unwind_SetGR(context, uw::UNWIND_POINTER_REG, exception_object.expose_provenance());
+                 // ...A more principled approach would be to provide the full definition of ARM's
+                 // _Unwind_Context in our libunwind bindings and fetch the required data from there
+                 // directly, bypassing DWARF compatibility functions.
+@@ -169,10 +170,10 @@ cfg_select! {
+                             uw::_Unwind_SetGR(
+                                 context,
+                                 UNWIND_DATA_REG.0,
+-                                exception_object as uw::_Unwind_Ptr,
++                                exception_object.expose_provenance(),
+                             );
+-                            uw::_Unwind_SetGR(context, UNWIND_DATA_REG.1, core::ptr::null());
+-                            uw::_Unwind_SetIP(context, lpad);
++                            uw::_Unwind_SetGR(context, UNWIND_DATA_REG.1, 0);
++                            uw::_Unwind_SetIP(context, lpad.expose_provenance());
+                             return uw::_URC_INSTALL_CONTEXT;
+                         }
+                         EHAction::Terminate => return uw::_URC_FAILURE,
+@@ -265,11 +266,11 @@ cfg_select! {
+                             uw::_Unwind_SetGR(
+                                 context,
+                                 UNWIND_DATA_REG.0,
+-                                exception_object.cast(),
++                                exception_object.expose_provenance(),
+                             );
+-                            uw::_Unwind_SetGR(context, UNWIND_DATA_REG.1, core::ptr::null());
++                            uw::_Unwind_SetGR(context, UNWIND_DATA_REG.1, 0);
+                             let maybe_signed_lpad = sign_lpad(context, lpad);
+-                            uw::_Unwind_SetIP(context, maybe_signed_lpad);
++                            uw::_Unwind_SetIP(context, maybe_signed_lpad.expose_provenance());
+                             uw::_URC_INSTALL_CONTEXT
+                         }
+                         EHAction::Terminate => uw::_URC_FATAL_PHASE2_ERROR,
+@@ -360,10 +361,14 @@ unsafe fn find_eh_action(context: *mut uw::_Unwind_Context) -> Result<EHAction,
+             // which could be in the next IP range in LSDA range table.
+             //
+             // `ip = -1` has special meaning, so use wrapping sub to allow for that
+-            ip: if ip_before_instr != 0 { ip } else { ip.wrapping_sub(1) },
+-            func_start: uw::_Unwind_GetRegionStart(context),
+-            get_text_start: &|| uw::_Unwind_GetTextRelBase(context),
+-            get_data_start: &|| uw::_Unwind_GetDataRelBase(context),
++            ip: ptr::with_exposed_provenance(if ip_before_instr != 0 {
++                ip
++            } else {
++                ip.wrapping_sub(1)
++            }),
++            func_start: ptr::with_exposed_provenance(uw::_Unwind_GetRegionStart(context)),
++            get_text_start: &|| ptr::with_exposed_provenance(uw::_Unwind_GetTextRelBase(context)),
++            get_data_start: &|| ptr::with_exposed_provenance(uw::_Unwind_GetDataRelBase(context)),
+         };
+         eh::find_eh_action(lsda, &eh_context)
+     }
+diff --git a/library/unwind/src/libunwind.rs b/library/unwind/src/libunwind.rs
+index bfa6b1b..51f3c3e 100644
+--- a/library/unwind/src/libunwind.rs
++++ b/library/unwind/src/libunwind.rs
+@@ -10,7 +10,7 @@ pub use unwinding::custom_eh_frame_finder::{
+ 
+ pub use crate::types::*;
+ 
+-pub type _Unwind_Ptr = *const u8;
++pub type _Unwind_Ptr = usize;
+ 
+ pub enum _Unwind_Context {}
+ 
+diff --git a/library/unwind/src/types.rs b/library/unwind/src/types.rs
+index 413cd67..5f9dbf3 100644
+--- a/library/unwind/src/types.rs
++++ b/library/unwind/src/types.rs
+@@ -17,7 +17,7 @@ pub enum _Unwind_Reason_Code {
+ pub use _Unwind_Reason_Code::*;
+ 
+ pub type _Unwind_Exception_Class = u64;
+-pub type _Unwind_Word = *const u8;
++pub type _Unwind_Word = usize;
+ 
+ pub const unwinder_private_data_size: usize = cfg_select! {
+     target_arch = "x86" => 5,
+-- 
+2.49.0
