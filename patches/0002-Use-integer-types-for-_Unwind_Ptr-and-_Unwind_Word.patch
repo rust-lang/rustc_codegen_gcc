@@ -95,7 +95,7 @@ index bfa6b1b..51f3c3e 100644
  pub use crate::types::*;
  
 -pub type _Unwind_Ptr = *const u8;
-+pub type _Unwind_Ptr = usize;
++pub type _Unwind_Ptr = libc::uintptr_t;
  
  pub enum _Unwind_Context {}
  
@@ -108,7 +108,7 @@ index 413cd67..5f9dbf3 100644
  
  pub type _Unwind_Exception_Class = u64;
 -pub type _Unwind_Word = *const u8;
-+pub type _Unwind_Word = usize;
++pub type _Unwind_Word = libc::uintptr_t;
  
  pub const unwinder_private_data_size: usize = cfg_select! {
      target_arch = "x86" => 5,
