@@ -21,12 +21,12 @@ use crate::context::CodegenCx;
 impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     pub fn gcc_urem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // 128-bit unsigned %: __umodti3
-        self.multiplicative_operation(BinaryOp::Modulo, "mod", false, a, b)
+        self.division_operation(BinaryOp::Modulo, "mod", false, a, b)
     }
 
     pub fn gcc_srem(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // 128-bit signed %:   __modti3
-        self.multiplicative_operation(BinaryOp::Modulo, "mod", true, a, b)
+        self.division_operation(BinaryOp::Modulo, "mod", true, a, b)
     }
 
     pub fn gcc_not(&self, a: RValue<'gcc>) -> RValue<'gcc> {
@@ -215,6 +215,27 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.additive_operation(BinaryOp::Minus, a, b)
     }
 
+    fn division_operation(
+        &self,
+        operation: BinaryOp,
+        operation_name: &str,
+        signed: bool,
+        mut a: RValue<'gcc>,
+        mut b: RValue<'gcc>,
+    ) -> RValue<'gcc> {
+        let a_type = a.get_type();
+        if self.is_native_int_type(a_type) && self.is_native_int_type(b.get_type()) {
+            let typ = if signed { a_type.to_signed(self.cx) } else { a_type.to_unsigned(self.cx) };
+            if !typ.is_compatible_with(a_type) {
+                a = self.context.new_cast(self.location, a, typ);
+            }
+            if !typ.is_compatible_with(b.get_type()) {
+                b = self.context.new_cast(self.location, b, typ);
+            }
+        }
+        self.multiplicative_operation(operation, operation_name, signed, a, b)
+    }
+
     fn multiplicative_operation(
         &self,
         operation: BinaryOp,
@@ -261,15 +282,13 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
     }
 
     pub fn gcc_sdiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
-        // FIXME(antoyo): check if the types are signed?
         // 128-bit, signed: __divti3
-        // FIXME(antoyo): convert the arguments to signed?
-        self.multiplicative_operation(BinaryOp::Divide, "div", true, a, b)
+        self.division_operation(BinaryOp::Divide, "div", true, a, b)
     }
 
     pub fn gcc_udiv(&self, a: RValue<'gcc>, b: RValue<'gcc>) -> RValue<'gcc> {
         // 128-bit, unsigned: __udivti3
-        self.multiplicative_operation(BinaryOp::Divide, "div", false, a, b)
+        self.division_operation(BinaryOp::Divide, "div", false, a, b)
     }
 
     pub fn gcc_checked_binop(
