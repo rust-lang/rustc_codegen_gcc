@@ -1263,13 +1263,12 @@ fn run_ui_tests(env: &Env, args: &TestArg) -> Result<(), String> {
     let rust_path = setup_rustc(&mut env, args)?;
 
     let extra =
-        if args.is_using_gcc_master_branch() { "" } else { " -Csymbol-mangling-version=v0" };
+        if args.is_using_gcc_master_branch() { "" } else { "-Csymbol-mangling-version=v0" };
 
     let rustc_args = format!(
-        "{test_flags} -Zcodegen-backend={backend} --sysroot {sysroot}{extra}",
+        "{test_flags} -Zcodegen-backend={backend} {extra}",
         test_flags = env.get("TEST_FLAGS").unwrap_or(&String::new()),
         backend = args.config_info.cg_backend_path,
-        sysroot = args.config_info.sysroot_path,
         extra = extra,
     );
 
@@ -1286,6 +1285,8 @@ fn run_ui_tests(env: &Env, args: &TestArg) -> Result<(), String> {
         &"build.compiletest-allow-stage0=true",
         &"--compiletest-rustc-args",
         &rustc_args,
+        &"--sysroot",
+        &args.config_info.sysroot_path,
         &"--bypass-ignore-backends",
         &"--force-rerun",
     ];
