@@ -188,12 +188,33 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
         // FIXME: should not use shell command!
         run_command(&[&"cp", &"-r", &dir_to_copy, &sysroot_path], None).map(|_| ())
     };
-    walk_dir(
-        library_dir.join(format!("target/{}/{}/deps", config.target_triple, channel)),
-        &mut copier.clone(),
-        &mut copier,
-        false,
-    )?;
+    let target_dir = library_dir.join(format!("target/{}/{}", config.target_triple, channel));
+    let deps_dir = target_dir.join("deps");
+    if deps_dir.is_dir() {
+        // Keep copying in the old directory just in case.
+        walk_dir(&deps_dir, &mut copier.clone(), &mut copier, false)?;
+    } else {
+        let build_dir = target_dir.join("build");
+        walk_dir(
+            &build_dir,
+            &mut |package_dir: &Path| {
+                walk_dir(
+                    package_dir,
+                    &mut |unit_dir: &Path| {
+                        let out_dir = unit_dir.join("out");
+                        if out_dir.is_dir() {
+                            walk_dir(&out_dir, &mut copier.clone(), &mut copier.clone(), false)?;
+                        }
+                        Ok(())
+                    },
+                    &mut |_| Ok(()),
+                    false,
+                )
+            },
+            &mut |_| Ok(()),
+            false,
+        )?;
+    }
 
     // Copy the source files to the sysroot (Rust for Linux needs this).
     let sysroot_src_path = start_dir.join("sysroot/lib/rustlib/src/rust");
@@ -227,7 +248,7 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
     }
     run_command_with_output_and_env(&command, None, Some(&env))?;
 
-    args.config_info.setup(&mut env, false)?;
+    args.config_info.setup(&mut env, false, true)?;
 
     // We voluntarily ignore the error.
     let _ = fs::remove_dir_all("target/out");
