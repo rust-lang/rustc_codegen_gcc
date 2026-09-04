@@ -533,6 +533,16 @@ fn get_llvm_filecheck(env: &Env) -> Result<String, String> {
     }
 }
 
+fn which(env: &Env, program: &str) -> String {
+    match run_command_with_env(&[&"bash", &"-c", &format!("which {}", program)], None, Some(env)) {
+        Ok(cmd) => String::from_utf8_lossy(&cmd.stdout).trim().to_string(),
+        Err(_) => {
+            eprintln!("Failed to retrieve the path of {}, ignoring...", program);
+            String::new()
+        }
+    }
+}
+
 fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
     let toolchain = format!(
         "+{channel}-{host}",
@@ -585,6 +595,7 @@ fn setup_rustc(env: &mut Env, args: &TestArg) -> Result<PathBuf, String> {
             String::new()
         }
     };
+    let llvm_config = which(env, "llvm-config");
     let file_path = rust_dir_path.join("config.toml");
     std::fs::write(
         &file_path,
@@ -602,6 +613,7 @@ local-rebuild = true
 rustc = "{rustc}"
 
 [target.x86_64-unknown-linux-gnu]
+llvm-config = "{llvm_config}"
 llvm-filecheck = "{llvm_filecheck}"
 
 [llvm]
