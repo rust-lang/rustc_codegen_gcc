@@ -395,8 +395,8 @@ impl ConfigInfo {
             rustflags.push(format!("-Zcodegen-backend={backend}"));
         } else {
             rustflags.extend_from_slice(&[
-                "--sysroot".to_string(),
-                self.sysroot_path.clone(),
+                /*"--sysroot".to_string(),
+                self.sysroot_path.clone(),*/
                 format!("-Zcodegen-backend={}", self.cg_backend_path),
             ]);
         }
