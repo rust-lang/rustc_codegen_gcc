@@ -1,0 +1,18 @@
+profile = "compiler"
+change-id = 140732
+
+[build]
+target = ["m68k-unknown-linux-gnu"]
+
+[rust]
+codegen-backends = ["gcc"]
+deny-warnings = false
+debug-assertions = false
+debug-assertions-std = false
+
+[gcc]
+download-ci-gcc = true
+libgccjit-libs-dir = "/home/runner/libgccjit-libs-dir"
+
+[target.m68k-unknown-linux-gnu]
+cc = "/home/runner/work/rustc_codegen_gcc/rustc_codegen_gcc/cross-gcc/usr/bin/m68k-unknown-linux-gnu-gcc"
