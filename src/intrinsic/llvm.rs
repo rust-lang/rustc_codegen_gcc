@@ -1,11 +1,139 @@
 use std::borrow::Cow;
 
 use gccjit::{CType, Context, Field, Function, FunctionPtrType, RValue, ToRValue, Type};
+#[cfg(feature = "master")]
+use rustc_codegen_ssa::mir::operand::OperandRef;
 use rustc_codegen_ssa::traits::BuilderMethods;
+#[cfg(feature = "master")]
+use rustc_codegen_ssa::traits::LayoutTypeCodegenMethods;
+#[cfg(feature = "master")]
+use rustc_middle::ty;
+#[cfg(feature = "master")]
+use rustc_middle::ty::layout::LayoutOf;
 
 use crate::builder::Builder;
 use crate::context::{CodegenCx, new_array_type};
 use crate::type_::{StructAttribute, apply_struct_attributes};
+
+/// Lower AMX operations whose tile operands name architectural registers, not SSA values.
+#[cfg(feature = "master")]
+pub(super) fn codegen_x86_amx<'a, 'gcc, 'tcx>(
+    builder: &Builder<'a, 'gcc, 'tcx>,
+    instance: ty::Instance<'tcx>,
+    name: &str,
+    args: &[OperandRef<'tcx, RValue<'gcc>>],
+) -> Option<RValue<'gcc>> {
+    macro_rules! tile_load {
+        ($mnemonic:literal) => {
+            (
+                concat!($mnemonic, " {(%1,%2,1), %%tmm%c0|tmm%c0, [%1+%2*1]}"),
+                &["i", "r", "r"][..],
+                true,
+                false,
+            )
+        };
+    }
+    macro_rules! tile_dot_product {
+        ($mnemonic:literal) => {
+            (
+                concat!($mnemonic, " {%%tmm%c2, %%tmm%c1, %%tmm%c0|tmm%c0, tmm%c1, tmm%c2}"),
+                &["i", "i", "i"][..],
+                false,
+                false,
+            )
+        };
+    }
+    macro_rules! tile_row {
+        ($mnemonic:literal, $row:literal, $constraint:literal) => {
+            (
+                concat!($mnemonic, " {", $row, ", %%tmm%c1, %0|%0, tmm%c1, ", $row, "}"),
+                &["i", $constraint][..],
+                false,
+                true,
+            )
+        };
+    }
+
+    let (template, constraints, accesses_memory, returns_vector): (&str, &[&str], bool, bool) =
+        match name {
+            "llvm.x86.tileloadd64" => tile_load!("tileloadd"),
+            "llvm.x86.tileloaddt164" => tile_load!("tileloaddt1"),
+            "llvm.x86.tileloaddrs64" => tile_load!("tileloaddrs"),
+            "llvm.x86.tileloaddrst164" => tile_load!("tileloaddrst1"),
+            "llvm.x86.tilestored64" => (
+                "tilestored {%%tmm%c0, (%1,%2,1)|[%1+%2*1], tmm%c0}",
+                &["i", "r", "r"],
+                true,
+                false,
+            ),
+            "llvm.x86.tilezero" => ("tilezero {%%tmm%c0|tmm%c0}", &["i"], false, false),
+            "llvm.x86.tilerelease" => ("tilerelease", &[], false, false),
+            "llvm.x86.tdpbf16ps" => tile_dot_product!("tdpbf16ps"),
+            "llvm.x86.tdpbssd" => tile_dot_product!("tdpbssd"),
+            "llvm.x86.tdpbsud" => tile_dot_product!("tdpbsud"),
+            "llvm.x86.tdpbusd" => tile_dot_product!("tdpbusd"),
+            "llvm.x86.tdpbuud" => tile_dot_product!("tdpbuud"),
+            "llvm.x86.tdpfp16ps" => tile_dot_product!("tdpfp16ps"),
+            "llvm.x86.tcmmimfp16ps" => tile_dot_product!("tcmmimfp16ps"),
+            "llvm.x86.tcmmrlfp16ps" => tile_dot_product!("tcmmrlfp16ps"),
+            "llvm.x86.tdpbf8ps" => tile_dot_product!("tdpbf8ps"),
+            "llvm.x86.tdpbhf8ps" => tile_dot_product!("tdpbhf8ps"),
+            "llvm.x86.tdphbf8ps" => tile_dot_product!("tdphbf8ps"),
+            "llvm.x86.tdphf8ps" => tile_dot_product!("tdphf8ps"),
+            // The output occupies %0, shifting the tile and row inputs to %1 and %2.
+            // %k prints a 32-bit row register; plain %2 preserves the immediate prefix for each dialect.
+            "llvm.x86.tilemovrow" => tile_row!("tilemovrow", "%k2", "r"),
+            "llvm.x86.tilemovrowi" => tile_row!("tilemovrow", "%2", "i"),
+            "llvm.x86.tcvtrowd2ps" => tile_row!("tcvtrowd2ps", "%k2", "r"),
+            "llvm.x86.tcvtrowd2psi" => tile_row!("tcvtrowd2ps", "%2", "i"),
+            "llvm.x86.tcvtrowps2phh" => tile_row!("tcvtrowps2phh", "%k2", "r"),
+            "llvm.x86.tcvtrowps2phhi" => tile_row!("tcvtrowps2phh", "%2", "i"),
+            "llvm.x86.tcvtrowps2phl" => tile_row!("tcvtrowps2phl", "%k2", "r"),
+            "llvm.x86.tcvtrowps2phli" => tile_row!("tcvtrowps2phl", "%2", "i"),
+            "llvm.x86.tcvtrowps2bf16h" => tile_row!("tcvtrowps2bf16h", "%k2", "r"),
+            "llvm.x86.tcvtrowps2bf16hi" => tile_row!("tcvtrowps2bf16h", "%2", "i"),
+            "llvm.x86.tcvtrowps2bf16l" => tile_row!("tcvtrowps2bf16l", "%k2", "r"),
+            "llvm.x86.tcvtrowps2bf16li" => tile_row!("tcvtrowps2bf16l", "%2", "i"),
+            _ => return None,
+        };
+
+    let result = if returns_vector {
+        // LLVM intrinsics have no ordinary call ABI. Query the declared result layout directly.
+        let sig = builder
+            .tcx
+            .fn_sig(instance.def_id())
+            .instantiate(builder.tcx, instance.args)
+            .skip_norm_wip();
+        let sig = builder.tcx.instantiate_bound_regions_with_erased(sig);
+        let result_type = builder.backend_type(builder.layout_of(sig.output()));
+        Some(builder.current_func().new_local(builder.location, result_type, "amx_row"))
+    } else {
+        None
+    };
+    // Create the output before recording the asm: libgccjit replays nodes in creation order.
+    let asm = builder.llbb().add_extended_asm(builder.location, template);
+    // GCC does not allocate these tile registers. Keep their implicit state changes, including
+    // operations with no memory effects, ordered with the other AMX operations.
+    asm.set_volatile_flag(true);
+    if let Some(result) = result {
+        asm.add_output_operand(None, "=v", result);
+    }
+    assert_eq!(args.len(), constraints.len());
+    for (arg, constraint) in args.iter().zip(constraints) {
+        asm.add_input_operand(None, constraint, arg.immediate());
+    }
+    if accesses_memory {
+        // A register operand for the base address does not describe the memory being accessed.
+        // The extent depends on TILECFG and the runtime stride, so a fixed-size memory operand
+        // would be incorrect. Loads also need this barrier to retain preceding buffer writes.
+        asm.add_clobber("memory");
+    }
+    Some(match result {
+        Some(result) => result.to_rvalue(),
+        // Match the value returned for a void builtin without querying its ABI.
+        None => builder.context.new_rvalue_zero(builder.isize_type),
+    })
+}
 
 fn encode_key_128_type<'a, 'gcc, 'tcx>(
     builder: &Builder<'a, 'gcc, 'tcx>,
@@ -120,7 +248,7 @@ pub fn adjust_intrinsic_arguments<'a, 'b, 'gcc, 'tcx>(
     mut args: Cow<'b, [RValue<'gcc>]>,
     func_name: &str,
 ) -> Cow<'b, [RValue<'gcc>]> {
-    // FIXME: this might not be a good way to workaround the missing tile builtins.
+    // Discard arguments when an unsupported intrinsic is lowered to a trap.
     if func_name == "__builtin_trap" {
         return vec![].into();
     }
@@ -1655,66 +1783,39 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.avx512.fpclass.pd.512" => "__builtin_ia32_fpclasspd512_mask",
         "llvm.x86.avx512.fpclass.ps.512" => "__builtin_ia32_fpclassps512_mask",
 
-        // FIXME: support the tile builtins:
-        "llvm.x86.ldtilecfg" => "__builtin_trap",
-        "llvm.x86.sttilecfg" => "__builtin_trap",
-        "llvm.x86.tileloadd64" => "__builtin_trap",
+        // GCC's configuration builtins model the full 64-byte memory operand.
+        "llvm.x86.ldtilecfg" => "__builtin_ia32_ldtilecfg",
+        "llvm.x86.sttilecfg" => "__builtin_ia32_sttilecfg",
+
+        // FIXME: support compiler-allocated tiles (.internal), used by Rust's __tile_* APIs.
         "llvm.x86.tileloadd64.internal" => "__builtin_trap",
-        "llvm.x86.tilerelease" => "__builtin_trap",
-        "llvm.x86.tilestored64" => "__builtin_trap",
         "llvm.x86.tilestored64.internal" => "__builtin_trap",
-        "llvm.x86.tileloaddrs64" => "__builtin_trap",
         "llvm.x86.tileloaddrs64.internal" => "__builtin_trap",
-        "llvm.x86.tileloaddt164" => "__builtin_trap",
         "llvm.x86.tileloaddt164.internal" => "__builtin_trap",
-        "llvm.x86.tileloaddrst164" => "__builtin_trap",
         "llvm.x86.tileloaddrst164.internal" => "__builtin_trap",
-        "llvm.x86.tilezero" => "__builtin_trap",
         "llvm.x86.tilezero.internal" => "__builtin_trap",
-        "llvm.x86.tilemovrow" => "__builtin_trap",
         "llvm.x86.tilemovrow.internal" => "__builtin_trap",
-        "llvm.x86.tilemovrowi" => "__builtin_trap",
-        "llvm.x86.tdpbhf8ps" => "__builtin_trap",
         "llvm.x86.tdpbhf8ps.internal" => "__builtin_trap",
-        "llvm.x86.tdphbf8ps" => "__builtin_trap",
         "llvm.x86.tdphbf8ps.internal" => "__builtin_trap",
-        "llvm.x86.tdpbf8ps" => "__builtin_trap",
         "llvm.x86.tdpbf8ps.internal" => "__builtin_trap",
-        "llvm.x86.tdphf8ps" => "__builtin_trap",
         "llvm.x86.tdphf8ps.internal" => "__builtin_trap",
-        "llvm.x86.tdpbf16ps" => "__builtin_trap",
         "llvm.x86.tdpbf16ps.internal" => "__builtin_trap",
-        "llvm.x86.tdpbssd" => "__builtin_trap",
         "llvm.x86.tdpbssd.internal" => "__builtin_trap",
-        "llvm.x86.tdpbsud" => "__builtin_trap",
         "llvm.x86.tdpbsud.internal" => "__builtin_trap",
-        "llvm.x86.tdpbusd" => "__builtin_trap",
         "llvm.x86.tdpbusd.internal" => "__builtin_trap",
-        "llvm.x86.tdpbuud" => "__builtin_trap",
         "llvm.x86.tdpbuud.internal" => "__builtin_trap",
-        "llvm.x86.tdpfp16ps" => "__builtin_trap",
         "llvm.x86.tdpfp16ps.internal" => "__builtin_trap",
+        "llvm.x86.tcvtrowps2phh.internal" => "__builtin_trap",
+        "llvm.x86.tcvtrowps2phl.internal" => "__builtin_trap",
+        "llvm.x86.tcvtrowd2ps.internal" => "__builtin_trap",
+        "llvm.x86.tcvtrowps2bf16h.internal" => "__builtin_trap",
+        "llvm.x86.tcvtrowps2bf16l.internal" => "__builtin_trap",
+        "llvm.x86.tcmmimfp16ps.internal" => "__builtin_trap",
+        "llvm.x86.tcmmrlfp16ps.internal" => "__builtin_trap",
+
+        // AMX-TF32 support was removed in GCC 17 and is absent from current stdarch.
         "llvm.x86.tmmultf32ps" => "__builtin_trap",
         "llvm.x86.tmmultf32ps.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phh" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phh.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phl" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phl.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowd2ps" => "__builtin_trap",
-        "llvm.x86.tcvtrowd2ps.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowd2psi" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phhi" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2phli" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16h" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16h.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16hi" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16l" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16l.internal" => "__builtin_trap",
-        "llvm.x86.tcvtrowps2bf16li" => "__builtin_trap",
-        "llvm.x86.tcmmimfp16ps" => "__builtin_trap",
-        "llvm.x86.tcmmimfp16ps.internal" => "__builtin_trap",
-        "llvm.x86.tcmmrlfp16ps" => "__builtin_trap",
-        "llvm.x86.tcmmrlfp16ps.internal" => "__builtin_trap",
 
         // NOTE: this file is generated by https://github.com/GuillaumeGomez/llvmint/blob/master/generate_list.py
         _ => map_arch_intrinsic(name),

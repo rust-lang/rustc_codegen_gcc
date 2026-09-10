@@ -591,6 +591,10 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             func
         } else {
             let sym = self.tcx.symbol_name(instance).name;
+            #[cfg(feature = "master")]
+            if let Some(result) = llvm::codegen_x86_amx(self, instance, sym, args) {
+                return result;
+            }
 
             let func = if let Some(func) = self.intrinsics.borrow().get(sym) {
                 *func
