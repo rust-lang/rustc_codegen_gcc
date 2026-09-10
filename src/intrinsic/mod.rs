@@ -592,9 +592,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         } else {
             let sym = self.tcx.symbol_name(instance).name;
             #[cfg(feature = "master")]
-            if llvm::codegen_x86_amx(self, sym, args) {
-                // These fixed-register intrinsics return void, like a void builtin call.
-                return self.context.new_rvalue_zero(self.isize_type);
+            if let Some(result) = llvm::codegen_x86_amx(self, instance, sym, args) {
+                return result;
             }
 
             let func = if let Some(func) = self.intrinsics.borrow().get(sym) {

@@ -8,7 +8,7 @@
 
 #![crate_type = "lib"]
 #![no_std]
-#![feature(x86_amx_intrinsics)]
+#![feature(avx10_target_feature, x86_amx_intrinsics)]
 
 use core::arch::x86_64::*;
 
@@ -74,6 +74,24 @@ pub unsafe fn amx_float(
     _tile_cmmrlfp16ps::<6, 0, 3>();
     _tile_stored::<6>(real, stride);
     _tile_release();
+}
+
+// CHECK-LABEL: {{^"?_?}}amx_fp8{{"?}}:
+// att: tdpbf8ps %tmm2, %tmm1, %tmm7
+// intel: tdpbf8ps tmm7, tmm1, tmm2
+// att: tdpbhf8ps %tmm1, %tmm2, %tmm7
+// intel: tdpbhf8ps tmm7, tmm2, tmm1
+// att: tdphbf8ps %tmm2, %tmm1, %tmm7
+// intel: tdphbf8ps tmm7, tmm1, tmm2
+// att: tdphf8ps %tmm1, %tmm2, %tmm7
+// intel: tdphf8ps tmm7, tmm2, tmm1
+#[no_mangle]
+#[target_feature(enable = "amx-fp8")]
+pub unsafe fn amx_fp8() {
+    _tile_dpbf8ps::<7, 1, 2>();
+    _tile_dpbhf8ps::<7, 2, 1>();
+    _tile_dphbf8ps::<7, 1, 2>();
+    _tile_dphf8ps::<7, 2, 1>();
 }
 
 // CHECK-LABEL: {{^"?_?}}amx_int8{{"?}}:
@@ -159,4 +177,61 @@ pub unsafe extern "C" fn amx_memory(
     let result = output.read();
     _tile_release();
     result
+}
+
+// CHECK-LABEL: {{^"?_?}}amx_movrs{{"?}}:
+// att: tileloaddrs {{\(%[a-z0-9]+,}}[[RS_STRIDE:%[a-z0-9]+]]{{(,1)?\)}}, %tmm7
+// intel: tileloaddrs tmm7, {{\[[a-z0-9]+ *\+ *}}[[RS_STRIDE:[a-z0-9]+]]{{(\*1)?\]}}
+// att: tileloaddrst1 {{\(%[a-z0-9]+,}}[[RS_STRIDE]]{{(,1)?\)}}, %tmm0
+// intel: tileloaddrst1 tmm0, {{\[[a-z0-9]+ *\+ *}}[[RS_STRIDE]]{{(\*1)?\]}}
+#[no_mangle]
+#[target_feature(enable = "amx-movrs")]
+pub unsafe fn amx_movrs(input: *const u8, stride: usize) {
+    _tile_loaddrs::<7>(input, stride);
+    _tile_stream_loaddrs::<0>(input, stride);
+}
+
+// Row operations return vectors, unlike the other fixed-register intrinsics. Preserve
+// all results in caller-provided storage. Exercise both row encodings and both tile
+// register boundaries; row 15 is the last row in a fully configured tile.
+// CHECK-LABEL: {{^"?_?}}amx_rows{{"?}}:
+// att: tilemovrow [[ROW:%(e[a-z]+|r[0-9]+d)]], %tmm7, {{%zmm[0-9]+}}
+// intel: tilemovrow {{zmm[0-9]+}}, tmm7, [[ROW:(e[a-z]+|r[0-9]+d)]]
+// att: tilemovrow $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tilemovrow {{zmm[0-9]+}}, tmm0, 15
+// att: tcvtrowd2ps [[ROW]], %tmm7, {{%zmm[0-9]+}}
+// intel: tcvtrowd2ps {{zmm[0-9]+}}, tmm7, [[ROW]]
+// att: tcvtrowd2ps $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tcvtrowd2ps {{zmm[0-9]+}}, tmm0, 15
+// att: tcvtrowps2phh [[ROW]], %tmm7, {{%zmm[0-9]+}}
+// intel: tcvtrowps2phh {{zmm[0-9]+}}, tmm7, [[ROW]]
+// att: tcvtrowps2phh $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tcvtrowps2phh {{zmm[0-9]+}}, tmm0, 15
+// att: tcvtrowps2phl [[ROW]], %tmm7, {{%zmm[0-9]+}}
+// intel: tcvtrowps2phl {{zmm[0-9]+}}, tmm7, [[ROW]]
+// att: tcvtrowps2phl $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tcvtrowps2phl {{zmm[0-9]+}}, tmm0, 15
+// att: tcvtrowps2bf16h [[ROW]], %tmm7, {{%zmm[0-9]+}}
+// intel: tcvtrowps2bf16h {{zmm[0-9]+}}, tmm7, [[ROW]]
+// att: tcvtrowps2bf16h $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tcvtrowps2bf16h {{zmm[0-9]+}}, tmm0, 15
+// att: tcvtrowps2bf16l [[ROW]], %tmm7, {{%zmm[0-9]+}}
+// intel: tcvtrowps2bf16l {{zmm[0-9]+}}, tmm7, [[ROW]]
+// att: tcvtrowps2bf16l $15, %tmm0, {{%zmm[0-9]+}}
+// intel: tcvtrowps2bf16l {{zmm[0-9]+}}, tmm0, 15
+#[no_mangle]
+#[target_feature(enable = "amx-avx512,avx10.2")]
+pub unsafe fn amx_rows(output: *mut u8, row: u32) {
+    output.cast::<__m512i>().write_unaligned(_tile_movrow::<7>(row));
+    output.add(64).cast::<__m512i>().write_unaligned(_tile_movrowi::<0, 15>());
+    output.add(128).cast::<__m512>().write_unaligned(_tile_cvtrowd2ps::<7>(row));
+    output.add(192).cast::<__m512>().write_unaligned(_tile_cvtrowd2psi::<0, 15>());
+    output.add(256).cast::<__m512h>().write_unaligned(_tile_cvtrowps2phh::<7>(row));
+    output.add(320).cast::<__m512h>().write_unaligned(_tile_cvtrowps2phhi::<0, 15>());
+    output.add(384).cast::<__m512h>().write_unaligned(_tile_cvtrowps2phl::<7>(row));
+    output.add(448).cast::<__m512h>().write_unaligned(_tile_cvtrowps2phli::<0, 15>());
+    output.add(512).cast::<__m512bh>().write_unaligned(_tile_cvtrowps2bf16h::<7>(row));
+    output.add(576).cast::<__m512bh>().write_unaligned(_tile_cvtrowps2bf16hi::<0, 15>());
+    output.add(640).cast::<__m512bh>().write_unaligned(_tile_cvtrowps2bf16l::<7>(row));
+    output.add(704).cast::<__m512bh>().write_unaligned(_tile_cvtrowps2bf16li::<0, 15>());
 }
