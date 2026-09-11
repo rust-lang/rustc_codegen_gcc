@@ -20,6 +20,8 @@ use rustc_middle::ty::{self, ExistentialTraitRef, Instance, Ty, TyCtxt};
 #[cfg(feature = "master")]
 use rustc_session::config::DebugInfo;
 use rustc_session::{PointerAuthSchema, Session};
+#[cfg(feature = "master")]
+use rustc_span::def_id::DefId;
 use rustc_span::{DUMMY_SP, Span, Symbol};
 use rustc_target::spec::{HasTargetSpec, HasX86AbiOpt, Target, TlsModel, X86Abi};
 
@@ -49,6 +51,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub functions: RefCell<FxHashMap<String, Function<'gcc>>>,
     pub intrinsics: RefCell<FxHashMap<String, Function<'gcc>>>,
+    #[cfg(feature = "master")]
+    pub inline_recursion: RefCell<FxHashMap<DefId, bool>>,
 
     pub tls_model: gccjit::TlsModel,
 
@@ -263,6 +267,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             function_address_names: Default::default(),
             functions: RefCell::new(functions),
             intrinsics: RefCell::new(FxHashMap::default()),
+            #[cfg(feature = "master")]
+            inline_recursion: Default::default(),
 
             tls_model,
 
