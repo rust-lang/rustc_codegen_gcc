@@ -25,6 +25,8 @@ use rustc_target::spec::{HasTargetSpec, HasX86AbiOpt, Target, TlsModel, X86Abi};
 
 #[cfg(feature = "master")]
 use crate::abi::conv_to_fn_attribute;
+#[cfg(feature = "master")]
+use crate::attributes::InlineAnalysis;
 use crate::callee::get_fn;
 use crate::common::SignType;
 use crate::type_::StructTypeKey;
@@ -49,6 +51,8 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub functions: RefCell<FxHashMap<String, Function<'gcc>>>,
     pub intrinsics: RefCell<FxHashMap<String, Function<'gcc>>>,
+    #[cfg(feature = "master")]
+    pub inline_analysis: InlineAnalysis<'tcx>,
 
     pub tls_model: gccjit::TlsModel,
 
@@ -265,6 +269,8 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             function_address_names: Default::default(),
             functions: RefCell::new(functions),
             intrinsics: RefCell::new(FxHashMap::default()),
+            #[cfg(feature = "master")]
+            inline_analysis: Default::default(),
 
             tls_model,
 

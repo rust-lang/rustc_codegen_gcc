@@ -24,9 +24,15 @@ impl Config {
                     }
                 }
                 "--" => {
-                    config.rustc_flags.extend(&mut args);
-                    // Nothing else to be read but the `break` makes it more clear.
-                    break;
+                    // compiletest passes its own `--out-dir` to auxiliary builds, and rustc
+                    // rejects a second one.
+                    while let Some(arg) = args.next() {
+                        if arg == "--out-dir" {
+                            args.next();
+                        } else {
+                            config.rustc_flags.push(arg);
+                        }
+                    }
                 }
                 arg => return Err(format!("Unknown argument {arg:?}")),
             }

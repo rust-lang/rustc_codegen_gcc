@@ -145,6 +145,15 @@ unsafe impl<T: PointeeSized> Freeze for *mut T {}
 unsafe impl<T: PointeeSized> Freeze for &T {}
 unsafe impl<T: PointeeSized> Freeze for &mut T {}
 
+#[lang = "unsafe_unpin"]
+pub unsafe auto trait UnsafeUnpin {}
+
+unsafe impl<T: PointeeSized> UnsafeUnpin for PhantomData<T> {}
+unsafe impl<T: PointeeSized> UnsafeUnpin for *const T {}
+unsafe impl<T: PointeeSized> UnsafeUnpin for *mut T {}
+unsafe impl<T: PointeeSized> UnsafeUnpin for &T {}
+unsafe impl<T: PointeeSized> UnsafeUnpin for &mut T {}
+
 #[lang = "structural_peq"]
 pub trait StructuralPartialEq {}
 

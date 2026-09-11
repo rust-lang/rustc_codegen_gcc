@@ -4,7 +4,7 @@ use gccjit::{Function, FunctionType};
 use rustc_middle::ty::layout::{FnAbiOf, HasTyCtxt};
 use rustc_middle::ty::{self, Instance, TypeVisitableExt};
 
-use crate::attributes;
+use crate::attributes::{self, FnBody};
 use crate::context::CodegenCx;
 
 /// Codegens a reference to a fn/method item, monomorphizing and
@@ -70,7 +70,7 @@ pub fn get_fn<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, instance: Instance<'tcx>) 
         cx.linkage.set(FunctionType::Extern);
         let func = cx.declare_fn(sym, fn_abi);
 
-        attributes::from_fn_attrs(cx, func, instance, Some(fn_abi));
+        attributes::from_fn_attrs(cx, func, instance, FnBody::Declared, Some(fn_abi));
 
         #[cfg(feature = "master")]
         {

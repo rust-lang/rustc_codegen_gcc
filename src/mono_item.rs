@@ -11,6 +11,7 @@ use rustc_middle::ty::layout::{FnAbiOf, HasTypingEnv, LayoutOf};
 use rustc_middle::ty::{self, Instance, TypeVisitableExt};
 use rustc_span::bug;
 
+use crate::attributes::FnBody;
 use crate::consts::const_alloc_type;
 use crate::context::CodegenCx;
 use crate::type_of::LayoutGccExt;
@@ -188,7 +189,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         self.linkage.set(base::linkage_to_gcc(linkage));
         let fn_decl = self.declare_fn(symbol_name, fn_abi);
 
-        attributes::from_fn_attrs(self, fn_decl, instance, Some(fn_abi));
+        attributes::from_fn_attrs(self, fn_decl, instance, FnBody::Defined, Some(fn_abi));
 
         #[cfg(feature = "master")]
         if base::linkage_needs_weak_attribute(linkage) {

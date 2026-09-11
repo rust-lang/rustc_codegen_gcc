@@ -286,6 +286,9 @@ fn compile_tests(tempdir: PathBuf, c_objects_dir: PathBuf, current_dir: String) 
             "global_asm_nul_byte.rs",
             "naked_asm_nul_byte.rs",
             "x86_interrupt_first_arg_byval.rs",
+            "always_inline_x86_interrupt.rs",
+            // C-variadic definitions are still unstable on m68k.
+            "always_inline_variadic.rs",
         ],
     );
 }
