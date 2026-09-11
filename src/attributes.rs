@@ -4,6 +4,8 @@ use gccjit::Function;
 #[cfg(feature = "master")]
 use rustc_abi::{CanonAbi, InterruptKind};
 #[cfg(feature = "master")]
+use rustc_data_structures::fx::FxHashSet;
+#[cfg(feature = "master")]
 use rustc_hir::attrs::InlineAttr;
 use rustc_hir::attrs::InstructionSetAttr;
 #[cfg(feature = "master")]
@@ -11,6 +13,8 @@ use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 #[cfg(feature = "master")]
 use rustc_middle::mir::TerminatorKind;
 use rustc_middle::ty;
+#[cfg(feature = "master")]
+use rustc_span::def_id::DefId;
 use rustc_target::callconv::FnAbi;
 #[cfg(feature = "master")]
 use rustc_target::spec::Arch;
@@ -20,31 +24,47 @@ use crate::base;
 use crate::context::CodegenCx;
 use crate::gcc_util::to_gcc_features;
 
-/// Checks if the function `instance` is recursively inline.
-/// Returns `false` if a functions is guaranteed to be non-recursive, and `true` if it *might* be recursive.
+/// Check forced-inline call chains for cycles. Merely calling another
+/// always-inline function is not recursion.
 #[cfg(feature = "master")]
 fn recursively_inline<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     instance: ty::Instance<'tcx>,
 ) -> bool {
-    // No body, so we can't check if this is recursively inline, so we assume it is.
-    if !cx.tcx.is_mir_available(instance.def_id()) {
-        return true;
-    }
-    // `expect_local` ought to never fail: we should be checking a function within this codegen unit.
-    let body = cx.tcx.optimized_mir(instance.def_id());
-    for block in body.basic_blocks.iter() {
-        let Some(ref terminator) = block.terminator else { continue };
-        // I assume that the recursive-inline issue applies only to functions, and not to drops.
-        // In principle, a recursive, `#[inline(always)]` drop could(?) exist, but I don't think it does.
-        let TerminatorKind::Call { ref func, .. } = terminator.kind else { continue };
-        let Some((def, _args)) = func.const_fn_def() else { continue };
-        // Check if the called function is recursively inline.
-        if matches!(
-            cx.tcx.codegen_fn_attrs(def).inline,
-            InlineAttr::Always | InlineAttr::Force { .. }
-        ) {
+    // Keep the DFS on the heap: valid forced-inline chains can be arbitrarily
+    // deep, independently of the compiler thread's remaining call stack.
+    let mut pending: Vec<(DefId, bool)> = vec![(instance.def_id(), false)];
+    let mut active = FxHashSet::default();
+    while let Some((def, finishing)) = pending.pop() {
+        if finishing {
+            active.remove(&def);
+            cx.inline_recursion.borrow_mut().insert(def, false);
+            continue;
+        }
+        let cached = cx.inline_recursion.borrow().get(&def).copied();
+        if cached == Some(false) {
+            continue;
+        }
+        if cached == Some(true) || active.contains(&def) || !cx.tcx.is_mir_available(def) {
+            let mut cache = cx.inline_recursion.borrow_mut();
+            cache.insert(def, true);
+            for caller in active {
+                cache.insert(caller, true);
+            }
             return true;
+        }
+        active.insert(def);
+        pending.push((def, true));
+        for block in cx.tcx.optimized_mir(def).basic_blocks.iter().rev() {
+            let Some(ref terminator) = block.terminator else { continue };
+            let TerminatorKind::Call { ref func, .. } = terminator.kind else { continue };
+            let Some((callee, _)) = func.const_fn_def() else { continue };
+            if matches!(
+                cx.tcx.codegen_fn_attrs(callee).inline,
+                InlineAttr::Always | InlineAttr::Force { .. }
+            ) {
+                pending.push((callee, false));
+            }
         }
     }
     false
@@ -60,14 +80,8 @@ fn inline_attr<'gcc, 'tcx>(
 ) -> Option<FnAttribute<'gcc>> {
     match inline {
         InlineAttr::Always => {
-            // We can't simply always return `always_inline` unconditionally.
-            // It is *NOT A HINT* and does not work for recursive functions.
-            //
-            // So, it can only be applied *if*:
-            // The current function does not call any functions marked `#[inline(always)]`.
-            //
-            // That prevents issues steming from recursive `#[inline(always)]` at a *relatively* small cost.
-            // We *only* need to check all the terminators of a function marked with this attribute.
+            // GCC cannot force recursive call chains inline. Preserve the
+            // guarantee for acyclic chains, including nested intrinsic wrappers.
             if recursively_inline(cx, instance) {
                 Some(FnAttribute::Inline)
             } else {
