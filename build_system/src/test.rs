@@ -726,11 +726,11 @@ where
 
 struct Project {
     url: &'static str,
-    /// Arguments added to both the `cargo build` and the `cargo test` invocations.
+    /// Arguments added to the `cargo test` invocation.
     cargo_arguments: &'static [&'static str],
     /// Arguments forwarded to the test harness by `cargo test`.
     test_harness_arguments: &'static [&'static str],
-    /// Variables added to the environment of both invocations.
+    /// Variables added to the environment of the `cargo test` invocation.
     environment_variables: &'static [(&'static str, &'static str)],
 }
 
@@ -764,8 +764,8 @@ fn test_projects(env: &Env, args: &TestArg) -> Result<(), String> {
         // own CI; this one renders text decorations a pixel off with the versions Ubuntu ships.
         Project::new("https://gitlab.gnome.org/GNOME/librsvg")
             .test_harness_arguments(&["--skip", "tests::svg1_1_text_text_03_b_svg", "--exact"])
-            // A debug build of librsvg needs about 5 MB of stack per `cargo test` thread to reach
-            // its maximum layer nesting depth; librsvg's own CI sets the same value.
+            // librsvg needs several megabytes of stack per `cargo test` thread to reach its
+            // maximum layer nesting depth; librsvg's own CI sets the same value.
             .environment_variables(&[("RUST_MIN_STACK", "8388608")]),
         Project::new("https://github.com/rust-random/getrandom"),
         Project::new("https://github.com/BurntSushi/memchr"),
@@ -792,6 +792,11 @@ fn test_projects(env: &Env, args: &TestArg) -> Result<(), String> {
     let rustflags =
         format!("{} --cap-lints allow", env.get("RUSTFLAGS").cloned().unwrap_or_default());
     env.insert("RUSTFLAGS".to_string(), rustflags);
+    // Building the projects twice, once optimized and once not, doubles the compilation time for
+    // nothing: the two profiles share no artifact. Test in release mode only, but keep the checks
+    // that the tests would otherwise lose by not being built in debug mode.
+    env.insert("CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS".to_string(), "true".to_string());
+    env.insert("CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS".to_string(), "true".to_string());
     let run_tests =
         |projects_path, iter: &mut dyn Iterator<Item = &Project>| -> Result<(), String> {
             for project in iter {
@@ -803,13 +808,7 @@ fn test_projects(env: &Env, args: &TestArg) -> Result<(), String> {
                     project_environment.insert(name.to_string(), value.to_string());
                 }
 
-                let mut build_command: Vec<&dyn AsRef<OsStr>> = vec![&"build", &"--release"];
-                build_command.extend(
-                    project.cargo_arguments.iter().map(|argument| argument as &dyn AsRef<OsStr>),
-                );
-                run_cargo_command(&build_command, Some(repo_path), &project_environment, args)?;
-
-                let mut test_command: Vec<&dyn AsRef<OsStr>> = vec![&"test"];
+                let mut test_command: Vec<&dyn AsRef<OsStr>> = vec![&"test", &"--release"];
                 test_command.extend(
                     project.cargo_arguments.iter().map(|argument| argument as &dyn AsRef<OsStr>),
                 );
