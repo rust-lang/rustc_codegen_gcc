@@ -104,7 +104,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             let init = crate::consts::const_alloc_to_gcc_uncached(self, alloc);
             let alloc = alloc.inner();
-            let typ = self.val_ty(init).get_aligned(alloc.align.bytes());
+
+            let mut typ = self.val_ty(init);
+            // FIXME(GuillaumeGomez): is it only structs or could be other types?
+            if typ.is_struct().is_some() {
+                typ = typ.get_aligned(alloc.align.bytes());
+            }
 
             let global = self.declare_global_with_linkage(&name, typ, GlobalKind::Internal);
 
