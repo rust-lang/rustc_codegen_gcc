@@ -56,7 +56,10 @@ jobs:
 
     - name: Install the libraries needed to build librsvg
       if: ${{ contains(matrix.commands, '--projects') }}
-      run: sudo apt-get install libcairo2-dev libpango1.0-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libxml2-dev libglib2.0-dev
+      # The runner image's package index can be stale.
+      run: |
+        sudo apt-get update
+        sudo apt-get install libcairo2-dev libpango1.0-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libxml2-dev libglib2.0-dev
 
     - name: Download artifact
       run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${{ matrix.libgccjit_version.gcc }}
