@@ -299,10 +299,7 @@ fn run_tests(tempdir: PathBuf, c_objects_dir: PathBuf, current_dir: String) {
         "[DEBUG] lang run",
         "tests/run",
         TestMode::CompileAndRun,
-        &[
-            // FIXME: remove this when the unwind issue is fixed in GCC m68k upstream.
-            "catch_unwind.rs",
-        ],
+        &[],
     );
     build_test_runner(
         tempdir,
@@ -312,10 +309,7 @@ fn run_tests(tempdir: PathBuf, c_objects_dir: PathBuf, current_dir: String) {
         "[RELEASE] lang run",
         "tests/run",
         TestMode::CompileAndRun,
-        &[
-            // FIXME: remove this when the unwind issue is fixed in GCC m68k upstream.
-            "catch_unwind.rs",
-        ],
+        &[],
     );
 }
 
