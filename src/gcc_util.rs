@@ -198,6 +198,26 @@ pub fn new_context<'gcc>(sess: &Session) -> Context<'gcc> {
         context.add_command_line_option("-mavx");
     }
 
+    if sess.target.arch == Arch::AArch64 {
+        // Unlike LLVM, GCC enables outline atomics by default, but their libgcc helpers are
+        // missing on targets without this feature, like the Linux kernel. Only AArch64 has it.
+        let outline_atomics = sess
+            .global_backend_features
+            .iter()
+            .rev()
+            .find_map(|feature| match feature.as_str() {
+                "outline-atomics" | "+outline-atomics" => Some(true),
+                "-outline-atomics" => Some(false),
+                _ => None,
+            })
+            .unwrap_or(false);
+        context.add_command_line_option(if outline_atomics {
+            "-moutline-atomics"
+        } else {
+            "-mno-outline-atomics"
+        });
+    }
+
     for arg in &sess.opts.cg.llvm_args {
         context.add_command_line_option(arg);
     }
