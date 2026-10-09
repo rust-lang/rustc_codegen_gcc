@@ -141,7 +141,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     eh_personality: Cell<Option<Function<'gcc>>>,
     #[cfg(feature = "master")]
-    pub rust_try_fn: Cell<Option<(Type<'gcc>, Function<'gcc>)>>,
+    pub rust_try_fn: Cell<Option<Function<'gcc>>>,
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
@@ -364,17 +364,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
 
         self.landing_pads.borrow_mut().clear();
-    }
-
-    pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {
-        let function: Function<'gcc> = unsafe { std::mem::transmute(value) };
-        debug_assert!(
-            self.functions.borrow().values().any(|value| *value == function),
-            "{:?} ({:?}) is not a function",
-            value,
-            value.get_type()
-        );
-        function
     }
 
     pub fn is_native_int_type(&self, typ: Type<'gcc>) -> bool {

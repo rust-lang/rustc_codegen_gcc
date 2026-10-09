@@ -202,46 +202,6 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         self.llbb().add_assignment(self.location, lvalue, value);
     }
 
-    fn check_call<'b>(
-        &mut self,
-        _typ: &str,
-        func: Function<'gcc>,
-        args: &'b [RValue<'gcc>],
-    ) -> Cow<'b, [RValue<'gcc>]> {
-        let mut all_args_match = true;
-        let mut param_types = vec![];
-        let param_count = func.get_param_count();
-        for (index, arg) in args.iter().enumerate().take(param_count) {
-            let param = func.get_param(index as i32);
-            let param = param.to_rvalue().get_type();
-            if param != arg.get_type() {
-                all_args_match = false;
-            }
-            param_types.push(param);
-        }
-
-        if all_args_match {
-            return Cow::Borrowed(args);
-        }
-
-        let casted_args: Vec<_> = param_types
-            .into_iter()
-            .zip(args.iter())
-            .map(|(expected_ty, &actual_val)| {
-                let actual_ty = actual_val.get_type();
-                if expected_ty != actual_ty {
-                    self.bitcast(actual_val, expected_ty)
-                } else {
-                    actual_val
-                }
-            })
-            .collect();
-
-        debug_assert_eq!(casted_args.len(), args.len());
-
-        Cow::Owned(casted_args)
-    }
-
     fn check_ptr_call<'b>(
         &mut self,
         _typ: &str,
@@ -371,49 +331,11 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
         };
         #[cfg(not(feature = "master"))]
         let args: &[RValue<'gcc>] = &args;
-        // FIXME(antoyo): remove when having a proper API.
-        let gcc_func = unsafe { std::mem::transmute::<RValue<'gcc>, Function<'gcc>>(func) };
-        let call = if self.functions.borrow().values().any(|value| *value == gcc_func) {
-            // FIXME(antoyo): remove when the API supports a different type for functions.
-            let func: Function<'gcc> = self.cx.rvalue_as_function(func);
-            self.function_call(func, return_slot, args, funclet, must_tail)
-        } else {
-            // If it's a not function that was defined, it's a function pointer.
-            self.function_ptr_call(typ, fn_abi, func, return_slot, args, funclet, must_tail)
-        };
+        let call = self.function_ptr_call(typ, fn_abi, func, return_slot, args, funclet, must_tail);
         if let Some(_fn_abi) = fn_abi {
             // FIXME(bjorn3): Apply function attributes
         }
         call
-    }
-
-    pub fn function_call(
-        &mut self,
-        func: Function<'gcc>,
-        return_slot: ReturnSlot<RValue<'gcc>>,
-        args: &[RValue<'gcc>],
-        _funclet: Option<&Funclet>,
-        must_tail: bool,
-    ) -> RValue<'gcc> {
-        let args = self.check_call("call", func, args);
-
-        let call = self.cx.context.new_call(self.location, func, &args);
-        if must_tail {
-            // Return the bare tail call, don't assign or `add_eval` it yet.
-            return call;
-        }
-
-        // gccjit requires to use the result of functions, even when it's not used.
-        // That's why we assign the result to a local or call add_eval().
-        let return_type = func.get_return_type();
-        let void_type = self.context.new_type::<()>();
-        if return_type != void_type {
-            self.store_call_result(return_slot, call)
-        } else {
-            self.block.add_eval(self.location, call);
-            // Return dummy value when not having return value.
-            self.context.new_rvalue_zero(self.isize_type)
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -473,6 +395,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 
         if return_type != void_type {
             let return_value = self.cx.context.new_call_through_ptr(self.location, func_ptr, &args);
+            set_return_slot_optimization(return_value, &return_slot);
             let return_value = llvm::adjust_intrinsic_return_value(
                 self,
                 return_value,
@@ -2581,6 +2504,17 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
             }
         }
     }
+}
+
+/// Let a call returning in memory build its result directly in cg_ssa's return slot: the return
+/// pointer is `noalias` in the Rust ABI, so the callee cannot observe the slot through another path.
+fn set_return_slot_optimization<'gcc>(call: RValue<'gcc>, return_slot: &ReturnSlot<RValue<'gcc>>) {
+    #[cfg(feature = "master")]
+    if let ReturnSlot::Indirect(_) = *return_slot {
+        call.set_return_slot_optimization(true);
+    }
+    #[cfg(not(feature = "master"))]
+    let _ = (call, return_slot);
 }
 
 fn difference_or_zero<'gcc>(
