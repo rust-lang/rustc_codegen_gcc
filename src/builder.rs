@@ -2589,7 +2589,7 @@ impl<'a, 'gcc, 'tcx> Builder<'a, 'gcc, 'tcx> {
 /// pointer is `noalias` in the Rust ABI, so the callee cannot observe the slot through another path.
 fn set_return_slot_optimization<'gcc>(call: RValue<'gcc>, return_slot: &ReturnSlot<RValue<'gcc>>) {
     #[cfg(feature = "master")]
-    if let ReturnSlot::Indirect(_) = return_slot {
+    if let ReturnSlot::Indirect(_) = *return_slot {
         call.set_return_slot_optimization(true);
     }
     #[cfg(not(feature = "master"))]
