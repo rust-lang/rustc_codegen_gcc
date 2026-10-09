@@ -1091,27 +1091,17 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.x86.xgetbv" => "__builtin_trap",
         _ => unimplemented!("unsupported LLVM intrinsic {}", name),
     };
-    let func = cx.context.get_builtin_function(gcc_name);
-    cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-    func
+    cx.context.get_builtin_function(gcc_name)
 }
 
 #[cfg(feature = "master")]
 pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function<'gcc> {
     let gcc_name = match name {
-        "llvm.prefetch.p0" => {
-            let gcc_name = "__builtin_prefetch";
-            let func = cx.context.get_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
+        "llvm.prefetch.p0" => return cx.context.get_builtin_function("__builtin_prefetch"),
 
         "llvm.aarch64.isb" => {
             // FIXME: GCC doesn't support __builtin_arm_isb yet, check if this builtin is OK.
-            let gcc_name = "__atomic_thread_fence";
-            let func = cx.context.get_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
+            return cx.context.get_builtin_function("__atomic_thread_fence");
         }
 
         "llvm.x86.xgetbv" => "__builtin_ia32_xgetbv",
@@ -1122,12 +1112,7 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         "llvm.sqrt.v2f64" => "__builtin_ia32_sqrtpd",
         // FIXME: Should handle other targets than `ia32`.
         "llvm.sqrt.v4f32" => "__builtin_ia32_sqrtps",
-        "llvm.sqrt.f32" => {
-            let gcc_name = "__builtin_sqrtf";
-            let func = cx.context.get_builtin_function(gcc_name);
-            cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-            return func;
-        }
+        "llvm.sqrt.f32" => return cx.context.get_builtin_function("__builtin_sqrtf"),
         // FIXME: Should handle other targets than `ia32`.
         "llvm.smax.v4i32" => "__builtin_ia32_pmaxsd128",
         "llvm.x86.avx512.pmul.dq.512" => "__builtin_ia32_pmuldq512_mask",
@@ -1741,9 +1726,7 @@ pub fn intrinsic<'gcc, 'tcx>(name: &str, cx: &CodegenCx<'gcc, 'tcx>) -> Function
         _ => map_arch_intrinsic(name),
     };
 
-    let func = cx.context.get_target_builtin_function(gcc_name);
-    cx.functions.borrow_mut().insert(gcc_name.to_string(), func);
-    func
+    cx.context.get_target_builtin_function(gcc_name)
 }
 
 #[cfg(feature = "master")]
