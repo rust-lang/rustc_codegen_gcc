@@ -67,7 +67,6 @@ pub(crate) fn global_gcc_features(sess: &EarlySession) -> Vec<String> {
 
 // To find a list of GCC's names, check https://gcc.gnu.org/onlinedocs/gcc/Function-Attributes.html
 pub fn to_gcc_features<'a>(target: &Target, s: &'a str) -> SmallVec<[&'a str; 2]> {
-    // cSpell:disable
     match (&target.arch, s) {
         // FIXME: seems like x87 does not exist?
         (&Arch::X86 | &Arch::X86_64, "x87") => smallvec![],
@@ -111,14 +110,12 @@ pub fn to_gcc_features<'a>(target: &Target, s: &'a str) -> SmallVec<[&'a str; 2]
         (&Arch::AArch64, "sve2-bitperm") => smallvec!["sve2-bitperm", "neon"],
         (_, s) => smallvec![s],
     }
-    // cSpell:enable
 }
 
 /// Translate a Rust AArch64 feature name to the GCC extension enabled by `target("+name")`.
 /// GCC rejects unknown extensions, so features without one return `None`.
 #[cfg(feature = "master")]
 pub fn to_gcc_aarch64_extension(feature: &str) -> Option<&'static str> {
-    // cSpell:disable
     let extension = match feature {
         "neon" => "simd",
         "rdm" => "rdma",
@@ -183,7 +180,6 @@ pub fn to_gcc_aarch64_extension(feature: &str) -> Option<&'static str> {
         "wfxt" => "wfxt",
         _ => return None,
     };
-    // cSpell:enable
     Some(extension)
 }
 
