@@ -114,6 +114,79 @@ pub fn to_gcc_features<'a>(target: &Target, s: &'a str) -> SmallVec<[&'a str; 2]
     // cSpell:enable
 }
 
+/// Translate a Rust AArch64 feature name to the GCC extension enabled by `target("+name")`.
+/// GCC rejects unknown extensions, so features without one return `None`.
+#[cfg(feature = "master")]
+pub fn to_gcc_aarch64_extension(feature: &str) -> Option<&'static str> {
+    // cSpell:disable
+    let extension = match feature {
+        "neon" => "simd",
+        "rdm" => "rdma",
+        "fhm" => "fp16fml",
+        "jsconv" => "jscvt",
+        "mte" => "memtag",
+        "rand" => "rng",
+        "spe" => "profile",
+        "paca" | "pacg" => "pauth",
+        "aes" => "aes",
+        "bf16" => "bf16",
+        "crc" => "crc",
+        "cssc" => "cssc",
+        "dotprod" => "dotprod",
+        "f32mm" => "f32mm",
+        "f64mm" => "f64mm",
+        "faminmax" => "faminmax",
+        "fcma" => "fcma",
+        "flagm" => "flagm",
+        "flagm2" => "flagm2",
+        "fp8" => "fp8",
+        "fp8dot2" => "fp8dot2",
+        "fp8dot4" => "fp8dot4",
+        "fp8fma" => "fp8fma",
+        "fp16" => "fp16",
+        "frintts" => "frintts",
+        "i8mm" => "i8mm",
+        "lse" => "lse",
+        "lse128" => "lse128",
+        "lut" => "lut",
+        "mops" => "mops",
+        "rcpc" => "rcpc",
+        "rcpc2" => "rcpc2",
+        "rcpc3" => "rcpc3",
+        "sb" => "sb",
+        "sha2" => "sha2",
+        "sha3" => "sha3",
+        "sm4" => "sm4",
+        "sme" => "sme",
+        "sme-b16b16" => "sme-b16b16",
+        "sme-f8f16" => "sme-f8f16",
+        "sme-f8f32" => "sme-f8f32",
+        "sme-f16f16" => "sme-f16f16",
+        "sme-f64f64" => "sme-f64f64",
+        "sme-i16i64" => "sme-i16i64",
+        "sme-lutv2" => "sme-lutv2",
+        "sme2" => "sme2",
+        "sme2p1" => "sme2p1",
+        "ssbs" => "ssbs",
+        "ssve-fp8dot2" => "ssve-fp8dot2",
+        "ssve-fp8dot4" => "ssve-fp8dot4",
+        "ssve-fp8fma" => "ssve-fp8fma",
+        "sve" => "sve",
+        "sve-b16b16" => "sve-b16b16",
+        "sve2" => "sve2",
+        "sve2-aes" => "sve2-aes",
+        "sve2-bitperm" => "sve2-bitperm",
+        "sve2-sha3" => "sve2-sha3",
+        "sve2-sm4" => "sve2-sm4",
+        "sve2p1" => "sve2p1",
+        "tme" => "tme",
+        "wfxt" => "wfxt",
+        _ => return None,
+    };
+    // cSpell:enable
+    Some(extension)
+}
+
 /// Translate a Rust feature name to the name libgccjit reports in its target
 /// info (see gcc/config/aarch64/aarch64-jit.cc and aarch64-option-extensions.def).
 pub fn to_gcc_target_info_feature<'a>(sess: &EarlySession, feature: &'a str) -> &'a str {
