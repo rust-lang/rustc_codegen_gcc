@@ -2,8 +2,6 @@
 //! This module exists because some integer types are not supported on some gcc platforms, e.g.
 //! 128-bit integers on 32-bit platforms and thus require to be handled manually.
 
-// cSpell:words cmpti divti modti mulodi muloti udivti umodti
-
 use gccjit::{
     BinaryOp, CType, ComparisonOp, FunctionType, Location, RValue, ToRValue, Type, UnaryOp,
 };
@@ -958,11 +956,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
                 let value = self.int_to_float_cast(signed, value, self.float_type);
                 return self.context.new_cast(None, value, dest_typ);
             }
-            // cSpell:disable
             TypeKind::Float => "tisf",
             TypeKind::Double => "tidf",
             TypeKind::FP128 => "titf",
-            // cSpell:enable
             kind => panic!("cannot cast a non-native integer to type {:?}", kind),
         };
         let sign = if signed { "" } else { "un" };
@@ -1008,12 +1004,10 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             _ => (None, value_type),
         };
         let name_suffix = match self.type_kind(value_type) {
-            // cSpell:disable
             // Since we will cast Half to a float, we use sfti for both.
             TypeKind::Half | TypeKind::Float => "sfti",
             TypeKind::Double => "dfti",
             TypeKind::FP128 => "tfti",
-            // cSpell:enable
             kind => panic!("cannot cast a {:?} to non-native integer", kind),
         };
         let sign = if signed { "" } else { "uns" };
