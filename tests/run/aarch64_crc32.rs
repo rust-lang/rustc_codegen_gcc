@@ -56,9 +56,10 @@ mod crc32 {
     }
 
     pub fn run() {
-        if !std::arch::is_aarch64_feature_detected!("crc") {
-            return;
-        }
+        assert!(
+            std::arch::is_aarch64_feature_detected!("crc"),
+            "this test needs a CPU with the `crc` feature"
+        );
         let inputs = [
             (0, 0),
             (!0, !0),

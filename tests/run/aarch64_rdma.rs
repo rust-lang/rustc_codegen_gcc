@@ -87,9 +87,10 @@ mod rdma {
     check!(check_int32x4, i32, 4, vqrdmulhq_s32, vqrdmlahq_s32, vqrdmlshq_s32);
 
     pub fn run() {
-        if !std::arch::is_aarch64_feature_detected!("rdm") {
-            return;
-        }
+        assert!(
+            std::arch::is_aarch64_feature_detected!("rdm"),
+            "this test needs a CPU with the `rdm` feature"
+        );
         unsafe {
             check_int16x4(&VALUES_16);
             check_int16x8(&VALUES_16);
