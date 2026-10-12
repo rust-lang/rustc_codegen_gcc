@@ -69,11 +69,9 @@ mod type_of;
 
 use std::any::Any;
 use std::ffi::CString;
-use std::fmt::Debug;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::{env, fs};
 
 #[cfg(feature = "master")]
