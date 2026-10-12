@@ -223,19 +223,19 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         align: Align,
         kind: Option<&str>,
     ) -> RValue<'gcc> {
+        // NOTE: the alignment is set on the global rather than on its type: libgccjit rejects
+        // initializing a global of an aligned array type with a value of the plain array type.
+        let typ = self.val_ty(cv);
         let global = match kind {
             Some(kind) if !self.tcx.sess.fewer_names() => {
                 let name = self.generate_local_symbol_name(kind);
                 // FIXME(antoyo): check if it's okay that no link_section is set.
 
-                let typ = self.val_ty(cv).get_aligned(align.bytes());
                 self.declare_private_global(&name[..], typ)
             }
-            _ => {
-                let typ = self.val_ty(cv).get_aligned(align.bytes());
-                self.declare_unnamed_global(typ)
-            }
+            _ => self.declare_unnamed_global(typ),
         };
+        global.set_alignment(align.bytes() as i32);
         global.global_set_initializer_rvalue(cv);
         // FIXME(antoyo): set unnamed address.
         let rvalue = global.get_address(None);
@@ -381,7 +381,12 @@ pub(crate) fn const_alloc_type<'gcc>(
     cx: &CodegenCx<'gcc, '_>,
     alloc: ConstAllocation<'_>,
 ) -> Type<'gcc> {
-    let fields: Vec<_> = alloc_fields(cx, alloc.inner())
+    let fields = alloc_fields(cx, alloc.inner());
+    // Must match `const_alloc_to_gcc_uncached`, which doesn't wrap a lone byte run in a struct.
+    if let [AllocField::Bytes { range }] = fields.as_slice() {
+        return bytes_type_in_context(cx, range.len());
+    }
+    let fields: Vec<_> = fields
         .into_iter()
         .map(|field| match field {
             AllocField::Bytes { range } => bytes_type_in_context(cx, range.len()),
@@ -405,7 +410,9 @@ pub(crate) fn const_alloc_to_gcc_uncached<'gcc>(
     let dl = cx.data_layout();
     let pointer_size = dl.pointer_size();
 
-    let llvals: Vec<_> = alloc_fields(cx, alloc)
+    let fields = alloc_fields(cx, alloc);
+    let is_lone_byte_run = matches!(fields.as_slice(), [AllocField::Bytes { .. }]);
+    let llvals: Vec<_> = fields
         .into_iter()
         .map(|field| match field {
             AllocField::Bytes { range } => {
@@ -448,7 +455,11 @@ pub(crate) fn const_alloc_to_gcc_uncached<'gcc>(
         })
         .collect();
 
-    // FIXME(bjorn3) avoid wrapping in a struct when there is only a single element.
+    // Don't wrap a lone byte run in a struct: GCC only puts a global into a mergeable string
+    // section (`.rodata.str*`) when its initializer is directly a string.
+    if is_lone_byte_run {
+        return llvals[0];
+    }
     cx.const_struct(&llvals, true)
 }
 
