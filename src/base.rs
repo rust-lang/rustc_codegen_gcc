@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(feature = "master")]
+use gccjit::VarAttribute;
 use gccjit::{CType, FunctionType, GlobalKind};
+use rustc_attr_ir::{AttributeKind, Linkage, find_attr};
 use rustc_codegen_ssa::ModuleCodegen;
 use rustc_codegen_ssa::base::maybe_create_entry_wrapper;
 use rustc_codegen_ssa::mono_item::MonoItemExt;
-use rustc_hir::attrs::{AttributeKind, Linkage};
-use rustc_hir::find_attr;
 use rustc_middle::dep_graph;
 #[cfg(feature = "master")]
 use rustc_middle::mono::Visibility;
@@ -19,7 +20,7 @@ use rustc_target::spec::SymbolVisibility;
 use crate::builder::Builder;
 use crate::context::CodegenCx;
 use crate::gcc_util::new_context;
-use crate::{GccContext, LockedTargetInfo, LtoMode, SyncContext};
+use crate::{GccContext, LtoMode, SharedTargetInfo, SyncContext};
 
 #[cfg(feature = "master")]
 pub fn visibility_to_gcc(visibility: Visibility) -> gccjit::Visibility {
@@ -39,39 +40,68 @@ pub fn symbol_visibility_to_gcc(visibility: SymbolVisibility) -> gccjit::Visibil
     }
 }
 
+/// The kind of a global *definition* with an explicit `#[linkage]`.
+///
+/// The flavours that another object file is allowed to override also need
+/// `global_linkage_attribute` from the caller: `GlobalKind` alone cannot express weakness.
 pub fn global_linkage_to_gcc(linkage: Linkage) -> GlobalKind {
     match linkage {
-        Linkage::External => GlobalKind::Imported,
-        Linkage::AvailableExternally => GlobalKind::Imported,
-        Linkage::LinkOnceAny => unimplemented!(),
-        Linkage::LinkOnceODR => unimplemented!(),
-        Linkage::WeakAny => unimplemented!(),
-        Linkage::WeakODR => unimplemented!(),
-        Linkage::Internal => GlobalKind::Internal,
-        Linkage::ExternalWeak => GlobalKind::Imported, // FIXME(antoyo): should be weak linkage.
-        Linkage::Common => unimplemented!(),
+        Linkage::External => GlobalKind::Exported,
+        // libgccjit cannot emit a definition that the linker discards in favour of the one in
+        // another object file, so emit a private copy of it instead.
+        Linkage::AvailableExternally | Linkage::Internal => GlobalKind::Internal,
+        // libgccjit exposes no comdat, so `weak` stands in for the linkonce flavours.
+        Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak => GlobalKind::Exported,
     }
 }
 
+/// The attribute a global *definition* needs on top of its [`GlobalKind`] to get this linkage.
+#[cfg(feature = "master")]
+pub fn global_linkage_attribute<'gcc>(linkage: Linkage) -> Option<VarAttribute<'gcc>> {
+    if linkage_needs_weak_attribute(linkage) { Some(VarAttribute::Weak) } else { None }
+}
+
+/// The type of a function *definition* with an explicit `#[linkage]`.
+///
+/// The flavours that another object file is allowed to override also need
+/// `linkage_needs_weak_attribute` from the caller: `FunctionType` alone cannot express weakness.
 pub fn linkage_to_gcc(linkage: Linkage) -> FunctionType {
     match linkage {
         Linkage::External => FunctionType::Exported,
-        // FIXME(antoyo): set the attribute externally_visible.
-        Linkage::AvailableExternally => FunctionType::Extern,
-        Linkage::LinkOnceAny => unimplemented!(),
-        Linkage::LinkOnceODR => unimplemented!(),
-        Linkage::WeakAny => FunctionType::Exported, // FIXME(antoyo): should be similar to linkonce.
-        Linkage::WeakODR => unimplemented!(),
-        Linkage::Internal => FunctionType::Internal,
-        Linkage::ExternalWeak => unimplemented!(),
-        Linkage::Common => unimplemented!(),
+        // libgccjit cannot emit a definition that the linker discards in favour of the one in
+        // another object file, so emit a private copy of it instead.
+        Linkage::AvailableExternally | Linkage::Internal => FunctionType::Internal,
+        // libgccjit exposes no comdat, so `weak` stands in for every overridable flavour.
+        Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak => FunctionType::Exported,
+    }
+}
+
+/// Whether a definition with this linkage must carry the `weak` attribute, so that a strong
+/// definition in another object file wins over it instead of clashing with it.
+#[cfg(feature = "master")]
+pub fn linkage_needs_weak_attribute(linkage: Linkage) -> bool {
+    match linkage {
+        Linkage::LinkOnceAny
+        | Linkage::LinkOnceODR
+        | Linkage::WeakAny
+        | Linkage::WeakODR
+        | Linkage::ExternalWeak => true,
+        Linkage::External | Linkage::AvailableExternally | Linkage::Internal => false,
     }
 }
 
 pub fn compile_codegen_unit(
     tcx: TyCtxt<'_>,
     cgu_name: Symbol,
-    target_info: LockedTargetInfo,
+    target_info: SharedTargetInfo,
     lto_supported: bool,
 ) -> (ModuleCodegen<GccContext>, u64) {
     let prof_timer = tcx.prof.generic_activity("codegen_module");
@@ -94,7 +124,7 @@ pub fn compile_codegen_unit(
     fn module_codegen(
         tcx: TyCtxt<'_>,
         cgu_name: Symbol,
-        target_info: LockedTargetInfo,
+        target_info: SharedTargetInfo,
         lto_supported: bool,
     ) -> ModuleCodegen<GccContext> {
         let cgu = tcx.codegen_unit(cgu_name);
@@ -120,6 +150,7 @@ pub fn compile_codegen_unit(
             // -fsyntax-only), forbid the compilation when get_target_info() is called on a
             // context.
             let f16_type_supported = target_info.supports_target_dependent_type(CType::Float16);
+            let f16b_type_supported = target_info.supports_target_dependent_type(CType::BFloat16);
             let f32_type_supported = target_info.supports_target_dependent_type(CType::Float32);
             let f64_type_supported = target_info.supports_target_dependent_type(CType::Float64);
             let f128_type_supported = target_info.supports_target_dependent_type(CType::Float128);
@@ -131,6 +162,7 @@ pub fn compile_codegen_unit(
                 tcx,
                 u128_type_supported,
                 f16_type_supported,
+                f16b_type_supported,
                 f32_type_supported,
                 f64_type_supported,
                 f128_type_supported,

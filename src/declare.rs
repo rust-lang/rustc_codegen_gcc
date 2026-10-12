@@ -14,6 +14,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         &self,
         name: &str,
         ty: Type<'gcc>,
+        global_kind: GlobalKind,
         is_tls: bool,
         link_section: Option<Symbol>,
     ) -> LValue<'gcc> {
@@ -31,7 +32,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             }
             global
         } else {
-            self.declare_global(name, ty, GlobalKind::Exported, is_tls, link_section)
+            self.declare_global(name, ty, global_kind, is_tls, link_section)
         }
     }
 
@@ -131,6 +132,22 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         );
         self.on_stack_function_params.borrow_mut().insert(func, fn_abi_gcc.on_stack_param_indices);
         #[cfg(feature = "master")]
+        if fn_abi_gcc.has_indirect_return {
+            // Return in memory even where the target ABI would use registers, as cg_llvm does for
+            // `PassMode::Indirect`.
+            func.set_indirect_return();
+            // `get_param(0)` hands out this local's address and `ret_void` returns it. As the named
+            // return value, it lives in the caller's return slot instead of being copied there.
+            if self.linkage.get() != FunctionType::Extern {
+                self.functions_with_indirect_return.borrow_mut().entry(func).or_insert_with(|| {
+                    let return_value =
+                        func.new_local(None, fn_abi_gcc.return_type, "indirectReturn");
+                    func.set_named_return_value(return_value);
+                    return_value
+                });
+            }
+        }
+        #[cfg(feature = "master")]
         for fn_attr in fn_abi_gcc.fn_attributes {
             func.add_attribute(fn_attr);
         }
@@ -141,10 +158,11 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         &self,
         name: &str,
         ty: Type<'gcc>,
+        global_kind: GlobalKind,
         is_tls: bool,
         link_section: Option<Symbol>,
     ) -> LValue<'gcc> {
-        self.get_or_insert_global(name, ty, is_tls, link_section)
+        self.get_or_insert_global(name, ty, global_kind, is_tls, link_section)
     }
 
     pub fn get_declared_value(&self, name: &str) -> Option<RValue<'gcc>> {

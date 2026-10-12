@@ -12,16 +12,15 @@ use rustc_data_structures::base_n::{ALPHANUMERIC_ONLY, ToBaseN};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::interpret::Allocation;
 use rustc_middle::mono::CodegenUnit;
-use rustc_middle::span_bug;
 use rustc_middle::ty::layout::{
     FnAbiError, FnAbiOf, FnAbiOfHelpers, FnAbiRequest, HasTyCtxt, HasTypingEnv, LayoutError,
-    LayoutOfHelpers,
+    LayoutOfHelpers, codegen_handle_fn_abi_err,
 };
 use rustc_middle::ty::{self, ExistentialTraitRef, Instance, Ty, TyCtxt};
 #[cfg(feature = "master")]
 use rustc_session::config::DebugInfo;
 use rustc_session::{PointerAuthSchema, Session};
-use rustc_span::{DUMMY_SP, Span, Symbol, respan};
+use rustc_span::{DUMMY_SP, Span, Symbol};
 use rustc_target::spec::{HasTargetSpec, HasX86AbiOpt, Target, TlsModel, X86Abi};
 
 #[cfg(feature = "master")]
@@ -82,6 +81,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     pub supports_128bit_integers: bool,
     pub supports_f16_type: bool,
+    pub supports_f16b_type: bool,
     pub supports_f32_type: bool,
     pub supports_f64_type: bool,
     pub supports_f128_type: bool,
@@ -97,6 +97,18 @@ pub struct CodegenCx<'gcc, 'tcx> {
     /// Cache of the anonymous struct types.
     pub struct_types: RefCell<FxHashMap<StructTypeKey<'gcc>, Type<'gcc>>>,
 
+    /// Cache of the array types used for runs of constant bytes, keyed by element type and count.
+    ///
+    /// libgccjit mints a fresh type on every `new_array_type`, and struct types are keyed on their
+    /// field types, so without this two equal byte runs would yield two distinct anonymous structs.
+    pub byte_array_types: RefCell<FxHashMap<(Type<'gcc>, u64), Type<'gcc>>>,
+
+    /// Cache of the return types of the pairs returned in two registers, keyed by the types of the
+    /// two scalars.
+    pub two_register_pair_types: RefCell<FxHashMap<(Type<'gcc>, Type<'gcc>), Type<'gcc>>>,
+    /// The types of `two_register_pair_types`.
+    pub two_register_pair_type_set: RefCell<FxHashSet<Type<'gcc>>>,
+
     /// Cache instances of monomorphic and polymorphic items
     pub instances: RefCell<FxHashMap<Instance<'tcx>, LValue<'gcc>>>,
     /// Cache function instances of monomorphic and polymorphic items
@@ -110,6 +122,9 @@ pub struct CodegenCx<'gcc, 'tcx> {
     // FIXME(antoyo): improve the SSA API to not require those.
     /// Mapping from function to indexes of on stack parameters.
     pub on_stack_function_params: RefCell<FxHashMap<Function<'gcc>, FxHashSet<usize>>>,
+
+    /// Local holding the return value of the defined functions returning it in memory.
+    pub functions_with_indirect_return: RefCell<FxHashMap<Function<'gcc>, LValue<'gcc>>>,
 
     /// Cache of emitted const globals (value -> global)
     pub const_globals: RefCell<FxHashMap<RValue<'gcc>, RValue<'gcc>>>,
@@ -132,7 +147,7 @@ pub struct CodegenCx<'gcc, 'tcx> {
 
     eh_personality: Cell<Option<Function<'gcc>>>,
     #[cfg(feature = "master")]
-    pub rust_try_fn: Cell<Option<(Type<'gcc>, Function<'gcc>)>>,
+    pub rust_try_fn: Cell<Option<Function<'gcc>>>,
 
     pub pointee_infos: RefCell<FxHashMap<(Ty<'tcx>, Size), Option<PointeeInfo>>>,
 
@@ -157,6 +172,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         tcx: TyCtxt<'tcx>,
         supports_128bit_integers: bool,
         supports_f16_type: bool,
+        supports_f16b_type: bool,
         supports_f32_type: bool,
         supports_f64_type: bool,
         supports_f128_type: bool,
@@ -242,12 +258,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         let isize_type = usize_type;
         let bool_type = context.new_type::<bool>();
 
-        let mut functions = FxHashMap::default();
-        let builtins = ["abort"];
-
-        for builtin in builtins.iter() {
-            functions.insert(builtin.to_string(), context.get_builtin_function(builtin));
-        }
+        let functions = FxHashMap::default();
 
         let mut cx = Self {
             int128_align: tcx
@@ -293,6 +304,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             supports_128bit_integers,
             supports_f16_type,
+            supports_f16b_type,
             supports_f32_type,
             supports_f64_type,
             supports_f128_type,
@@ -305,6 +317,7 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             function_instances: Default::default(),
             intrinsic_instances: Default::default(),
             on_stack_function_params: Default::default(),
+            functions_with_indirect_return: Default::default(),
             vtables: Default::default(),
             const_globals: Default::default(),
             global_lvalues: Default::default(),
@@ -314,6 +327,9 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
             types: Default::default(),
             tcx,
             struct_types: Default::default(),
+            byte_array_types: Default::default(),
+            two_register_pair_types: Default::default(),
+            two_register_pair_type_set: Default::default(),
             local_gen_sym_counter: Cell::new(0),
             global_gen_sym_counter: Cell::new(0),
             eh_personality: Cell::new(None),
@@ -356,17 +372,6 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
         }
 
         self.landing_pads.borrow_mut().clear();
-    }
-
-    pub fn rvalue_as_function(&self, value: RValue<'gcc>) -> Function<'gcc> {
-        let function: Function<'gcc> = unsafe { std::mem::transmute(value) };
-        debug_assert!(
-            self.functions.borrow().values().any(|value| *value == function),
-            "{:?} ({:?}) is not a function",
-            value,
-            value.get_type()
-        );
-        function
     }
 
     pub fn is_native_int_type(&self, typ: Type<'gcc>) -> bool {
@@ -497,7 +502,7 @@ impl<'gcc, 'tcx> MiscCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
         }
         let tcx = self.tcx;
         let func = match tcx.lang_items().eh_personality() {
-            Some(def_id) if !wants_msvc_seh(self.sess()) => {
+            Some(def_id) if !wants_msvc_seh(&self.sess().target) => {
                 let instance = ty::Instance::expect_resolve(
                     tcx,
                     self.typing_env(),
@@ -512,7 +517,7 @@ impl<'gcc, 'tcx> MiscCodegenMethods<'tcx> for CodegenCx<'gcc, 'tcx> {
                 self.declare_fn(symbol_name, fn_abi)
             }
             _ => {
-                let name = if wants_msvc_seh(self.sess()) {
+                let name = if wants_msvc_seh(&self.sess().target) {
                     "__CxxFrameHandler3"
                 } else {
                     "rust_eh_personality"
@@ -608,23 +613,7 @@ impl<'gcc, 'tcx> FnAbiOfHelpers<'tcx> for CodegenCx<'gcc, 'tcx> {
         span: Span,
         fn_abi_request: FnAbiRequest<'tcx>,
     ) -> ! {
-        if let FnAbiError::Layout(LayoutError::SizeOverflow(_) | LayoutError::InvalidSimd { .. }) =
-            err
-        {
-            self.tcx.dcx().emit_fatal(respan(span, err))
-        } else {
-            match fn_abi_request {
-                FnAbiRequest::OfFnPtr { sig, extra_args } => {
-                    span_bug!(span, "`fn_abi_of_fn_ptr({sig}, {extra_args:?})` failed: {err:?}");
-                }
-                FnAbiRequest::OfInstance { instance, extra_args } => {
-                    span_bug!(
-                        span,
-                        "`fn_abi_of_instance({instance}, {extra_args:?})` failed: {err:?}"
-                    );
-                }
-            }
-        }
+        codegen_handle_fn_abi_err(self.tcx, err, span, fn_abi_request).raise_fatal()
     }
 }
 
