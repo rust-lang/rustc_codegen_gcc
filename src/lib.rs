@@ -222,12 +222,6 @@ impl CodegenBackend for GccCodegenBackend {
         if !gccjit::is_loaded() {
             let mut paths = vec![];
 
-            // Add the path from the environment variable to tell the user that we tried to load
-            // the library from there.
-            if let Ok(custom_path) = env::var("CG_GCCJIT_LIBRARY_PATH").as_deref() {
-                paths.push(PathBuf::from(custom_path));
-            }
-
             for path in sess.opts.sysroot.all_paths() {
                 for libgccjit_target_lib_file in file_paths(path, sess) {
                     paths.push(libgccjit_target_lib_file);
