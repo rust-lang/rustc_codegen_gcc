@@ -204,33 +204,33 @@ impl CodegenBackend for GccCodegenBackend {
             if !gccjit::is_loaded() {
                 panic!("Could not load gccjit from CG_GCCJIT_LIBRARY_PATH: {}", custom_path);
             }
+        } else {
+            // We use all_paths() instead of only path() in case the path specified by --sysroot is
+            // invalid.
+            // This is the case for instance in Rust for Linux where they specify --sysroot=/dev/null.
+            'sysroot: for path in sess.opts.sysroot.all_paths() {
+                for libgccjit_target_lib_file in file_paths(path, sess) {
+                    if let Ok(true) = fs::exists(&libgccjit_target_lib_file) {
+                        load_libgccjit_if_needed(&libgccjit_target_lib_file);
+                        break 'sysroot;
+                    }
+                }
+            }
+
+            if !gccjit::is_loaded() {
+                let mut paths = vec![];
+
+                for path in sess.opts.sysroot.all_paths() {
+                    for libgccjit_target_lib_file in file_paths(path, sess) {
+                        paths.push(libgccjit_target_lib_file);
+                    }
+                }
+
+                paths.dedup();
+                panic!("Could not load libgccjit.so. Attempted paths: {:#?}", paths);
+            }
         }
         let global_backend_features = gcc_util::global_gcc_features(sess);
-
-        // We use all_paths() instead of only path() in case the path specified by --sysroot is
-        // invalid.
-        // This is the case for instance in Rust for Linux where they specify --sysroot=/dev/null.
-        'sysroot: for path in sess.opts.sysroot.all_paths() {
-            for libgccjit_target_lib_file in file_paths(path, sess) {
-                if let Ok(true) = fs::exists(&libgccjit_target_lib_file) {
-                    load_libgccjit_if_needed(&libgccjit_target_lib_file);
-                    break 'sysroot;
-                }
-            }
-        }
-
-        if !gccjit::is_loaded() {
-            let mut paths = vec![];
-
-            for path in sess.opts.sysroot.all_paths() {
-                for libgccjit_target_lib_file in file_paths(path, sess) {
-                    paths.push(libgccjit_target_lib_file);
-                }
-            }
-
-            paths.dedup();
-            panic!("Could not load libgccjit.so. Attempted paths: {:#?}", paths);
-        }
 
         #[cfg(feature = "master")]
         {
