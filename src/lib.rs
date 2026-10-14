@@ -194,7 +194,7 @@ impl CodegenBackend for GccCodegenBackend {
             paths
         }
 
-        // If the user set the CG_GCCJIT_LIBRARY_PATH environment variable, then we'll load the
+        // If the user sets the CG_GCCJIT_LIBRARY_PATH environment variable, then we'll load the
         // library from there or panic if we can't find or load it.
         if let Ok(custom_path) = env::var("CG_GCCJIT_LIBRARY_PATH").as_deref() {
             if let Ok(true) = fs::exists(custom_path) {
