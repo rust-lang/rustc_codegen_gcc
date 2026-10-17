@@ -104,9 +104,12 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
             let init = crate::consts::const_alloc_to_gcc_uncached(self, alloc);
             let alloc = alloc.inner();
-            let typ = self.val_ty(init).get_aligned(alloc.align.bytes());
+            // NOTE: the alignment is set on the global rather than on its type: libgccjit rejects
+            // initializing a global of an aligned array type with a value of the plain array type.
+            let typ = self.val_ty(init);
 
             let global = self.declare_global_with_linkage(&name, typ, GlobalKind::Internal);
+            global.set_alignment(alloc.align.bytes() as i32);
 
             global.global_set_initializer_rvalue(init);
             return Ok((global.get_address(None), Some(SymbolName::new(self.tcx, &name))));
@@ -128,8 +131,18 @@ impl<'gcc, 'tcx> CodegenCx<'gcc, 'tcx> {
 
 /// The element type and element count of the array used to represent a run of `len` constant bytes.
 ///
+/// With `gcc_jit_context_new_array_from_bytes`, the whole run is a single rvalue (a `string`),
+/// which GCC emits as a string (`.ascii`/`.string`/`.base64`), so it is always an array of bytes.
+#[cfg(feature = "master")]
+fn byte_run_shape<'gcc>(cx: &CodegenCx<'gcc, '_>, len: usize) -> (Type<'gcc>, u64) {
+    (cx.type_u8(), len as u64)
+}
+
+/// The element type and element count of the array used to represent a run of `len` constant bytes.
+///
 /// Larger integers are used where possible: this reduces the number of rvalues, which is a
 /// significant memory saving on constant-heavy crates.
+#[cfg(not(feature = "master"))]
 fn byte_run_shape<'gcc>(cx: &CodegenCx<'gcc, '_>, len: usize) -> (Type<'gcc>, u64) {
     match len % 8 {
         0 => (cx.context.new_type::<u64>(), len as u64 / 8),
@@ -161,51 +174,59 @@ pub fn bytes_type_in_context<'gcc>(cx: &CodegenCx<'gcc, '_>, len: usize) -> Type
 // `global_set_initializer` calls `global_set_initializer_rvalue` under the hood - does it generate an array of rvalues,
 // or is it using a more efficient representation?
 pub fn bytes_in_context<'gcc, 'tcx>(cx: &CodegenCx<'gcc, 'tcx>, bytes: &[u8]) -> RValue<'gcc> {
-    let typ = bytes_type_in_context(cx, bytes.len());
-    let (element_type, _) = byte_run_shape(cx, bytes.len());
-    let context = &cx.context;
-    // Since we are representing arbitrary byte runs as integers, we need to follow the target
-    // endianness.
-    let endian = cx.sess().target.options.endian;
-    let elements: Vec<_> = match bytes.len() % 8 {
-        0 => {
-            let (arrays, remainder) = bytes.as_chunks::<8>();
-            debug_assert!(remainder.is_empty());
-            arrays
+    #[cfg(feature = "master")]
+    {
+        let typ = bytes_type_in_context(cx, bytes.len());
+        cx.context.new_array_from_bytes(None, typ, bytes)
+    }
+    #[cfg(not(feature = "master"))]
+    {
+        let typ = bytes_type_in_context(cx, bytes.len());
+        let (element_type, _) = byte_run_shape(cx, bytes.len());
+        let context = &cx.context;
+        // Since we are representing arbitrary byte runs as integers, we need to follow the target
+        // endianness.
+        let endian = cx.sess().target.options.endian;
+        let elements: Vec<_> = match bytes.len() % 8 {
+            0 => {
+                let (arrays, remainder) = bytes.as_chunks::<8>();
+                debug_assert!(remainder.is_empty());
+                arrays
+                    .iter()
+                    .map(|&arr| {
+                        context.new_rvalue_from_long(
+                            element_type,
+                            match endian {
+                                rustc_abi::Endian::Little => u64::from_le_bytes(arr) as i64,
+                                rustc_abi::Endian::Big => u64::from_be_bytes(arr) as i64,
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            4 => {
+                let (arrays, remainder) = bytes.as_chunks::<4>();
+                debug_assert!(remainder.is_empty());
+                arrays
+                    .iter()
+                    .map(|&arr| {
+                        context.new_rvalue_from_int(
+                            element_type,
+                            match endian {
+                                rustc_abi::Endian::Little => u32::from_le_bytes(arr) as i32,
+                                rustc_abi::Endian::Big => u32::from_be_bytes(arr) as i32,
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            _ => bytes
                 .iter()
-                .map(|&arr| {
-                    context.new_rvalue_from_long(
-                        element_type,
-                        match endian {
-                            rustc_abi::Endian::Little => u64::from_le_bytes(arr) as i64,
-                            rustc_abi::Endian::Big => u64::from_be_bytes(arr) as i64,
-                        },
-                    )
-                })
-                .collect()
-        }
-        4 => {
-            let (arrays, remainder) = bytes.as_chunks::<4>();
-            debug_assert!(remainder.is_empty());
-            arrays
-                .iter()
-                .map(|&arr| {
-                    context.new_rvalue_from_int(
-                        element_type,
-                        match endian {
-                            rustc_abi::Endian::Little => u32::from_le_bytes(arr) as i32,
-                            rustc_abi::Endian::Big => u32::from_be_bytes(arr) as i32,
-                        },
-                    )
-                })
-                .collect()
-        }
-        _ => bytes
-            .iter()
-            .map(|&byte| context.new_rvalue_from_int(element_type, byte as i32))
-            .collect(),
-    };
-    context.new_array_constructor(None, typ, &elements)
+                .map(|&byte| context.new_rvalue_from_int(element_type, byte as i32))
+                .collect(),
+        };
+        context.new_array_constructor(None, typ, &elements)
+    }
 }
 
 pub fn type_is_pointer(typ: Type<'_>) -> bool {
