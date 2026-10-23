@@ -120,7 +120,9 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${{ matrix.commands }}
+        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${MATRIX_COMMANDS}
+      env:
+        MATRIX_COMMANDS: ${{ matrix.commands }}
 
   # FIXME: test LTO, based on release.yml, once rustup distributes liblto_plugin.so and lto1
   # (and cg_gcc can find them in the sysroot).

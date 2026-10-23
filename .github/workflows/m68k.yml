@@ -107,7 +107,9 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --target-triple m68k-unknown-linux-gnu --release --clean --build-sysroot ${{ matrix.commands }}
+        ./y.sh test --target-triple m68k-unknown-linux-gnu --release --clean --build-sysroot ${MATRIX_COMMANDS}
+      env:
+        MATRIX_COMMANDS: ${{ matrix.commands }}
 
     - name: Run Hello World!
       run: |

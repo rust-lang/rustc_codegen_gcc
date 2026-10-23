@@ -181,7 +181,9 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${{ matrix.commands }}
+        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${MATRIX_COMMANDS}
+      env:
+        MATRIX_COMMANDS: ${{ matrix.commands }}
 
   duplicates:
     runs-on: ubuntu-26.04
