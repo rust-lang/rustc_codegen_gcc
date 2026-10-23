@@ -110,27 +110,32 @@ jobs:
       # FIXME: re-enable those tests for libgccjit 12.
       if: matrix.libgccjit_version.gcc != 'libgccjit12.so'
       id: tests
+      # Without `set -o pipefail`, `tee` masks the exit status of `y.sh test`.
+      # This suite runs the tests known to fail, so only a build system error must fail the job.
       run: |
-        # Without this, `tee` masks the exit status of `y.sh test`.
+        bash <<-EOF
         set -o pipefail
         status=0
-        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --clean --build-sysroot --test-failing-rustc ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log || status=$?
-        # This suite runs the tests known to fail, so only a build system error must fail the job.
+        ${LIBGCCJIT_ENV_EXTRA} ./y.sh test --release --clean --build-sysroot --test-failing-rustc ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log || status=$?
         if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
           exit "$status"
         fi
         rg --text "test result" output_log >> $GITHUB_STEP_SUMMARY
+        EOF
+      env:
+        LIBGCCJIT_ENV_EXTRA: ${{ matrix.libgccjit_version.env_extra }}
 
     - name: Run failing ui pattern tests for ICE
       # FIXME: re-enable those tests for libgccjit 12.
       if: matrix.libgccjit_version.gcc != 'libgccjit12.so'
       id: ui-tests
+      # Without `set -o pipefail`, `tee` masks the exit status of `y.sh test`.
+      # This suite runs tests that fail, so only a build system error must fail the job here.
       run: |
-        # Without this, `tee` masks the exit status of `y.sh test`.
+        bash <<-EOF
         set -o pipefail
         status=0
-        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --test-failing-ui-pattern-tests ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log_ui || status=$?
-        # This suite runs tests that fail, so only a build system error must fail the job here.
+        ${LIBGCCJIT_ENV_EXTRA} ./y.sh test --release --test-failing-ui-pattern-tests ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log_ui || status=$?
         if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
           exit "$status"
         fi
@@ -138,6 +143,9 @@ jobs:
           echo "Error: 'the compiler unexpectedly panicked' found in output logs. CI Error!!"
           exit 1
         fi
+        EOF
+      env:
+        LIBGCCJIT_ENV_EXTRA: ${{ matrix.libgccjit_version.env_extra }}
 
   # Summary job for the merge queue.
   # ALL THE PREVIOUS JOBS NEED TO BE ADDED TO THE `needs` SECTION OF THIS JOB!
