@@ -87,9 +87,11 @@ jobs:
     - name: Build sample project with target defined as JSON spec
       run: |
         ./y.sh prepare --only-libcore --cross
-        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
-        CARGO_PROFILE_DEV_LTO=no CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ./y.sh cargo build -Zjson-target-spec --manifest-path=./tests/hello-world/Cargo.toml --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
+        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target ${GH_WORKSPACE}/target_specs/m68k-unknown-linux-gnu.json
+        CARGO_PROFILE_DEV_LTO=no CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ./y.sh cargo build -Zjson-target-spec --manifest-path=./tests/hello-world/Cargo.toml --target ${GH_WORKSPACE}/target_specs/m68k-unknown-linux-gnu.json
         ./y.sh clean all
+      env:
+        GH_WORKSPACE: ${{ github.workspace }}
 
     - name: Build
       run: |
