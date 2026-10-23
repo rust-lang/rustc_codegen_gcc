@@ -53,6 +53,7 @@ jobs:
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
       uses: ./.github/actions/rustup-cg-gcc
@@ -142,6 +143,7 @@ jobs:
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
       uses: ./.github/actions/rustup-cg-gcc
@@ -228,6 +230,7 @@ jobs:
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
       uses: ./.github/actions/rustup-cg-gcc
