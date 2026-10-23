@@ -42,7 +42,7 @@ jobs:
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       # `llvm-tools` is needed to install the `FileCheck` binary which is used for run-make tests.
@@ -86,7 +86,7 @@ jobs:
       run: cat tests/failing-lto-tests.txt >> tests/failing-ui-tests.txt
 
     - name: Check out rust-lang/rust
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
 
     - name: Run tests
       run: |

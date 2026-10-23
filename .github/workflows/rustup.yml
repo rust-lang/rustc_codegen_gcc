@@ -56,12 +56,12 @@ jobs:
         persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       # `llvm-tools` is needed to install the `FileCheck` binary which is used for asm tests.
@@ -102,7 +102,7 @@ jobs:
         ./y.sh clean all
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
@@ -114,7 +114,7 @@ jobs:
 
     - name: Check out rust-lang/rust
       if: ${{ contains(matrix.commands, '-rustc') }}
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
       with:
         path: rust/compiler/rustc_codegen_gcc
 
@@ -146,7 +146,7 @@ jobs:
         persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
@@ -155,7 +155,7 @@ jobs:
       run: rustup component add rustfmt
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -201,7 +201,7 @@ jobs:
         ./y.sh test --cargo-tests
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
@@ -233,17 +233,17 @@ jobs:
         persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -262,7 +262,7 @@ jobs:
         ./y.sh prepare
 
     - name: Check out rust-lang/rust
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
       with:
         path: rust/compiler/rustc_codegen_gcc
 
