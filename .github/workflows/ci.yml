@@ -83,15 +83,17 @@ jobs:
       run: sudo apt-get install libcairo2-dev libpango1.0-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libxml2-dev libglib2.0-dev
 
     - name: Download artifact
-      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${LIBGCCJIT_GCC}${{ matrix.os.asset_name_suffix }}.deb
+      run: curl -LO https://github.com/rust-lang/gcc/releases/latest/download/${LIBGCCJIT_GCC}${ASSET_NAME_SUFFIX}.deb
       env:
+        ASSET_NAME_SUFFIX: ${{ matrix.os.asset_name_suffix }}
         LIBGCCJIT_GCC: ${{ matrix.libgccjit_version.gcc }}
 
     - name: Setup path to libgccjit
       run: |
-          sudo dpkg --force-overwrite -i ${LIBGCCJIT_GCC}${{ matrix.os.asset_name_suffix }}.deb
+          sudo dpkg --force-overwrite -i ${LIBGCCJIT_GCC}${ASSET_NAME_SUFFIX}.deb
           echo 'gcc-path = "/usr/lib/"' > config.toml
       env:
+        ASSET_NAME_SUFFIX: ${{ matrix.os.asset_name_suffix }}
         LIBGCCJIT_GCC: ${{ matrix.libgccjit_version.gcc }}
 
     # Some run-make tests fail if we use our forked GCC because it doesn't
