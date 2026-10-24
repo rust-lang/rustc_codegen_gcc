@@ -34,17 +34,19 @@ jobs:
         ]
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     # `rustup show` installs from rust-toolchain.toml
     - name: Setup rust toolchain
       run: rustup show
 
     - name: Setup rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -85,9 +87,11 @@ jobs:
     - name: Build sample project with target defined as JSON spec
       run: |
         ./y.sh prepare --only-libcore --cross
-        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
-        CARGO_PROFILE_DEV_LTO=no CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ./y.sh cargo build -Zjson-target-spec --manifest-path=./tests/hello-world/Cargo.toml --target ${{ github.workspace }}/target_specs/m68k-unknown-linux-gnu.json
+        ./y.sh build --sysroot --target-triple m68k-unknown-linux-gnu --target ${GH_WORKSPACE}/target_specs/m68k-unknown-linux-gnu.json
+        CARGO_PROFILE_DEV_LTO=no CG_RUSTFLAGS="-Clinker=m68k-unknown-linux-gnu-gcc" ./y.sh cargo build -Zjson-target-spec --manifest-path=./tests/hello-world/Cargo.toml --target ${GH_WORKSPACE}/target_specs/m68k-unknown-linux-gnu.json
         ./y.sh clean all
+      env:
+        GH_WORKSPACE: ${{ github.workspace }}
 
     - name: Build
       run: |
@@ -105,7 +109,9 @@ jobs:
 
     - name: Run tests
       run: |
-        ./y.sh test --target-triple m68k-unknown-linux-gnu --release --clean --build-sysroot ${{ matrix.commands }}
+        ./y.sh test --target-triple m68k-unknown-linux-gnu --release --clean --build-sysroot ${MATRIX_COMMANDS}
+      env:
+        MATRIX_COMMANDS: ${{ matrix.commands }}
 
     - name: Run Hello World!
       run: |
@@ -134,6 +140,8 @@ jobs:
       - name: Conclusion
         run: |
           # Print the dependent jobs to see them in the CI log
-          jq -C <<< '${{ toJson(needs) }}'
+          jq -C <<< "${NEEDS_JSON}"
           # Check if all jobs that we depend on (in the needs array) were successful.
-          jq --exit-status 'all(.result == "success")' <<< '${{ toJson(needs) }}'
+          jq --exit-status 'all(.result == "success")' <<< "${NEEDS_JSON}"
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
