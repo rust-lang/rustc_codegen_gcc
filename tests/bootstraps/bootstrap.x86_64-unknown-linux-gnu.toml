@@ -1,0 +1,11 @@
+profile = "compiler"
+change-id = 140732
+
+[rust]
+codegen-backends = ["gcc"]
+deny-warnings = false
+debug-assertions = false
+debug-assertions-std = false
+
+[gcc]
+download-ci-gcc = true
