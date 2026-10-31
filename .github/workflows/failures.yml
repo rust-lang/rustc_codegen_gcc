@@ -36,17 +36,19 @@ jobs:
             env_extra: "TEST_FLAGS='-Cpanic=abort -Zpanic-abort-tests' GCC_EXEC_PREFIX=/usr/lib/gcc/"
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     # `rustup show` installs from rust-toolchain.toml
     - name: Setup rust toolchain
       run: rustup show
 
     - name: Setup rust cache
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -102,33 +104,39 @@ jobs:
 
     - name: Check out rust-lang/rust
       if: matrix.libgccjit_version.gcc != 'libgccjit12.so'
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
 
     - name: Run tests
       # FIXME: re-enable those tests for libgccjit 12.
       if: matrix.libgccjit_version.gcc != 'libgccjit12.so'
       id: tests
+      # Without `set -o pipefail`, `tee` masks the exit status of `y.sh test`.
+      # This suite runs the tests known to fail, so only a build system error must fail the job.
       run: |
-        # Without this, `tee` masks the exit status of `y.sh test`.
+        bash <<-EOF
         set -o pipefail
         status=0
-        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --clean --build-sysroot --test-failing-rustc ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log || status=$?
-        # This suite runs the tests known to fail, so only a build system error must fail the job.
+        ${LIBGCCJIT_ENV_EXTRA} ./y.sh test --release --clean --build-sysroot --test-failing-rustc ${LIBGCCJIT_EXTRA} 2>&1 | tee output_log || status=$?
         if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
           exit "$status"
         fi
         rg --text "test result" output_log >> $GITHUB_STEP_SUMMARY
+        EOF
+      env:
+        LIBGCCJIT_EXTRA: ${{ matrix.libgccjit_version.extra }}
+        LIBGCCJIT_ENV_EXTRA: ${{ matrix.libgccjit_version.env_extra }}
 
     - name: Run failing ui pattern tests for ICE
       # FIXME: re-enable those tests for libgccjit 12.
       if: matrix.libgccjit_version.gcc != 'libgccjit12.so'
       id: ui-tests
+      # Without `set -o pipefail`, `tee` masks the exit status of `y.sh test`.
+      # This suite runs tests that fail, so only a build system error must fail the job here.
       run: |
-        # Without this, `tee` masks the exit status of `y.sh test`.
+        bash <<-EOF
         set -o pipefail
         status=0
-        ${{ matrix.libgccjit_version.env_extra }} ./y.sh test --release --test-failing-ui-pattern-tests ${{ matrix.libgccjit_version.extra }} 2>&1 | tee output_log_ui || status=$?
-        # This suite runs tests that fail, so only a build system error must fail the job here.
+        ${LIBGCCJIT_ENV_EXTRA} ./y.sh test --release --test-failing-ui-pattern-tests ${LIBGCCJIT_EXTRA} 2>&1 | tee output_log_ui || status=$?
         if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
           exit "$status"
         fi
@@ -136,6 +144,10 @@ jobs:
           echo "Error: 'the compiler unexpectedly panicked' found in output logs. CI Error!!"
           exit 1
         fi
+        EOF
+      env:
+        LIBGCCJIT_EXTRA: ${{ matrix.libgccjit_version.extra }}
+        LIBGCCJIT_ENV_EXTRA: ${{ matrix.libgccjit_version.env_extra }}
 
   # Summary job for the merge queue.
   # ALL THE PREVIOUS JOBS NEED TO BE ADDED TO THE `needs` SECTION OF THIS JOB!
@@ -152,6 +164,8 @@ jobs:
       - name: Conclusion
         run: |
           # Print the dependent jobs to see them in the CI log
-          jq -C <<< '${{ toJson(needs) }}'
+          jq -C <<< "${NEEDS_JSON}"
           # Check if all jobs that we depend on (in the needs array) were successful.
-          jq --exit-status 'all(.result == "success")' <<< '${{ toJson(needs) }}'
+          jq --exit-status 'all(.result == "success")' <<< "${NEEDS_JSON}"
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
