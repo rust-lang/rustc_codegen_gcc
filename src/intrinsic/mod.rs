@@ -440,7 +440,10 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             sym::compare_bytes => {
                 let a = args[0].immediate();
                 let b = args[1].immediate();
-                let n = args[2].immediate();
+                // MIR values can carry an integer type different from C size_t
+                // (for example, a signed integer loaded from an aggregate).
+                // Match memcmp's parameter type, as in raw_eq above.
+                let n = self.context.new_cast(None, args[2].immediate(), self.sizet_type);
 
                 let void_ptr_type = self.context.new_type::<*const ()>();
                 let a_ptr = self.bitcast(a, void_ptr_type);
