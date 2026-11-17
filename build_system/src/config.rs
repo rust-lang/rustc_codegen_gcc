@@ -168,7 +168,7 @@ impl ConfigInfo {
                 obj.cargo_target_dir = arg;
                 Ok(())
             })
-            .with_non_empty_arg("--config-file", "Location where the files will be generated", |obj, arg| {
+            .with_non_empty_arg("--config-file", "Location of the config file to be used", |obj, arg| {
                 obj.config_file = Some(arg);
                 Ok(())
             })
@@ -557,27 +557,30 @@ impl ConfigInfo {
         Ok(())
     }
 
-    pub fn usage() -> Vec<(&'static str, &'static str)> {
+    pub fn usage() -> Vec<(String, &'static str)> {
         vec![
-            ("--features [arg]", "Add a new feature [arg]"),
-            ("--target-triple [arg]", "Set the target triple to [arg]"),
-            ("--target [arg]", "Set the target to [arg]"),
-            ("--release", "Build backend in release mode with optimized dependencies"),
-            ("--out-dir", "Location where the files will be generated"),
-            ("--config-file", "Location of the config file to be used"),
-            ("--gcc-path", "Location of the GCC root folder"),
+            ("--features [arg]".to_string(), "Add a new feature [arg]"),
+            ("--target-triple [arg]".to_string(), "Set the target triple to [arg]"),
+            ("--target [arg]".to_string(), "Set the target to [arg]"),
+            ("--release".to_string(), "Build backend in release mode with optimized dependencies"),
+            ("--out-dir".to_string(), "Location where the files will be generated"),
+            ("--config-file".to_string(), "Location of the config file to be used"),
+            ("--gcc-path".to_string(), "Location of the GCC root folder"),
             (
-                "--cg_gcc-path",
+                "--cg_gcc-path".to_string(),
                 "Location of the rustc_codegen_gcc root folder (used when ran from another directory)",
             ),
-            ("--no-default-features", "Add `--no-default-features` flag to cargo commands"),
-            ("--use-backend", "Useful only for rustc testsuite"),
             (
-                "--sysroot-panic-abort",
+                "--no-default-features".to_string(),
+                "Add `--no-default-features` flag to cargo commands",
+            ),
+            ("--use-backend".to_string(), "Useful only for rustc testsuite"),
+            (
+                "--sysroot-panic-abort".to_string(),
                 "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built",
             ),
             (
-                "--release-sysroot",
+                "--release-sysroot".to_string(),
                 "Build the sysroot in release mode. Only used when the sysroot is built",
             ),
         ]

@@ -39,6 +39,13 @@ impl<O: 'static> ArgKind<O> {
             // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut S, args| callback(lifter_callback(o), args))),
         }
     }
+
+    fn extra_help_word(&self) -> Option<&'static str> {
+        match self {
+            ArgKind::Flag(_) => None,
+            ArgKind::Arg { .. } => Some("[arg]"),
+        }
+    }
 }
 
 impl<O: Default + 'static> ArgsHandler<O> {
@@ -191,7 +198,12 @@ impl<O: Default + 'static> ArgsHandler<O> {
         // `+ 1` because we add the `--help` in `show_help_with_indent`.
         let mut commands = Vec::with_capacity(self.handlers.len() + 1);
         for (arg_name, handler) in &self.handlers {
-            commands.push((arg_name.as_str(), handler.help.as_str()));
+            let name = if let Some(extra) = handler.handler.extra_help_word() {
+                format!("{arg_name} {extra}")
+            } else {
+                arg_name.clone()
+            };
+            commands.push((name, handler.help.as_str()));
         }
         crate::utils::show_help_with_indent(commands, true);
     }
