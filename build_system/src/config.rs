@@ -6,6 +6,7 @@ use std::{env as std_env, fs};
 use boml::Toml;
 use boml::types::TomlValue;
 
+use crate::cli::ArgsHandler;
 use crate::utils::{
     create_dir, create_symlink, get_os_name, get_sysroot_dir, run_command_with_output,
     rustc_version_info, split_args,
@@ -149,6 +150,58 @@ pub struct ConfigInfo {
 }
 
 impl ConfigInfo {
+    pub fn args() -> ArgsHandler<ConfigInfo> {
+        ArgsHandler::<ConfigInfo>::new("config")
+            .with_arg("--features", "Add a new feature [arg]", |obj, arg| {
+                obj.features.push(arg);
+                Ok(())
+            })
+            .with_arg("--target", "Set the target to [arg]", |obj, arg| {
+                obj.target = arg;
+                Ok(())
+            })
+            .with_non_empty_arg("--target-triple", "Set the target triple to [arg]", |obj, arg| {
+                obj.target_triple = arg;
+                Ok(())
+            })
+            .with_non_empty_arg("--out-dir", "Location where the files will be generated", |obj, arg| {
+                obj.cargo_target_dir = arg;
+                Ok(())
+            })
+            .with_non_empty_arg("--config-file", "Location where the files will be generated", |obj, arg| {
+                obj.config_file = Some(arg);
+                Ok(())
+            })
+            .with_flag("--release-sysroot", "Build the sysroot in release mode. Only used when the sysroot is built", |obj| {
+                obj.sysroot_release_channel = true;
+                Ok(())
+            })
+            .with_flag("--release", "Build backend in release mode with optimized dependencies", |obj| {
+                obj.channel = Channel::Release;
+                Ok(())
+            })
+            .with_flag("--sysroot-panic-abort", "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built", |obj| {
+                obj.sysroot_panic_abort = true;
+                Ok(())
+            })
+            .with_non_empty_arg("--gcc-path", "Location of the GCC root folder", |obj, arg| {
+                obj.gcc_path = Some(arg);
+                Ok(())
+            })
+            .with_non_empty_arg("--cg_gcc-path", "Location of the rustc_codegen_gcc root folder (used when ran from another directory)", |obj, arg| {
+                obj.cg_gcc_path = Some(arg.into());
+                Ok(())
+            })
+            .with_non_empty_arg("--use-backend", "Useful only for rustc testsuite", |obj, arg| {
+                obj.backend = Some(arg);
+                Ok(())
+            })
+            .with_flag("--no-default-features", "Add `--no-default-features` flag to cargo commands", |obj| {
+                obj.no_default_features = true;
+                Ok(())
+            })
+    }
+
     /// Returns `true` if the argument was taken into account.
     pub fn parse_argument(
         &mut self,
@@ -171,7 +224,7 @@ impl ConfigInfo {
                 }
             }
             "--target-triple" => match args.next() {
-                Some(arg) if !arg.is_empty() => self.target_triple = arg.to_string(),
+                Some(arg) if !arg.is_empty() => self.target_triple = arg,
                 _ => {
                     return Err(
                         "Expected a value after `--target-triple`, found nothing".to_string()

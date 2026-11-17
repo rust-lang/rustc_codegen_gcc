@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
+use crate::cli::ArgsHandler;
 use crate::config::ConfigInfo;
 use crate::utils::{run_command_with_env, setup_rustc_folder};
 
-sub_command_decl! {
-    Info => "info",
-    show_gcc_path: bool = "--show-gcc-path" => "Display the path where gcc will be located",
-    llvm_commit: bool = "--llvm-commit" => "Display the LLVM submodule commit rustc is using",
-    + config: ConfigInfo
+#[derive(Default)]
+struct Info {
+    show_gcc_path: bool,
+    llvm_commit: bool,
+    config: ConfigInfo,
 }
 
 fn show_llvm_commit() -> Result<(), String> {
@@ -28,7 +29,21 @@ fn show_llvm_commit() -> Result<(), String> {
 }
 
 pub fn run() -> Result<(), String> {
-    let Some(mut info) = Info::new()? else { return Ok(()) };
+    let Some(mut info) = ArgsHandler::<Info>::new("info")
+        .with_flag("--show-gcc-path", "Display the path where gcc will be located", |obj| {
+            obj.show_gcc_path = true;
+            Ok(())
+        })
+        .with_flag("--llvm-commit", "Display the LLVM submodule commit rustc is using", |obj| {
+            obj.llvm_commit = true;
+            Ok(())
+        })
+        .with_sub_handler(ConfigInfo::args(), |info| &mut info.config)
+        .parse_args(std::env::args().skip(2))?
+    else {
+        return Ok(());
+    };
+
     info.config.no_download = true;
 
     if info.show_gcc_path {
