@@ -32,11 +32,9 @@ pub fn run() -> Result<(), String> {
     let Some(mut info) = ArgsHandler::<Info>::new("info")
         .with_flag("--show-gcc-path", "Display the path where gcc will be located", |obj| {
             obj.show_gcc_path = true;
-            Ok(())
         })
         .with_flag("--llvm-commit", "Display the LLVM submodule commit rustc is using", |obj| {
             obj.llvm_commit = true;
-            Ok(())
         })
         .with_sub_handler(ConfigInfo::args(), |info| &mut info.config)
         .parse_args(std::env::args().skip(2))?

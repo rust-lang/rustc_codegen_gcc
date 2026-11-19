@@ -53,26 +53,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         Self { handlers: BTreeMap::new(), command_name }
     }
 
-    pub fn with_flag<F: Fn(&mut O) -> Result<(), String> + 'static>(
-        mut self,
-        name: &str,
-        help: &str,
-        callback: F,
-    ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler { handler: ArgKind::Flag(Box::new(callback)), help: help.to_string() },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
-        self
-    }
-
-    pub fn with_arg<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
+    pub fn with_flag<F: Fn(&mut O) + 'static>(
         mut self,
         name: &str,
         help: &str,
@@ -83,7 +64,10 @@ impl<O: Default + 'static> ArgsHandler<O> {
             .insert(
                 name.to_string(),
                 ArgHandler {
-                    handler: ArgKind::Arg { callback: Box::new(callback), allow_empty: true },
+                    handler: ArgKind::Flag(Box::new(move |o| {
+                        callback(o);
+                        Ok(())
+                    })),
                     help: help.to_string(),
                 },
             )
@@ -94,7 +78,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
-    pub fn with_non_empty_arg<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
+    pub fn with_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
         name: &str,
         help: &str,
@@ -105,7 +89,41 @@ impl<O: Default + 'static> ArgsHandler<O> {
             .insert(
                 name.to_string(),
                 ArgHandler {
-                    handler: ArgKind::Arg { callback: Box::new(callback), allow_empty: false },
+                    handler: ArgKind::Arg {
+                        callback: Box::new(move |o, s| {
+                            callback(o, s);
+                            Ok(())
+                        }),
+                        allow_empty: true,
+                    },
+                    help: help.to_string(),
+                },
+            )
+            .is_some()
+        {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
+        self
+    }
+
+    pub fn with_non_empty_arg<F: Fn(&mut O, String) + 'static>(
+        mut self,
+        name: &str,
+        help: &str,
+        callback: F,
+    ) -> Self {
+        if self
+            .handlers
+            .insert(
+                name.to_string(),
+                ArgHandler {
+                    handler: ArgKind::Arg {
+                        callback: Box::new(move |o, s| {
+                            callback(o, s);
+                            Ok(())
+                        }),
+                        allow_empty: false,
+                    },
                     help: help.to_string(),
                 },
             )
