@@ -5,6 +5,7 @@ mod macros;
 mod abi_test;
 mod build;
 mod clean;
+mod cli;
 mod clippy;
 mod clone_gcc;
 mod config;

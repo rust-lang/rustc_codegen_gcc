@@ -74,13 +74,16 @@ fn get_number_after_arg(
 fn show_usage() {
     println!("`test` command help:\n");
     let mut options = vec![
-        ("--use-system-gcc", "Use system installed libgccjit"),
-        ("--build-only", "Only build rustc_codegen_gcc then exits"),
-        ("--nb-parts", "Used to split rustc_tests (for CI needs)"),
-        ("--current-part", "Used with `--nb-parts`, allows you to specify which parts to test"),
+        ("--use-system-gcc".to_string(), "Use system installed libgccjit"),
+        ("--build-only".to_string(), "Only build rustc_codegen_gcc then exits"),
+        ("--nb-parts".to_string(), "Used to split rustc_tests (for CI needs)"),
+        (
+            "--current-part".to_string(),
+            "Used with `--nb-parts`, allows you to specify which parts to test",
+        ),
     ];
     options.extend(ConfigInfo::usage());
-    options.extend(get_runners().into_iter().map(|(option, (doc, _))| (option, doc)));
+    options.extend(get_runners().into_iter().map(|(option, (doc, _))| (option.to_string(), doc)));
     crate::utils::show_help_with_indent(options, true);
 }
 
