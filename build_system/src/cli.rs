@@ -14,7 +14,7 @@ struct ArgHandler<O> {
 pub type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
 pub type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
 
-pub enum ArgKind<O> {
+enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
     /// One argument.
@@ -24,8 +24,7 @@ pub enum ArgKind<O> {
 }
 
 impl<O: 'static> ArgKind<O> {
-    /// Used in `ArgsHandler::with_sub_handler`: it allows to convert the current handlers to the
-    /// parent's closures so they can all be handled at once.
+    /// Wraps the callback so it runs on a `Parent` and writes to the field `get_field` returns.
     fn convert_to_parent<S: 'static>(self, get_field: fn(&mut S) -> &mut O) -> ArgKind<S> {
         match self {
             ArgKind::Flag(callback) => {
@@ -154,10 +153,8 @@ impl<O: Default + 'static> ArgsHandler<O> {
     //     self
     // }
 
-    /// Add a sub args handlers into the current one. A good example of usage is the `ConfigInfo`
-    /// struct used in multiple places with its own `ArgsHandler`. You don't want to duplicate its
-    /// fields nor its arguments parsing, so instead we call the `ArgKind::convert_to_parent`
-    /// method on each handler so they can be integrated directly into `self`.
+    /// Adds `sub`'s options as if they were declared here; their values go to the field
+    /// `get_field` returns.
     pub fn with_sub_handler<S: Default + 'static>(
         mut self,
         sub: ArgsHandler<S>,
