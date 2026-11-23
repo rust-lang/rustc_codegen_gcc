@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
+/// This struct is used to declare and parse CLI arguments.
 pub struct ArgsHandler<O: Default> {
     handlers: BTreeMap<String, ArgHandler<O>>,
     command_name: &'static str,
 }
 
-pub struct ArgHandler<O> {
+struct ArgHandler<O> {
     handler: ArgKind<O>,
     help: String,
 }
@@ -25,18 +26,16 @@ pub enum ArgKind<O> {
 impl<O: 'static> ArgKind<O> {
     /// Used in `ArgsHandler::with_sub_handler`: it allows to convert the current handlers to the
     /// parent's closures so they can all be handled at once.
-    fn convert_to_parent<S: 'static>(self, lifter_callback: fn(&mut S) -> &mut O) -> ArgKind<S> {
+    fn convert_to_parent<S: 'static>(self, get_field: fn(&mut S) -> &mut O) -> ArgKind<S> {
         match self {
             ArgKind::Flag(callback) => {
-                ArgKind::Flag(Box::new(move |parent: &mut S| callback(lifter_callback(parent))))
+                ArgKind::Flag(Box::new(move |parent: &mut S| callback(get_field(parent))))
             }
             ArgKind::Arg { callback, allow_empty } => ArgKind::Arg {
-                callback: Box::new(move |parent: &mut S, arg| {
-                    callback(lifter_callback(parent), arg)
-                }),
+                callback: Box::new(move |parent: &mut S, arg| callback(get_field(parent), arg)),
                 allow_empty,
             },
-            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut S, args| callback(lifter_callback(o), args))),
+            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut S, args| callback(get_field(o), args))),
         }
     }
 
@@ -53,6 +52,9 @@ impl<O: Default + 'static> ArgsHandler<O> {
         Self { handlers: BTreeMap::new(), command_name }
     }
 
+    /// Used to handle a flag (ie an argument without an associated value). `callback` is called
+    /// when processed so you can run an associated action for this flag (like setting a type's
+    /// field).
     pub fn with_flag<F: Fn(&mut O) + 'static>(
         mut self,
         name: &str,
@@ -78,6 +80,9 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
+    /// Used to handle an argument (ie an CLI arg with an associated value like `--value something`).
+    /// `callback` is called when processed so you can run an associated action for this argument
+    /// (like setting a type's field).
     pub fn with_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
         name: &str,
@@ -106,6 +111,8 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
+    /// Similar to [`Self::with_arg`] except it will check that the associated value is not empty.
+    /// If empty, `callback` will not be called and it will emit an error.
     pub fn with_non_empty_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
         name: &str,
@@ -154,10 +161,10 @@ impl<O: Default + 'static> ArgsHandler<O> {
     pub fn with_sub_handler<S: Default + 'static>(
         mut self,
         sub: ArgsHandler<S>,
-        lifter_callback: fn(&mut O) -> &mut S,
+        get_field: fn(&mut O) -> &mut S,
     ) -> Self {
         for (name, ArgHandler { handler, help }) in sub.handlers {
-            let handler = ArgHandler { handler: handler.convert_to_parent(lifter_callback), help };
+            let handler = ArgHandler { handler: handler.convert_to_parent(get_field), help };
             if self.handlers.insert(name.clone(), handler).is_some() {
                 panic!(
                     "`{name}` is defined both in `{}` and `{}`",
@@ -194,15 +201,12 @@ impl<O: Default + 'static> ArgsHandler<O> {
         if let Some(arg_handler) = self.handlers.get(arg) {
             match arg_handler.handler {
                 ArgKind::Flag(ref callback) => callback(parsed)?,
-                ArgKind::Arg { ref callback, allow_empty } => {
-                    let Some(next_arg) = args.next() else {
-                        return Err(format!("Expected a value after `{arg}`, found nothing"));
-                    };
-                    if !allow_empty && next_arg.is_empty() {
-                        return Err(format!("Expected a value after `{arg}`, found nothing"));
+                ArgKind::Arg { ref callback, allow_empty } => match args.next() {
+                    Some(next_arg) if allow_empty || !next_arg.is_empty() => {
+                        callback(parsed, next_arg)?
                     }
-                    callback(parsed, next_arg)?
-                } // ArgKind::Multi(callback) => callback(parsed, args)?,
+                    _ => return Err(format!("Expected a value after `{arg}`, found nothing")),
+                }, // ArgKind::Multi(callback) => callback(parsed, args)?,
             }
             Ok(true)
         } else {
