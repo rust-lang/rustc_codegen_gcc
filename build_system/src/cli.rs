@@ -25,16 +25,21 @@ enum ArgKind<O> {
 
 impl<O: 'static> ArgKind<O> {
     /// Wraps the callback so it runs on a `Parent` and writes to the field `get_field` returns.
-    fn convert_to_parent<S: 'static>(self, get_field: fn(&mut S) -> &mut O) -> ArgKind<S> {
+    fn convert_to_parent<Parent: 'static>(
+        self,
+        get_field: fn(&mut Parent) -> &mut O,
+    ) -> ArgKind<Parent> {
         match self {
             ArgKind::Flag(callback) => {
-                ArgKind::Flag(Box::new(move |parent: &mut S| callback(get_field(parent))))
+                ArgKind::Flag(Box::new(move |parent: &mut Parent| callback(get_field(parent))))
             }
             ArgKind::Arg { callback, allow_empty } => ArgKind::Arg {
-                callback: Box::new(move |parent: &mut S, arg| callback(get_field(parent), arg)),
+                callback: Box::new(move |parent: &mut Parent, arg| {
+                    callback(get_field(parent), arg)
+                }),
                 allow_empty,
             },
-            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut S, args| callback(get_field(o), args))),
+            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut Parent, args| callback(get_field(o), args))),
         }
     }
 
