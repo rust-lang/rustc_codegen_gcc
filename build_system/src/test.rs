@@ -8,6 +8,7 @@ use std::str::FromStr;
 use boml::Toml;
 
 use crate::build;
+use crate::cli::ArgsHandler;
 use crate::config::{Channel, ConfigInfo};
 use crate::utils::{
     create_dir, get_sysroot_dir, get_toolchain, git_clone_root_dir, remove_file, run_command,
@@ -58,35 +59,6 @@ fn get_runners() -> Runners {
     runners
 }
 
-fn get_number_after_arg(
-    args: &mut impl Iterator<Item = String>,
-    option: &str,
-) -> Result<usize, String> {
-    match args.next() {
-        Some(nb) if !nb.is_empty() => match usize::from_str(&nb) {
-            Ok(nb) => Ok(nb),
-            Err(_) => Err(format!("Expected a number after `{option}`, found `{nb}`")),
-        },
-        _ => Err(format!("Expected a number after `{option}`, found nothing")),
-    }
-}
-
-fn show_usage() {
-    println!("`test` command help:\n");
-    let mut options = vec![
-        ("--use-system-gcc".to_string(), "Use system installed libgccjit"),
-        ("--build-only".to_string(), "Only build rustc_codegen_gcc then exits"),
-        ("--nb-parts".to_string(), "Used to split rustc_tests (for CI needs)"),
-        (
-            "--current-part".to_string(),
-            "Used with `--nb-parts`, allows you to specify which parts to test",
-        ),
-    ];
-    options.extend(ConfigInfo::usage());
-    options.extend(get_runners().into_iter().map(|(option, (doc, _))| (option.to_string(), doc)));
-    crate::utils::show_help_with_indent(options, true);
-}
-
 #[derive(Default, Debug)]
 struct TestArg {
     build_only: bool,
@@ -104,62 +76,69 @@ struct TestArg {
 
 impl TestArg {
     fn new() -> Result<Option<Self>, String> {
-        let mut test_arg = Self::default();
-
-        // We skip binary name and the `test` command.
-        let mut args = std::env::args().skip(2);
-        let runners = get_runners();
-
-        while let Some(arg) = args.next() {
-            match arg.as_str() {
-                "--features" => match args.next() {
-                    Some(feature) if !feature.is_empty() => {
-                        test_arg.flags.extend_from_slice(&["--features".into(), feature]);
-                    }
-                    _ => {
-                        return Err("Expected an argument after `--features`, found nothing".into());
-                    }
+        let mut args = ArgsHandler::<TestArg>::new("test")
+            .with_flag("--use-system-gcc", "Use system installed libgccjit", |obj| {
+                println!("Using system GCC");
+                obj.use_system_gcc = true;
+            })
+            .with_flag("--build-only", "Only build rustc_codegen_gcc then exits", |obj| {
+                obj.build_only = true;
+            })
+            .with_non_empty_arg_res(
+                "--nb-parts",
+                "Used to split rustc_tests (for CI needs)",
+                |obj, nb| {
+                    let Ok(nb) = usize::from_str(nb.as_str()) else {
+                        return Err(format!("Expected a number after `--nb-parts`, found `{nb}`"));
+                    };
+                    obj.nb_parts = Some(nb);
+                    Ok(())
                 },
-                "--use-system-gcc" => {
-                    println!("Using system GCC");
-                    test_arg.use_system_gcc = true;
-                }
-                "--build-only" => test_arg.build_only = true,
-                "--nb-parts" => {
-                    test_arg.nb_parts = Some(get_number_after_arg(&mut args, "--nb-parts")?);
-                }
-                "--current-part" => {
-                    test_arg.current_part =
-                        Some(get_number_after_arg(&mut args, "--current-part")?);
-                }
-                "--keep-lto-tests" => {
-                    test_arg.keep_lto_tests = true;
-                }
-                "--sysroot-features" => match args.next() {
-                    Some(feature) if !feature.is_empty() => {
-                        test_arg.sysroot_features.push(feature);
-                    }
-                    _ => {
-                        return Err(format!("Expected an argument after `{arg}`, found nothing"));
-                    }
+            )
+            .with_non_empty_arg_res(
+                "--current-part",
+                "Used with `--nb-parts`, allows you to specify which parts to test",
+                |obj, nb| {
+                    let Ok(nb) = usize::from_str(nb.as_str()) else {
+                        return Err(format!(
+                            "Expected a number after `--current-part`, found `{nb}`"
+                        ));
+                    };
+                    obj.current_part = Some(nb);
+                    Ok(())
                 },
-                "--help" => {
-                    show_usage();
-                    return Ok(None);
+            )
+            .with_flag("--keep-lto-tests", "If used, the lto tests will be kept", |obj| {
+                obj.keep_lto_tests = true;
+            })
+            .with_non_empty_arg(
+                "--sysroot-features",
+                "Add a new feature to be used when building the sysroot",
+                |obj, feature| {
+                    obj.sysroot_features.push(feature);
+                },
+            )
+            .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
+            .with_multi(
+                "--",
+                "Everything coming after `--` will be considered as a test arg",
+                |obj, args| {
+                    obj.test_args.extend(args);
+                },
+            );
+
+        for (runner_name, (help, _)) in get_runners() {
+            args = args.with_flag(runner_name, help, move |obj| {
+                if !obj.runners.iter().any(|runner| runner == runner_name) {
+                    obj.runners.push(runner_name.into());
                 }
-                "--" => test_arg.test_args.extend(&mut args),
-                x if runners.contains_key(x)
-                    && !test_arg.runners.iter().any(|runner| runner == x) =>
-                {
-                    test_arg.runners.push(x.into());
-                }
-                arg => {
-                    if !test_arg.config_info.parse_argument(arg, &mut args)? {
-                        return Err(format!("Unknown option {arg}"));
-                    }
-                }
-            }
+            });
         }
+
+        let Some(mut test_arg) = args.parse_args(std::env::args().skip(2))? else {
+            return Ok(None);
+        };
+
         match (test_arg.current_part, test_arg.nb_parts) {
             (Some(_), Some(_)) | (None, None) => {}
             _ => {
@@ -172,6 +151,9 @@ impl TestArg {
         }
         if test_arg.config_info.no_default_features {
             test_arg.flags.push("--no-default-features".into());
+        }
+        for feature in test_arg.config_info.features.iter().cloned() {
+            test_arg.flags.extend_from_slice(&["--features".into(), feature]);
         }
         Ok(Some(test_arg))
     }

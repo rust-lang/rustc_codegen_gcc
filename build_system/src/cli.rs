@@ -13,14 +13,15 @@ struct ArgHandler<O> {
 
 type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
 type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
+type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
 
 enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
     /// One argument.
     Arg { callback: ArgFn<O>, allow_empty: bool },
-    // /// Undefined number of arguments.
-    // Multi(fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>),
+    /// Undefined number of arguments.
+    Multi(MultiArgFn<O>),
 }
 
 impl<O: 'static> ArgKind<O> {
@@ -39,7 +40,11 @@ impl<O: 'static> ArgKind<O> {
                 }),
                 allow_empty,
             },
-            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut Parent, args| callback(get_field(o), args))),
+            ArgKind::Multi(callback) => {
+                ArgKind::Multi(Box::new(move |parent: &mut Parent, args| {
+                    callback(get_field(parent), args)
+                }))
+            }
         }
     }
 
@@ -47,6 +52,7 @@ impl<O: 'static> ArgKind<O> {
         match self {
             ArgKind::Flag(_) => None,
             ArgKind::Arg { .. } => Some("[arg]"),
+            ArgKind::Multi(_) => Some("[args...]"),
         }
     }
 }
@@ -145,18 +151,47 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
-    // pub fn with_multi(
-    //     mut self,
-    //     name: &str,
-    //     help: &str,
-    //     callback: fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>,
-    // ) -> Self {
-    //     self.handlers.insert(
-    //         name.to_string(),
-    //         ArgHandler { handler: ArgKind::Multi(callback), help: help.to_string() },
-    //     );
-    //     self
-    // }
+    /// Equivalent of [`Self::with_non_empty_arg`] but the callback returns a `Result` this time.
+    pub fn with_non_empty_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
+        mut self,
+        name: &str,
+        help: &str,
+        callback: F,
+    ) -> Self {
+        if self
+            .handlers
+            .insert(
+                name.to_string(),
+                ArgHandler {
+                    handler: ArgKind::Arg { callback: Box::new(callback), allow_empty: false },
+                    help: help.to_string(),
+                },
+            )
+            .is_some()
+        {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
+        self
+    }
+
+    pub fn with_multi<F: Fn(&mut O, &mut dyn Iterator<Item = String>) + 'static>(
+        mut self,
+        name: &str,
+        help: &str,
+        callback: F,
+    ) -> Self {
+        self.handlers.insert(
+            name.to_string(),
+            ArgHandler {
+                handler: ArgKind::Multi(Box::new(move |o, s| {
+                    callback(o, s);
+                    Ok(())
+                })),
+                help: help.to_string(),
+            },
+        );
+        self
+    }
 
     /// Adds `sub`'s options as if they were declared here; their values go to the field
     /// `get_field` returns.
@@ -208,7 +243,8 @@ impl<O: Default + 'static> ArgsHandler<O> {
                         callback(parsed, next_arg)?
                     }
                     _ => return Err(format!("Expected a value after `{arg}`, found nothing")),
-                }, // ArgKind::Multi(callback) => callback(parsed, args)?,
+                },
+                ArgKind::Multi(ref callback) => callback(parsed, args)?,
             }
             Ok(true)
         } else {
