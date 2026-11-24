@@ -11,8 +11,8 @@ struct ArgHandler<O> {
     help: String,
 }
 
-pub type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
-pub type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
+type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
+type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
 
 enum ArgKind<O> {
     /// No argument.
