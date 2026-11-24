@@ -77,7 +77,7 @@ macro_rules! sub_command_decl {
             fn usage() {
                 println!(concat!("`", $command_name, "` command help:\n"));
 
-                let mut commands = vec![$(($doc_name, $doc),)+];
+                let mut commands = vec![$(($doc_name.to_string(), $doc),)+];
                 $(commands.extend($extra_ty::usage());)?
                 crate::utils::show_help_with_indent(commands, true);
             }
@@ -127,7 +127,7 @@ Commands:");
 
         fn usage() {
             commands_decl!(__inner, $($command_name)?);
-            crate::utils::show_help_with_indent(vec![$(($doc_name, $doc),)+], false);
+            crate::utils::show_help_with_indent(vec![$(($doc_name.to_string(), $doc),)+], false);
         }
     }
 }

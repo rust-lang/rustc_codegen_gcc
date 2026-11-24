@@ -6,6 +6,7 @@ use std::{env as std_env, fs};
 use boml::Toml;
 use boml::types::TomlValue;
 
+use crate::cli::ArgsHandler;
 use crate::utils::{
     create_dir, create_symlink, get_os_name, get_sysroot_dir, run_command_with_output,
     rustc_version_info, split_args,
@@ -149,6 +150,46 @@ pub struct ConfigInfo {
 }
 
 impl ConfigInfo {
+    pub fn args() -> ArgsHandler<ConfigInfo> {
+        ArgsHandler::<ConfigInfo>::new("config")
+            .with_arg("--features", "Add a new feature [arg]", |obj, arg| {
+                obj.features.push(arg);
+            })
+            .with_arg("--target", "Set the target to [arg]", |obj, arg| {
+                obj.target = arg;
+            })
+            .with_non_empty_arg("--target-triple", "Set the target triple to [arg]", |obj, arg| {
+                obj.target_triple = arg;
+            })
+            .with_non_empty_arg("--out-dir", "Location where the files will be generated", |obj, arg| {
+                obj.cargo_target_dir = arg;
+            })
+            .with_non_empty_arg("--config-file", "Location of the config file to be used", |obj, arg| {
+                obj.config_file = Some(arg);
+            })
+            .with_flag("--release-sysroot", "Build the sysroot in release mode. Only used when the sysroot is built", |obj| {
+                obj.sysroot_release_channel = true;
+            })
+            .with_flag("--release", "Build backend in release mode with optimized dependencies", |obj| {
+                obj.channel = Channel::Release;
+            })
+            .with_flag("--sysroot-panic-abort", "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built", |obj| {
+                obj.sysroot_panic_abort = true;
+            })
+            .with_non_empty_arg("--gcc-path", "Location of the GCC root folder", |obj, arg| {
+                obj.gcc_path = Some(arg);
+            })
+            .with_non_empty_arg("--cg_gcc-path", "Location of the rustc_codegen_gcc root folder (used when ran from another directory)", |obj, arg| {
+                obj.cg_gcc_path = Some(arg.into());
+            })
+            .with_non_empty_arg("--use-backend", "Useful only for rustc testsuite", |obj, arg| {
+                obj.backend = Some(arg);
+            })
+            .with_flag("--no-default-features", "Add `--no-default-features` flag to cargo commands", |obj| {
+                obj.no_default_features = true;
+            })
+    }
+
     /// Returns `true` if the argument was taken into account.
     pub fn parse_argument(
         &mut self,
@@ -171,7 +212,7 @@ impl ConfigInfo {
                 }
             }
             "--target-triple" => match args.next() {
-                Some(arg) if !arg.is_empty() => self.target_triple = arg.to_string(),
+                Some(arg) if !arg.is_empty() => self.target_triple = arg,
                 _ => {
                     return Err(
                         "Expected a value after `--target-triple`, found nothing".to_string()
@@ -504,27 +545,30 @@ impl ConfigInfo {
         Ok(())
     }
 
-    pub fn usage() -> Vec<(&'static str, &'static str)> {
+    pub fn usage() -> Vec<(String, &'static str)> {
         vec![
-            ("--features [arg]", "Add a new feature [arg]"),
-            ("--target-triple [arg]", "Set the target triple to [arg]"),
-            ("--target [arg]", "Set the target to [arg]"),
-            ("--release", "Build backend in release mode with optimized dependencies"),
-            ("--out-dir", "Location where the files will be generated"),
-            ("--config-file", "Location of the config file to be used"),
-            ("--gcc-path", "Location of the GCC root folder"),
+            ("--features [arg]".to_string(), "Add a new feature [arg]"),
+            ("--target-triple [arg]".to_string(), "Set the target triple to [arg]"),
+            ("--target [arg]".to_string(), "Set the target to [arg]"),
+            ("--release".to_string(), "Build backend in release mode with optimized dependencies"),
+            ("--out-dir".to_string(), "Location where the files will be generated"),
+            ("--config-file".to_string(), "Location of the config file to be used"),
+            ("--gcc-path".to_string(), "Location of the GCC root folder"),
             (
-                "--cg_gcc-path",
+                "--cg_gcc-path".to_string(),
                 "Location of the rustc_codegen_gcc root folder (used when ran from another directory)",
             ),
-            ("--no-default-features", "Add `--no-default-features` flag to cargo commands"),
-            ("--use-backend", "Useful only for rustc testsuite"),
             (
-                "--sysroot-panic-abort",
+                "--no-default-features".to_string(),
+                "Add `--no-default-features` flag to cargo commands",
+            ),
+            ("--use-backend".to_string(), "Useful only for rustc testsuite"),
+            (
+                "--sysroot-panic-abort".to_string(),
                 "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built",
             ),
             (
-                "--release-sysroot",
+                "--release-sysroot".to_string(),
                 "Build the sysroot in release mode. Only used when the sysroot is built",
             ),
         ]
