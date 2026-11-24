@@ -1,17 +1,32 @@
 use std::path::{Path, PathBuf};
 
+use crate::cli::ArgsHandler;
 use crate::config::ConfigInfo;
 use crate::utils::{git_clone, run_command_with_output};
 
-sub_command_decl! {
-    Args => "clone-gcc",
-    out_path: PathBuf = "--out-path" => "Location where the GCC repository will be cloned (default: `./gcc`)",
-    + config_info: ConfigInfo
-    ~ out_path = PathBuf::from("./gcc"),
+struct CloneGccArgs {
+    out_path: PathBuf,
+    config_info: ConfigInfo,
+}
+
+impl Default for CloneGccArgs {
+    fn default() -> Self {
+        Self { out_path: PathBuf::from("./gcc"), config_info: ConfigInfo::default() }
+    }
 }
 
 pub fn run() -> Result<(), String> {
-    let Some(args) = Args::new()? else {
+    let Some(args) = ArgsHandler::<CloneGccArgs>::new("clone-gcc")
+        .with_non_empty_arg(
+            "--out-path",
+            "Location where the GCC repository will be cloned (default: `./gcc`)",
+            |obj, arg| {
+                obj.out_path = arg.into();
+            },
+        )
+        .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
+        .parse_args(std::env::args().skip(2))?
+    else {
         return Ok(());
     };
 
