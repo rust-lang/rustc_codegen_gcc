@@ -4,39 +4,17 @@ use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 
+use crate::cli::ArgsHandler;
 use crate::config::ConfigInfo;
 use crate::utils::{get_toolchain, rustc_toolchain_version_info, rustc_version_info};
 
 fn handle_args<I: Iterator<Item = String>>(
-    command: &str,
+    command: &'static str,
     args: I,
 ) -> Result<Option<Vec<String>>, String> {
-    let mut extra = Vec::new();
-    for arg in args {
-        if arg == "help" {
-            usage(command);
-            return Ok(None);
-        }
-        extra.push(arg);
-    }
-    if extra.is_empty() {
-        return Err(format!(
-            "Expected at least one argument for `{command}` subcommand, found none"
-        ));
-    }
-
-    Ok(Some(extra))
-}
-
-fn usage(command: &str) {
-    println!(
-        r#"
-`{command}` command help:
-
-    [args]     : Arguments to be passed to the cargo command
-    --help     : Show this help
-"#,
-    )
+    ArgsHandler::<Vec<String>>::new(command)
+        .with_fallback(|o, args| o.extend(args))
+        .parse_args(args)
 }
 
 struct RustcTools {
@@ -47,7 +25,10 @@ struct RustcTools {
 }
 
 impl RustcTools {
-    fn new<I: Iterator<Item = String>>(command: &str, args: I) -> Result<Option<Self>, String> {
+    fn new<I: Iterator<Item = String>>(
+        command: &'static str,
+        args: I,
+    ) -> Result<Option<Self>, String> {
         let Some(args) = handle_args(command, args)? else { return Ok(None) };
 
         // We first need to go to the original location to ensure that the config setup will go as
