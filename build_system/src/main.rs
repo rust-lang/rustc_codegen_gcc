@@ -43,21 +43,21 @@ fn main() {
 
     let mut args = std::env::args().skip(1);
 
-    let Some(command) = cli::ArgsHandler::<Command>::new("[command] [options]")
-        .with_unique("cargo", "Executes a cargo command", || Command::Cargo)
-        .with_unique("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
-        .with_unique("clippy", "Runs clippy", || Command::Clippy)
-        .with_unique("clone-gcc", "Clones the GCC compiler from a specified source", || Command::CloneGcc)
-        .with_unique("prepare", "Prepares the environment for building, including fetching dependencies and setting up configurations", || Command::Prepare)
-        .with_unique("build", "Compiles the project", || Command::Build)
-        .with_unique("rustc", "Compiles the program using the GCC compiler", || Command::Rustc)
-        .with_unique("test",  "Runs tests for the project", || Command::Test)
-        .with_unique("info",  "Displays information about the build environment and project configuration", || Command::Info)
-        .with_unique("fmt", "Runs rustfmt", || Command::Fmt)
-        .with_unique("fuzz", "Fuzzes `cg_gcc` using `rustlantis`", || Command::Fuzz)
-        .with_unique("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
-        .with_unique("check-todo", "Checks todo in the project", || Command::CheckTodo)
-        .parse_unique(&mut args) else {
+    let Some(command) = cli::CommandsHandler::<Command>::new("[command] [options]")
+        .with_flag("cargo", "Executes a cargo command", || Command::Cargo)
+        .with_flag("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
+        .with_flag("clippy", "Runs clippy", || Command::Clippy)
+        .with_flag("clone-gcc", "Clones the GCC compiler from a specified source", || Command::CloneGcc)
+        .with_flag("prepare", "Prepares the environment for building, including fetching dependencies and setting up configurations", || Command::Prepare)
+        .with_flag("build", "Compiles the project", || Command::Build)
+        .with_flag("rustc", "Compiles the program using the GCC compiler", || Command::Rustc)
+        .with_flag("test",  "Runs tests for the project", || Command::Test)
+        .with_flag("info",  "Displays information about the build environment and project configuration", || Command::Info)
+        .with_flag("fmt", "Runs rustfmt", || Command::Fmt)
+        .with_flag("fuzz", "Fuzzes `cg_gcc` using `rustlantis`", || Command::Fuzz)
+        .with_flag("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
+        .with_flag("check-todo", "Checks todo in the project", || Command::CheckTodo)
+        .parse_args(&mut args) else {
             return
     };
     if let Err(e) = match command {

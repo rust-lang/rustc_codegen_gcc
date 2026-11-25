@@ -1,7 +1,7 @@
 use std::fs::remove_dir_all;
 use std::path::Path;
 
-use crate::cli::ArgsHandler;
+use crate::cli::CommandsHandler;
 use crate::utils::{get_sysroot_dir, remove_file, run_command};
 
 enum CleanArg {
@@ -46,11 +46,10 @@ fn clean_ui_tests() -> Result<(), String> {
 }
 
 pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
-    match ArgsHandler::<CleanArg>::new("clean")
-        .with_unique("all", "Clean all data", || CleanArg::All)
-        .with_unique("ui-tests", "Clean ui tests", || CleanArg::UiTests)
-        // We skip the binary and the "clean" option.
-        .parse_unique(args)
+    match CommandsHandler::<CleanArg>::new("clean")
+        .with_flag("all", "Clean all data", || CleanArg::All)
+        .with_flag("ui-tests", "Clean ui tests", || CleanArg::UiTests)
+        .parse_args(args)
     {
         Some(CleanArg::All) => clean_all(),
         Some(CleanArg::UiTests) => clean_ui_tests(),
