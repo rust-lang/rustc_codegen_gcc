@@ -186,7 +186,7 @@ struct PrepareArgs {
 }
 
 pub fn run() -> Result<(), String> {
-    let Some(args) = ArgsHandler::<PrepareArgs>::new("prepare")
+    if let Some(args) = ArgsHandler::<PrepareArgs>::new("prepare")
         .with_flag("--cross", "Apply the patches needed to do cross-compilation", |obj| {
             obj.cross_compile = true;
         })
@@ -204,28 +204,26 @@ pub fn run() -> Result<(), String> {
             obj.sysroot_source = Some(arg);
         })
         .parse_args(std::env::args().skip(2))?
-    else {
-        return Ok(());
-    };
-
-    let sysroot_path = get_sysroot_dir();
-    prepare_libcore(
-        &sysroot_path,
-        args.libgccjit12_patches,
-        args.cross_compile,
-        args.sysroot_source,
-    )?;
-
-    if !args.only_libcore {
-        cargo_install("hyperfine")?;
-
-        clone_and_setup(
-            "https://github.com/ebobby/simple-raytracer",
-            "804a7a21b9e673a482797aa289a18ed480e4d813",
-            Some(build_raytracer),
+    {
+        let sysroot_path = get_sysroot_dir();
+        prepare_libcore(
+            &sysroot_path,
+            args.libgccjit12_patches,
+            args.cross_compile,
+            args.sysroot_source,
         )?;
-    }
 
-    println!("Successfully ran `prepare`");
+        if !args.only_libcore {
+            cargo_install("hyperfine")?;
+
+            clone_and_setup(
+                "https://github.com/ebobby/simple-raytracer",
+                "804a7a21b9e673a482797aa289a18ed480e4d813",
+                Some(build_raytracer),
+            )?;
+        }
+
+        println!("Successfully ran `prepare`");
+    }
     Ok(())
 }

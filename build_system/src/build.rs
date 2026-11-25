@@ -237,7 +237,7 @@ fn build_codegen(args: &mut BuildArgs) -> Result<(), String> {
 
 /// Executes the build process.
 pub fn run() -> Result<(), String> {
-    let Some(mut args) = ArgsHandler::<BuildArgs>::new("build")
+    if let Some(mut args) = ArgsHandler::<BuildArgs>::new("build")
         .with_flag(
             "--sysroot",
             "When used on its own, build backend in dev mode with \
@@ -251,10 +251,9 @@ in dev mode",
         )
         .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
         .parse_args(std::env::args().skip(2))?
-    else {
-        return Ok(());
-    };
-    args.config_info.setup_gcc_path()?;
-    build_codegen(&mut args)?;
+    {
+        args.config_info.setup_gcc_path()?;
+        build_codegen(&mut args)?;
+    }
     Ok(())
 }

@@ -85,22 +85,28 @@ impl TestArg {
                 obj.build_only = true;
             })
             .with_arg_res("--nb-parts", "Used to split rustc_tests (for CI needs)", |obj, value| {
-                let Ok(nb) = usize::from_str(value.as_str()) else {
-                    return Err(format!("Expected a number after `--nb-parts`, found `{value}`"));
-                };
-                obj.nb_parts = Some(nb);
+                match usize::from_str(value.as_str()) {
+                    Ok(nb) => obj.nb_parts = Some(nb),
+                    _ => {
+                        return Err(format!(
+                            "Expected a number after `--nb-parts`, found `{value}`"
+                        ));
+                    }
+                }
                 Ok(())
             })
             .with_arg_res(
                 "--current-part",
                 "Used with `--nb-parts`, allows you to specify which parts to test",
                 |obj, value| {
-                    let Ok(nb) = usize::from_str(value.as_str()) else {
-                        return Err(format!(
-                            "Expected a number after `--current-part`, found `{value}`"
-                        ));
-                    };
-                    obj.current_part = Some(nb);
+                    match usize::from_str(value.as_str()) {
+                        Ok(nb) => obj.current_part = Some(nb),
+                        _ => {
+                            return Err(format!(
+                                "Expected a number after `--current-part`, found `{value}`"
+                            ));
+                        }
+                    }
                     Ok(())
                 },
             )
@@ -131,25 +137,25 @@ impl TestArg {
             });
         }
 
-        let Some(mut test_arg) = args.parse_args(std::env::args().skip(2))? else {
-            return Ok(None);
-        };
-
-        match (test_arg.current_part, test_arg.nb_parts) {
-            (Some(_), Some(_)) | (None, None) => {}
-            _ => {
-                return Err(
-                    "If either `--current-part` or `--nb-parts` is specified, the other one \
-                            needs to be specified as well!"
-                        .to_string(),
-                );
+        if let Some(mut test_arg) = args.parse_args(std::env::args().skip(2))? {
+            match (test_arg.current_part, test_arg.nb_parts) {
+                (Some(_), Some(_)) | (None, None) => {}
+                _ => {
+                    return Err(
+                        "If either `--current-part` or `--nb-parts` is specified, the other one \
+                                needs to be specified as well!"
+                            .to_string(),
+                    );
+                }
             }
+            if test_arg.config_info.no_default_features {
+                test_arg.flags.push("--no-default-features".into());
+            }
+            test_arg.flags.extend(test_arg.config_info.features.drain(..));
+            Ok(Some(test_arg))
+        } else {
+            Ok(None)
         }
-        if test_arg.config_info.no_default_features {
-            test_arg.flags.push("--no-default-features".into());
-        }
-        test_arg.flags.extend(test_arg.config_info.features.drain(..));
-        Ok(Some(test_arg))
     }
 
     pub fn is_using_gcc_master_branch(&self) -> bool {

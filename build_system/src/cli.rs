@@ -269,10 +269,10 @@ impl<O: 'static> ArgsHandler<O> {
                 self.show_usage();
                 None
             } else if let Some(arg_handler) = self.handlers.get(&arg) {
-                let ArgKind::Unique(ref callback) = arg_handler.handler else {
-                    unreachable!();
-                };
-                Some(callback())
+                match arg_handler.handler {
+                    ArgKind::Unique(ref callback) => Some(callback()),
+                    _ => unreachable!(),
+                }
             } else {
                 eprintln!("Unknown command `{arg}`");
                 eprintln!();
