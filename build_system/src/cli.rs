@@ -1,9 +1,15 @@
 use std::collections::BTreeMap;
 
+type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
+type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
+type MultiArgFnRes<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
+type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>)>;
+
 /// This struct is used to declare and parse CLI arguments.
 pub struct ArgsHandler<O> {
     handlers: BTreeMap<String, ArgHandler<O>>,
     command_name: &'static str,
+    fallback: Option<MultiArgFn<O>>,
 }
 
 struct ArgHandler<O> {
@@ -11,17 +17,13 @@ struct ArgHandler<O> {
     help: String,
 }
 
-type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
-type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
-type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
-
 enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
     /// One argument.
     Arg { callback: ArgFn<O>, allow_empty: bool },
     /// Undefined number of arguments.
-    Multi(MultiArgFn<O>),
+    Multi(MultiArgFnRes<O>),
 }
 
 impl<O: 'static> ArgKind<O> {
@@ -59,7 +61,7 @@ impl<O: 'static> ArgKind<O> {
 
 impl<O: Default + 'static> ArgsHandler<O> {
     pub fn new(command_name: &'static str) -> Self {
-        Self { handlers: BTreeMap::new(), command_name }
+        Self { handlers: BTreeMap::new(), command_name, fallback: None }
     }
 
     /// Used to handle a flag (ie an argument without an associated value). `callback` is called
@@ -164,6 +166,17 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
+    pub fn with_fallback<F: Fn(&mut O, &mut dyn Iterator<Item = String>) + 'static>(
+        mut self,
+        callback: F,
+    ) -> Self {
+        if self.fallback.is_some() {
+            panic!("`with_fallback` was called more than once on command `{}`", self.command_name);
+        }
+        self.fallback = Some(Box::new(callback));
+        self
+    }
+
     /// Adds `sub`'s options as if they were declared here; their values go to the field
     /// `get_field` returns.
     pub fn with_sub_handler<S: Default + 'static>(
@@ -216,6 +229,9 @@ impl<O: Default + 'static> ArgsHandler<O> {
                 },
                 ArgKind::Multi(ref callback) => callback(parsed, args)?,
             }
+            Ok(true)
+        } else if let Some(ref fallback) = self.fallback {
+            fallback(parsed, args);
             Ok(true)
         } else {
             Ok(false)
