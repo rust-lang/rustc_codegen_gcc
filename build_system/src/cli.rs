@@ -21,7 +21,7 @@ enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
     /// One argument.
-    Arg { callback: ArgFn<O>, allow_empty: bool },
+    Arg(ArgFn<O>),
     /// Undefined number of arguments.
     Multi(MultiArgFnRes<O>),
 }
@@ -36,12 +36,9 @@ impl<O: 'static> ArgKind<O> {
             ArgKind::Flag(callback) => {
                 ArgKind::Flag(Box::new(move |parent: &mut Parent| callback(get_field(parent))))
             }
-            ArgKind::Arg { callback, allow_empty } => ArgKind::Arg {
-                callback: Box::new(move |parent: &mut Parent, arg| {
-                    callback(get_field(parent), arg)
-                }),
-                allow_empty,
-            },
+            ArgKind::Arg(callback) => ArgKind::Arg(Box::new(move |parent: &mut Parent, arg| {
+                callback(get_field(parent), arg)
+            })),
             ArgKind::Multi(callback) => {
                 ArgKind::Multi(Box::new(move |parent: &mut Parent, args| {
                     callback(get_field(parent), args)
@@ -53,7 +50,7 @@ impl<O: 'static> ArgKind<O> {
     fn extra_help_word(&self) -> Option<&'static str> {
         match self {
             ArgKind::Flag(_) => None,
-            ArgKind::Arg { .. } => Some("[arg]"),
+            ArgKind::Arg(_) => Some("[arg]"),
             ArgKind::Multi(_) => Some("[args...]"),
         }
     }
@@ -107,13 +104,10 @@ impl<O: Default + 'static> ArgsHandler<O> {
             .insert(
                 name.to_string(),
                 ArgHandler {
-                    handler: ArgKind::Arg {
-                        callback: Box::new(move |o, s| {
-                            callback(o, s);
-                            Ok(())
-                        }),
-                        allow_empty: false,
-                    },
+                    handler: ArgKind::Arg(Box::new(move |o, s| {
+                        callback(o, s);
+                        Ok(())
+                    })),
                     help: help.to_string(),
                 },
             )
@@ -135,10 +129,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
             .handlers
             .insert(
                 name.to_string(),
-                ArgHandler {
-                    handler: ArgKind::Arg { callback: Box::new(callback), allow_empty: false },
-                    help: help.to_string(),
-                },
+                ArgHandler { handler: ArgKind::Arg(Box::new(callback)), help: help.to_string() },
             )
             .is_some()
         {
@@ -221,10 +212,8 @@ impl<O: Default + 'static> ArgsHandler<O> {
         if let Some(arg_handler) = self.handlers.get(arg) {
             match arg_handler.handler {
                 ArgKind::Flag(ref callback) => callback(parsed)?,
-                ArgKind::Arg { ref callback, allow_empty } => match args.next() {
-                    Some(next_arg) if allow_empty || !next_arg.is_empty() => {
-                        callback(parsed, next_arg)?
-                    }
+                ArgKind::Arg(ref callback) => match args.next() {
+                    Some(next_arg) if !next_arg.is_empty() => callback(parsed, next_arg)?,
                     _ => return Err(format!("Expected a value after `{arg}`, found nothing")),
                 },
                 ArgKind::Multi(ref callback) => callback(parsed, args)?,
