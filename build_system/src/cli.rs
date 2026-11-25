@@ -296,12 +296,12 @@ impl<O: 'static> ArgsHandler<O> {
         if let Some(arg) = args.next() {
             if arg == "--help" {
                 self.show_usage();
-                return None;
+                None
             } else if let Some(arg_handler) = self.handlers.get(&arg) {
                 let ArgKind::Unique(ref callback) = arg_handler.handler else {
                     unreachable!();
                 };
-                return Some(callback());
+                Some(callback())
             } else {
                 eprintln!("Unknown command `{arg}`");
                 eprintln!();
@@ -310,7 +310,7 @@ impl<O: 'static> ArgsHandler<O> {
             }
         } else {
             self.show_usage();
-            return None;
+            None
         }
     }
 
