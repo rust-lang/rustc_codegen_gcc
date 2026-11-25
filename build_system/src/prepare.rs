@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
+use crate::cli::ArgsHandler;
 use crate::rustc_info::get_rustc_path;
 use crate::utils::{
     cargo_install, create_dir, get_sysroot_dir, git_clone_root_dir, remove_file, run_command,
@@ -176,19 +177,37 @@ where
     Ok(())
 }
 
-sub_command_decl! {
-    PrepareArg => "prepare",
-    cross_compile: bool = "--cross" => "Apply the patches needed to do cross-compilation",
-    only_libcore: bool = "--only-libcore" => "Only setup libcore and don't clone other repositories",
-    libgccjit12_patches: bool = "--libgccjit12-patches" => "Apply patches needed for libgccjit12",
-    sysroot_source: Option<String> = "--sysroot-source" => "Specify custom path for sysroot source",
+#[derive(Default)]
+struct PrepareArgs {
+    cross_compile: bool,
+    only_libcore: bool,
+    libgccjit12_patches: bool,
+    sysroot_source: Option<String>,
 }
 
 pub fn run() -> Result<(), String> {
-    let args = match PrepareArg::new()? {
-        Some(a) => a,
-        None => return Ok(()),
+    let Some(args) = ArgsHandler::<PrepareArgs>::new("prepare")
+        .with_flag("--cross", "Apply the patches needed to do cross-compilation", |obj| {
+            obj.cross_compile = true;
+        })
+        .with_flag("--only-libcore", "Apply the patches needed to do cross-compilation", |obj| {
+            obj.only_libcore = true;
+        })
+        .with_flag("--libgccjit12-patches", "Apply patches needed for libgccjit12", |obj| {
+            obj.libgccjit12_patches = true;
+        })
+        .with_non_empty_arg(
+            "--sysroot-source",
+            "Specify custom path for sysroot source",
+            |obj, arg| {
+                obj.sysroot_source = Some(arg);
+            },
+        )
+        .parse_args(std::env::args().skip(2))?
+    else {
+        return Ok(());
     };
+
     let sysroot_path = get_sysroot_dir();
     prepare_libcore(
         &sysroot_path,
