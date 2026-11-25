@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 /// This struct is used to declare and parse CLI arguments.
-pub struct ArgsHandler<O: Default> {
+pub struct ArgsHandler<O> {
     handlers: BTreeMap<String, ArgHandler<O>>,
     command_name: &'static str,
+    unique_flags: usize,
 }
 
 struct ArgHandler<O> {
@@ -12,12 +13,15 @@ struct ArgHandler<O> {
 }
 
 type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
+type UniqueFlagFn<O> = Box<dyn Fn() -> O>;
 type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
 type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
 
 enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
+    /// Unique flag parsing. No other flag is parsed after this one.
+    Unique(UniqueFlagFn<O>),
     /// One argument.
     Arg { callback: ArgFn<O>, allow_empty: bool },
     /// Undefined number of arguments.
@@ -33,6 +37,9 @@ impl<O: 'static> ArgKind<O> {
         match self {
             ArgKind::Flag(callback) => {
                 ArgKind::Flag(Box::new(move |parent: &mut Parent| callback(get_field(parent))))
+            }
+            ArgKind::Unique(_) => {
+                panic!("unique flags don't support to be mixed with other arg handlers");
             }
             ArgKind::Arg { callback, allow_empty } => ArgKind::Arg {
                 callback: Box::new(move |parent: &mut Parent, arg| {
@@ -50,7 +57,7 @@ impl<O: 'static> ArgKind<O> {
 
     fn extra_help_word(&self) -> Option<&'static str> {
         match self {
-            ArgKind::Flag(_) => None,
+            ArgKind::Flag(_) | ArgKind::Unique(_) => None,
             ArgKind::Arg { .. } => Some("[arg]"),
             ArgKind::Multi(_) => Some("[args...]"),
         }
@@ -58,10 +65,6 @@ impl<O: 'static> ArgKind<O> {
 }
 
 impl<O: Default + 'static> ArgsHandler<O> {
-    pub fn new(command_name: &'static str) -> Self {
-        Self { handlers: BTreeMap::new(), command_name }
-    }
-
     /// Used to handle a flag (ie an argument without an associated value). `callback` is called
     /// when processed so you can run an associated action for this flag (like setting a type's
     /// field).
@@ -213,13 +216,15 @@ impl<O: Default + 'static> ArgsHandler<O> {
     }
 
     pub fn parse_args<I: Iterator<Item = String>>(&self, mut args: I) -> Result<Option<O>, String> {
+        if self.unique_flags != 0 {
+            panic!("Use `ArgsHandler::parse_unique` instead");
+        }
         let mut parsed = O::default();
         while let Some(arg) = args.next() {
             if arg == "--help" {
                 self.show_usage();
                 return Ok(None);
-            }
-            if !self.parse_arg(&arg, &mut args, &mut parsed)? {
+            } else if !self.parse_arg(&arg, &mut args, &mut parsed)? {
                 return Err(format!(
                     "Unknown argument `{arg}`. Use `--help` to see the list of available options."
                 ));
@@ -235,6 +240,9 @@ impl<O: Default + 'static> ArgsHandler<O> {
         args: &mut I,
         parsed: &mut O,
     ) -> Result<bool, String> {
+        if self.unique_flags != 0 {
+            panic!("Use `ArgsHandler::parse_unique` instead");
+        }
         if let Some(arg_handler) = self.handlers.get(arg) {
             match arg_handler.handler {
                 ArgKind::Flag(ref callback) => callback(parsed)?,
@@ -245,15 +253,83 @@ impl<O: Default + 'static> ArgsHandler<O> {
                     _ => return Err(format!("Expected a value after `{arg}`, found nothing")),
                 },
                 ArgKind::Multi(ref callback) => callback(parsed, args)?,
+                ArgKind::Unique(_) => unreachable!(),
             }
             Ok(true)
         } else {
             Ok(false)
         }
     }
+}
+
+impl<O: 'static> ArgsHandler<O> {
+    pub fn new(command_name: &'static str) -> Self {
+        Self { handlers: BTreeMap::new(), command_name, unique_flags: 0 }
+    }
+
+    pub fn with_unique<F: Fn() -> O + 'static>(
+        mut self,
+        name: &str,
+        help: &str,
+        callback: F,
+    ) -> Self {
+        if self
+            .handlers
+            .insert(
+                name.to_string(),
+                ArgHandler { handler: ArgKind::Unique(Box::new(callback)), help: help.to_string() },
+            )
+            .is_some()
+        {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
+        self.unique_flags += 1;
+        self
+    }
+
+    pub fn parse_unique<I: Iterator<Item = String>>(&self, mut args: I) -> Option<O> {
+        if self.unique_flags == 0 {
+            panic!("Use `ArgsHandler::parse_args` instead");
+        } else if self.handlers.len() != self.unique_flags {
+            panic!("`unique_flag` should not be mixed with other flags");
+        }
+        if let Some(arg) = args.next() {
+            if arg == "--help" {
+                self.show_usage();
+                return None;
+            } else if let Some(arg_handler) = self.handlers.get(&arg) {
+                let ArgKind::Unique(ref callback) = arg_handler.handler else {
+                    unreachable!();
+                };
+                return Some(callback());
+            } else {
+                eprintln!("Unknown command `{arg}`");
+                eprintln!();
+                self.show_usage();
+                std::process::exit(1);
+            }
+        } else {
+            self.show_usage();
+            return None;
+        }
+    }
 
     fn show_usage(&self) {
-        println!("`{}` command help:\n", self.command_name);
+        if self.unique_flags == 0 {
+            println!("`{}` command help:\n", self.command_name);
+        } else {
+            println!(
+                "rustc_codegen_gcc build system
+
+Usage: build_system {} [options]
+
+Options:
+    --help     : Displays this help message.
+
+Commands:",
+                self.command_name,
+            );
+        }
 
         // `+ 1` because we add the `--help` in `show_help_with_indent`.
         let mut commands = Vec::with_capacity(self.handlers.len() + 1);
@@ -265,6 +341,6 @@ impl<O: Default + 'static> ArgsHandler<O> {
             };
             commands.push((name, handler.help.as_str()));
         }
-        crate::utils::show_help_with_indent(commands, true);
+        crate::utils::show_help_with_indent(commands, self.unique_flags == 0);
     }
 }
