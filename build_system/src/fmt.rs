@@ -13,10 +13,8 @@ fn show_usage() {
     );
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     let mut check = false;
-    // We skip binary name and the `info` command.
-    let args = std::env::args().skip(2);
     for arg in args {
         match arg.as_str() {
             "--help" => {

@@ -11,9 +11,7 @@ fn show_usage() {
     );
 }
 
-pub fn run() -> Result<(), String> {
-    // We skip binary name and the `info` command.
-    let args = std::env::args().skip(2);
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     #[allow(clippy::never_loop)]
     for arg in args {
         match arg.as_str() {

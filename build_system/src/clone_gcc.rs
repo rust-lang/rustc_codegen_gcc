@@ -15,7 +15,7 @@ impl Default for CloneGccArgs {
     }
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     if let Some(args) = ArgsHandler::<CloneGccArgs>::new("clone-gcc")
         .with_arg(
             "--out-path",
@@ -25,7 +25,7 @@ pub fn run() -> Result<(), String> {
             },
         )
         .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
-        .parse_args(std::env::args().skip(2))?
+        .parse_args(args)?
     {
         let result = git_clone("https://github.com/rust-lang/gcc", Some(&args.out_path), false)?;
         if result.ran_clone {

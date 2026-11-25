@@ -4,6 +4,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::cli::ArgsHandler;
+
 const EXTENSIONS: &[&str] =
     &["rs", "py", "js", "sh", "c", "cpp", "h", "md", "css", "ftl", "toml", "yml", "yaml"];
 
@@ -34,11 +36,15 @@ fn list_tracked_files() -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-pub(crate) fn run() -> Result<(), String> {
+pub(crate) fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     let files = list_tracked_files()?;
     let mut error_count = 0;
     // Avoid embedding the task marker in source so greps only find real occurrences.
     let todo_marker = "todo".to_ascii_uppercase();
+
+    if ArgsHandler::<()>::new("todo").parse_args(args)?.is_none() {
+        return Ok(());
+    }
 
     for file in files {
         if !has_supported_extension(&file) {

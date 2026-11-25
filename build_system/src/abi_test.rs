@@ -11,8 +11,7 @@ fn show_usage() {
     );
 }
 
-pub fn run() -> Result<(), String> {
-    let mut args = std::env::args().skip(2);
+pub fn run<I: Iterator<Item = String>>(mut args: I) -> Result<(), String> {
     // FractalFir: In the future, I'd like to add some more subcommands / options.
     // So, this loop ought to stay for that purpose. It should also stay as a while loop(to parse args)
     #[allow(clippy::never_loop, clippy::while_let_on_iterator)]

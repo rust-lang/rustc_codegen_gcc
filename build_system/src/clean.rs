@@ -45,12 +45,12 @@ fn clean_ui_tests() -> Result<(), String> {
     Ok(())
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     match ArgsHandler::<CleanArg>::new("clean")
         .with_unique("all", "Clean all data", || CleanArg::All)
         .with_unique("ui-tests", "Clean ui tests", || CleanArg::UiTests)
         // We skip the binary and the "clean" option.
-        .parse_unique(std::env::args().skip(2))
+        .parse_unique(args)
     {
         Some(CleanArg::All) => clean_all(),
         Some(CleanArg::UiTests) => clean_ui_tests(),

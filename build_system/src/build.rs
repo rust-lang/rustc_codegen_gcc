@@ -236,7 +236,7 @@ fn build_codegen(args: &mut BuildArgs) -> Result<(), String> {
 }
 
 /// Executes the build process.
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     if let Some(mut args) = ArgsHandler::<BuildArgs>::new("build")
         .with_flag(
             "--sysroot",
@@ -250,7 +250,7 @@ in dev mode",
             },
         )
         .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
-        .parse_args(std::env::args().skip(2))?
+        .parse_args(args)?
     {
         args.config_info.setup_gcc_path()?;
         build_codegen(&mut args)?;

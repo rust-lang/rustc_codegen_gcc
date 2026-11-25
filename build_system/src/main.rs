@@ -41,6 +41,8 @@ fn main() {
         }
     }
 
+    let mut args = std::env::args().skip(1);
+
     let Some(command) = cli::ArgsHandler::<Command>::new("[command] [options]")
         .with_unique("cargo", "Executes a cargo command", || Command::Cargo)
         .with_unique("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
@@ -55,23 +57,23 @@ fn main() {
         .with_unique("fuzz", "Fuzzes `cg_gcc` using `rustlantis`", || Command::Fuzz)
         .with_unique("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
         .with_unique("check-todo", "Checks todo in the project", || Command::CheckTodo)
-        .parse_unique(std::env::args().skip(1)) else {
+        .parse_unique(&mut args) else {
             return
     };
     if let Err(e) = match command {
-        Command::Cargo => rust_tools::run_cargo(),
-        Command::Rustc => rust_tools::run_rustc(),
-        Command::Clean => clean::run(),
-        Command::Prepare => prepare::run(),
-        Command::Build => build::run(),
-        Command::Test => test::run(),
-        Command::Info => info::run(),
-        Command::CloneGcc => clone_gcc::run(),
-        Command::Fmt => fmt::run(),
-        Command::Fuzz => fuzz::run(),
-        Command::AbiTest => abi_test::run(),
-        Command::Clippy => clippy::run(),
-        Command::CheckTodo => todo::run(),
+        Command::Cargo => rust_tools::run_cargo(args),
+        Command::Rustc => rust_tools::run_rustc(args),
+        Command::Clean => clean::run(args),
+        Command::Prepare => prepare::run(args),
+        Command::Build => build::run(args),
+        Command::Test => test::run(args),
+        Command::Info => info::run(args),
+        Command::CloneGcc => clone_gcc::run(args),
+        Command::Fmt => fmt::run(args),
+        Command::Fuzz => fuzz::run(args),
+        Command::AbiTest => abi_test::run(args),
+        Command::Clippy => clippy::run(args),
+        Command::CheckTodo => todo::run(args),
     } {
         eprintln!("Command failed to run: {e}");
         // CI needs to tell a build system error apart from the test failures some suites expect.

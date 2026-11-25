@@ -17,9 +17,7 @@ fn show_usage() {
     );
 }
 
-pub fn run() -> Result<(), String> {
-    // We skip binary name and the `fuzz` command.
-    let mut args = std::env::args().skip(2);
+pub fn run<I: Iterator<Item = String>>(mut args: I) -> Result<(), String> {
     let mut start = 0;
     let mut count = 100;
     let mut threads =

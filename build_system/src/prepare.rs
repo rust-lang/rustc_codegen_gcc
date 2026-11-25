@@ -185,7 +185,7 @@ struct PrepareArgs {
     sysroot_source: Option<String>,
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     if let Some(args) = ArgsHandler::<PrepareArgs>::new("prepare")
         .with_flag("--cross", "Apply the patches needed to do cross-compilation", |obj| {
             obj.cross_compile = true;
@@ -203,7 +203,7 @@ pub fn run() -> Result<(), String> {
         .with_arg("--sysroot-source", "Specify custom path for sysroot source", |obj, arg| {
             obj.sysroot_source = Some(arg);
         })
-        .parse_args(std::env::args().skip(2))?
+        .parse_args(args)?
     {
         let sysroot_path = get_sysroot_dir();
         prepare_libcore(

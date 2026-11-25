@@ -75,8 +75,8 @@ struct TestArg {
 }
 
 impl TestArg {
-    fn new() -> Result<Option<Self>, String> {
-        let mut args = ArgsHandler::<TestArg>::new("test")
+    fn new<I: Iterator<Item = String>>(args: I) -> Result<Option<Self>, String> {
+        let mut args_handler = ArgsHandler::<TestArg>::new("test")
             .with_flag("--use-system-gcc", "Use system installed libgccjit", |obj| {
                 println!("Using system GCC");
                 obj.use_system_gcc = true;
@@ -124,20 +124,20 @@ impl TestArg {
             .with_multi(
                 "--",
                 "Everything coming after `--` will be considered as a test arg",
-                |obj, args| {
-                    obj.test_args.extend(args);
+                |obj, extra_args| {
+                    obj.test_args.extend(extra_args);
                 },
             );
 
         for (runner_name, (help, _)) in get_runners() {
-            args = args.with_flag(runner_name, help, move |obj| {
+            args_handler = args_handler.with_flag(runner_name, help, move |obj| {
                 if !obj.runners.iter().any(|runner| runner == runner_name) {
                     obj.runners.push(runner_name.into());
                 }
             });
         }
 
-        if let Some(mut test_arg) = args.parse_args(std::env::args().skip(2))? {
+        if let Some(mut test_arg) = args_handler.parse_args(args)? {
             match (test_arg.current_part, test_arg.nb_parts) {
                 (Some(_), Some(_)) | (None, None) => {}
                 _ => {
@@ -151,7 +151,7 @@ impl TestArg {
             if test_arg.config_info.no_default_features {
                 test_arg.flags.push("--no-default-features".into());
             }
-            test_arg.flags.extend(test_arg.config_info.features.drain(..));
+            test_arg.flags.append(&mut test_arg.config_info.features);
             Ok(Some(test_arg))
         } else {
             Ok(None)
@@ -1574,8 +1574,8 @@ fn run_all(env: &Env, args: &TestArg) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run() -> Result<(), String> {
-    let mut args = match TestArg::new()? {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    let mut args = match TestArg::new(args)? {
         Some(args) => args,
         None => return Ok(()),
     };
