@@ -158,13 +158,13 @@ impl ConfigInfo {
             .with_arg("--target", "Set the target to [arg]", |obj, arg| {
                 obj.target = arg;
             })
-            .with_non_empty_arg("--target-triple", "Set the target triple to [arg]", |obj, arg| {
+            .with_arg("--target-triple", "Set the target triple to [arg]", |obj, arg| {
                 obj.target_triple = arg;
             })
-            .with_non_empty_arg("--out-dir", "Location where the files will be generated", |obj, arg| {
+            .with_arg("--out-dir", "Location where the files will be generated", |obj, arg| {
                 obj.cargo_target_dir = arg;
             })
-            .with_non_empty_arg("--config-file", "Location of the config file to be used", |obj, arg| {
+            .with_arg("--config-file", "Location of the config file to be used", |obj, arg| {
                 obj.config_file = Some(arg);
             })
             .with_flag("--release-sysroot", "Build the sysroot in release mode. Only used when the sysroot is built", |obj| {
@@ -176,13 +176,13 @@ impl ConfigInfo {
             .with_flag("--sysroot-panic-abort", "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built", |obj| {
                 obj.sysroot_panic_abort = true;
             })
-            .with_non_empty_arg("--gcc-path", "Location of the GCC root folder", |obj, arg| {
+            .with_arg("--gcc-path", "Location of the GCC root folder", |obj, arg| {
                 obj.gcc_path = Some(arg);
             })
-            .with_non_empty_arg("--cg_gcc-path", "Location of the rustc_codegen_gcc root folder (used when ran from another directory)", |obj, arg| {
+            .with_arg("--cg_gcc-path", "Location of the rustc_codegen_gcc root folder (used when ran from another directory)", |obj, arg| {
                 obj.cg_gcc_path = Some(arg.into());
             })
-            .with_non_empty_arg("--use-backend", "Useful only for rustc testsuite", |obj, arg| {
+            .with_arg("--use-backend", "Useful only for rustc testsuite", |obj, arg| {
                 obj.backend = Some(arg);
             })
             .with_flag("--no-default-features", "Add `--no-default-features` flag to cargo commands", |obj| {

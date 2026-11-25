@@ -84,24 +84,20 @@ impl TestArg {
             .with_flag("--build-only", "Only build rustc_codegen_gcc then exits", |obj| {
                 obj.build_only = true;
             })
-            .with_non_empty_arg_res(
-                "--nb-parts",
-                "Used to split rustc_tests (for CI needs)",
-                |obj, nb| {
-                    let Ok(nb) = usize::from_str(nb.as_str()) else {
-                        return Err(format!("Expected a number after `--nb-parts`, found `{nb}`"));
-                    };
-                    obj.nb_parts = Some(nb);
-                    Ok(())
-                },
-            )
-            .with_non_empty_arg_res(
+            .with_arg_res("--nb-parts", "Used to split rustc_tests (for CI needs)", |obj, value| {
+                let Ok(nb) = usize::from_str(value.as_str()) else {
+                    return Err(format!("Expected a number after `--nb-parts`, found `{value}`"));
+                };
+                obj.nb_parts = Some(nb);
+                Ok(())
+            })
+            .with_arg_res(
                 "--current-part",
                 "Used with `--nb-parts`, allows you to specify which parts to test",
-                |obj, nb| {
-                    let Ok(nb) = usize::from_str(nb.as_str()) else {
+                |obj, value| {
+                    let Ok(nb) = usize::from_str(value.as_str()) else {
                         return Err(format!(
-                            "Expected a number after `--current-part`, found `{nb}`"
+                            "Expected a number after `--current-part`, found `{value}`"
                         ));
                     };
                     obj.current_part = Some(nb);
@@ -111,7 +107,7 @@ impl TestArg {
             .with_flag("--keep-lto-tests", "If used, the lto tests will be kept", |obj| {
                 obj.keep_lto_tests = true;
             })
-            .with_non_empty_arg(
+            .with_arg(
                 "--sysroot-features",
                 "Add a new feature to be used when building the sysroot",
                 |obj, feature| {
@@ -152,9 +148,7 @@ impl TestArg {
         if test_arg.config_info.no_default_features {
             test_arg.flags.push("--no-default-features".into());
         }
-        for feature in test_arg.config_info.features.iter().cloned() {
-            test_arg.flags.extend_from_slice(&["--features".into(), feature]);
-        }
+        test_arg.flags.extend(test_arg.config_info.features.drain(..));
         Ok(Some(test_arg))
     }
 

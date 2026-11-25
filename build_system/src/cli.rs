@@ -95,38 +95,9 @@ impl<O: Default + 'static> ArgsHandler<O> {
 
     /// Used to handle an argument (ie an CLI arg with an associated value like `--value something`).
     /// `callback` is called when processed so you can run an associated action for this argument
-    /// (like setting a type's field).
-    pub fn with_arg<F: Fn(&mut O, String) + 'static>(
-        mut self,
-        name: &str,
-        help: &str,
-        callback: F,
-    ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler {
-                    handler: ArgKind::Arg {
-                        callback: Box::new(move |o, s| {
-                            callback(o, s);
-                            Ok(())
-                        }),
-                        allow_empty: true,
-                    },
-                    help: help.to_string(),
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
-        self
-    }
-
-    /// Similar to [`Self::with_arg`] except it will check that the associated value is not empty.
+    /// (like setting a type's field). It checks that the associated value is not empty.
     /// If empty, `callback` will not be called and it will emit an error.
-    pub fn with_non_empty_arg<F: Fn(&mut O, String) + 'static>(
+    pub fn with_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
         name: &str,
         help: &str,
@@ -155,7 +126,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
     }
 
     /// Equivalent of [`Self::with_non_empty_arg`] but the callback returns a `Result` this time.
-    pub fn with_non_empty_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
+    pub fn with_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
         mut self,
         name: &str,
         help: &str,

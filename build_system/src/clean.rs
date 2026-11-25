@@ -46,17 +46,14 @@ fn clean_ui_tests() -> Result<(), String> {
 }
 
 pub fn run() -> Result<(), String> {
-    let Some(clean) = ArgsHandler::<CleanArg>::new("clean")
+    match ArgsHandler::<CleanArg>::new("clean")
         .with_unique("all", "Clean all data", || CleanArg::All)
-        .with_unique("ui-test", "Clean ui tests", || CleanArg::UiTests)
+        .with_unique("ui-tests", "Clean ui tests", || CleanArg::UiTests)
         // We skip the binary and the "clean" option.
         .parse_unique(std::env::args().skip(2))
-    else {
-        return Ok(());
-    };
-    match clean {
-        CleanArg::All => clean_all()?,
-        CleanArg::UiTests => clean_ui_tests()?,
+    {
+        Some(CleanArg::All) => clean_all(),
+        Some(CleanArg::UiTests) => clean_ui_tests(),
+        None => Ok(()),
     }
-    Ok(())
 }

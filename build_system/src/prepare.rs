@@ -190,19 +190,19 @@ pub fn run() -> Result<(), String> {
         .with_flag("--cross", "Apply the patches needed to do cross-compilation", |obj| {
             obj.cross_compile = true;
         })
-        .with_flag("--only-libcore", "Apply the patches needed to do cross-compilation", |obj| {
-            obj.only_libcore = true;
-        })
+        .with_flag(
+            "--only-libcore",
+            "Only setup libcore and don't clone other repositories",
+            |obj| {
+                obj.only_libcore = true;
+            },
+        )
         .with_flag("--libgccjit12-patches", "Apply patches needed for libgccjit12", |obj| {
             obj.libgccjit12_patches = true;
         })
-        .with_non_empty_arg(
-            "--sysroot-source",
-            "Specify custom path for sysroot source",
-            |obj, arg| {
-                obj.sysroot_source = Some(arg);
-            },
-        )
+        .with_arg("--sysroot-source", "Specify custom path for sysroot source", |obj, arg| {
+            obj.sysroot_source = Some(arg);
+        })
         .parse_args(std::env::args().skip(2))?
     else {
         return Ok(());

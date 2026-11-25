@@ -17,7 +17,7 @@ impl Default for CloneGccArgs {
 
 pub fn run() -> Result<(), String> {
     let Some(args) = ArgsHandler::<CloneGccArgs>::new("clone-gcc")
-        .with_non_empty_arg(
+        .with_arg(
             "--out-path",
             "Location where the GCC repository will be cloned (default: `./gcc`)",
             |obj, arg| {
