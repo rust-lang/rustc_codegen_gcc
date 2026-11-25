@@ -1,7 +1,5 @@
 use std::{env, process};
 
-#[macro_use]
-mod macros;
 mod abi_test;
 mod build;
 mod clean;
@@ -43,7 +41,7 @@ fn main() {
         }
     }
 
-    let Some(command) = cli::ArgsHandler::<Command>::new("[command]")
+    let Some(command) = cli::ArgsHandler::<Command>::new("[command] [options]")
         .with_unique("cargo", "Executes a cargo command", || Command::Cargo)
         .with_unique("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
         .with_unique("clippy", "Runs clippy", || Command::Clippy)

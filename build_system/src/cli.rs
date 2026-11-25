@@ -321,7 +321,7 @@ impl<O: 'static> ArgsHandler<O> {
             println!(
                 "rustc_codegen_gcc build system
 
-Usage: build_system {} [options]
+Usage: build_system {}
 
 Options:
     --help     : Displays this help message.
