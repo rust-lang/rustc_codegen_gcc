@@ -7,14 +7,14 @@ type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>)>;
 
 /// This struct is used to declare and parse CLI arguments.
 pub struct ArgsHandler<O> {
-    handlers: BTreeMap<String, ArgHandler<O>>,
+    handlers: BTreeMap<&'static str, ArgHandler<O>>,
     command_name: &'static str,
     fallback: Option<MultiArgFn<O>>,
 }
 
 struct ArgHandler<O> {
     handler: ArgKind<O>,
-    help: String,
+    help: &'static str,
 }
 
 enum ArgKind<O> {
@@ -66,20 +66,20 @@ impl<O: Default + 'static> ArgsHandler<O> {
     /// field).
     pub fn with_flag<F: Fn(&mut O) + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
         if self
             .handlers
             .insert(
-                name.to_string(),
+                name,
                 ArgHandler {
                     handler: ArgKind::Flag(Box::new(move |o| {
                         callback(o);
                         Ok(())
                     })),
-                    help: help.to_string(),
+                    help,
                 },
             )
             .is_some()
@@ -95,20 +95,20 @@ impl<O: Default + 'static> ArgsHandler<O> {
     /// If empty, `callback` will not be called and it will emit an error.
     pub fn with_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
         if self
             .handlers
             .insert(
-                name.to_string(),
+                name,
                 ArgHandler {
                     handler: ArgKind::Arg(Box::new(move |o, s| {
                         callback(o, s);
                         Ok(())
                     })),
-                    help: help.to_string(),
+                    help,
                 },
             )
             .is_some()
@@ -121,16 +121,13 @@ impl<O: Default + 'static> ArgsHandler<O> {
     /// Equivalent of [`Self::with_non_empty_arg`] but the callback returns a `Result` this time.
     pub fn with_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
         if self
             .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler { handler: ArgKind::Arg(Box::new(callback)), help: help.to_string() },
-            )
+            .insert(name, ArgHandler { handler: ArgKind::Arg(Box::new(callback)), help })
             .is_some()
         {
             panic!("`{name}` is already defined in `{}`", self.command_name);
@@ -140,18 +137,18 @@ impl<O: Default + 'static> ArgsHandler<O> {
 
     pub fn with_multi<F: Fn(&mut O, &mut dyn Iterator<Item = String>) + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
         self.handlers.insert(
-            name.to_string(),
+            name,
             ArgHandler {
                 handler: ArgKind::Multi(Box::new(move |o, s| {
                     callback(o, s);
                     Ok(())
                 })),
-                help: help.to_string(),
+                help,
             },
         );
         self
@@ -177,7 +174,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
     ) -> Self {
         for (name, ArgHandler { handler, help }) in sub.handlers {
             let handler = ArgHandler { handler: handler.convert_to_parent(get_field), help };
-            if self.handlers.insert(name.clone(), handler).is_some() {
+            if self.handlers.insert(name, handler).is_some() {
                 panic!(
                     "`{name}` is defined both in `{}` and `{}`",
                     self.command_name, sub.command_name
@@ -243,9 +240,9 @@ Options:",
             let name = if let Some(extra) = handler.handler.extra_help_word() {
                 format!("{arg_name} {extra}")
             } else {
-                arg_name.clone()
+                arg_name.to_string()
             };
-            commands.push((name, handler.help.as_str()));
+            commands.push((name, handler.help));
         }
         crate::utils::show_help_with_indent(commands, true);
     }
