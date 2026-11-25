@@ -20,21 +20,20 @@ mod todo;
 mod utils;
 const BUILD_DIR: &str = "build";
 
-commands_decl! {
-    Command,
-    Cargo: "cargo" => "Executes a cargo command",
-    Clean: "clean" => "Cleans the build directory, removing all compiled files and artifacts",
-    Clippy: "clippy" => "Runs clippy",
-    CloneGcc: "clone-gcc" => "Clones the GCC compiler from a specified source",
-    Prepare: "prepare" => "Prepares the environment for building, including fetching dependencies and setting up configurations",
-    Build: "build" => "Compiles the project",
-    Rustc: "rustc" => "Compiles the program using the GCC compiler",
-    Test: "test" => "Runs tests for the project",
-    Info: "info" => "Displays information about the build environment and project configuration",
-    Fmt: "fmt" => "Runs rustfmt",
-    Fuzz: "fuzz" => "Fuzzes `cg_gcc` using `rustlantis`",
-    AbiTest: "abi-test" => "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM",
-    CheckTodo: "check-todo" => "Checks todo in the project",
+enum Command {
+    Cargo,
+    Clean,
+    Clippy,
+    CloneGcc,
+    Prepare,
+    Build,
+    Rustc,
+    Test,
+    Info,
+    Fmt,
+    Fuzz,
+    AbiTest,
+    CheckTodo,
 }
 
 fn main() {
@@ -44,7 +43,24 @@ fn main() {
         }
     }
 
-    if let Err(e) = match Command::from(env::args().nth(1).as_deref()) {
+    let Some(command) = cli::ArgsHandler::<Command>::new("[command]")
+        .with_unique("cargo", "Executes a cargo command", || Command::Cargo)
+        .with_unique("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
+        .with_unique("clippy", "Runs clippy", || Command::Clippy)
+        .with_unique("clone-gcc", "Clones the GCC compiler from a specified source", || Command::CloneGcc)
+        .with_unique("prepare", "Prepares the environment for building, including fetching dependencies and setting up configurations", || Command::Prepare)
+        .with_unique("build", "Compiles the project", || Command::Build)
+        .with_unique("rustc", "Compiles the program using the GCC compiler", || Command::Rustc)
+        .with_unique("test",  "Runs tests for the project", || Command::Test)
+        .with_unique("info",  "Displays information about the build environment and project configuration", || Command::Info)
+        .with_unique("fmt", "Runs rustfmt", || Command::Fmt)
+        .with_unique("fuzz", "Fuzzes `cg_gcc` using `rustlantis`", || Command::Fuzz)
+        .with_unique("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
+        .with_unique("check-todo", "Checks todo in the project", || Command::CheckTodo)
+        .parse_unique(std::env::args().skip(1)) else {
+            return
+    };
+    if let Err(e) = match command {
         Command::Cargo => rust_tools::run_cargo(),
         Command::Rustc => rust_tools::run_rustc(),
         Command::Clean => clean::run(),
