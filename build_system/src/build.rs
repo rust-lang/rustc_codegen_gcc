@@ -4,20 +4,17 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
+use crate::cli::ArgsHandler;
 use crate::config::{Channel, ConfigInfo};
 use crate::utils::{
     create_dir, get_sysroot_dir, run_command, run_command_with_output_and_env, rustc_version_info,
     walk_dir,
 };
 
-sub_command_decl! {
-    BuildArg => "build",
-    build_sysroot: bool = "--sysroot" => "When used on its own, build backend in dev mode with \
-optimized dependencies and sysroot in dev mode (unoptimized). When used together with \
-`--release`, build backend in release mode with optimized dependencies. When used together with \
-`--release-sysroot`, build the sysroot in release mode with optimized dependencies instead of \
-in dev mode",
-    + config_info: ConfigInfo
+#[derive(Default)]
+struct BuildArgs {
+    build_sysroot: bool,
+    config_info: ConfigInfo,
 }
 
 fn cleanup_sysroot_previous_build(library_dir: &Path) {
@@ -203,7 +200,7 @@ pub fn build_sysroot(env: &HashMap<String, String>, config: &ConfigInfo) -> Resu
     Ok(())
 }
 
-fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
+fn build_codegen(args: &mut BuildArgs) -> Result<(), String> {
     let mut env = HashMap::new();
 
     if args.config_info.no_default_features {
@@ -240,9 +237,22 @@ fn build_codegen(args: &mut BuildArg) -> Result<(), String> {
 
 /// Executes the build process.
 pub fn run() -> Result<(), String> {
-    let mut args = match BuildArg::new()? {
-        Some(args) => args,
-        None => return Ok(()),
+    let Some(mut args) = ArgsHandler::<BuildArgs>::new("build")
+        .with_flag(
+            "--sysroot",
+            "When used on its own, build backend in dev mode with \
+optimized dependencies and sysroot in dev mode (unoptimized). When used together with \
+`--release`, build backend in release mode with optimized dependencies. When used together with \
+`--release-sysroot`, build the sysroot in release mode with optimized dependencies instead of \
+in dev mode",
+            |obj| {
+                obj.build_sysroot = true;
+            },
+        )
+        .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
+        .parse_args(std::env::args().skip(2))?
+    else {
+        return Ok(());
     };
     args.config_info.setup_gcc_path()?;
     build_codegen(&mut args)?;

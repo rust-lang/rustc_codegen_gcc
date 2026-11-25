@@ -190,78 +190,6 @@ impl ConfigInfo {
             })
     }
 
-    /// Returns `true` if the argument was taken into account.
-    pub fn parse_argument(
-        &mut self,
-        arg: &str,
-        args: &mut impl Iterator<Item = String>,
-    ) -> Result<bool, String> {
-        match arg {
-            "--features" => {
-                if let Some(arg) = args.next() {
-                    self.features.push(arg);
-                } else {
-                    return Err("Expected a value after `--features`, found nothing".to_string());
-                }
-            }
-            "--target" => {
-                if let Some(arg) = args.next() {
-                    self.target = arg;
-                } else {
-                    return Err("Expected a value after `--target`, found nothing".to_string());
-                }
-            }
-            "--target-triple" => match args.next() {
-                Some(arg) if !arg.is_empty() => self.target_triple = arg,
-                _ => {
-                    return Err(
-                        "Expected a value after `--target-triple`, found nothing".to_string()
-                    );
-                }
-            },
-            "--out-dir" => match args.next() {
-                Some(arg) if !arg.is_empty() => {
-                    self.cargo_target_dir = arg.to_string();
-                }
-                _ => return Err("Expected a value after `--out-dir`, found nothing".to_string()),
-            },
-            "--config-file" => match args.next() {
-                Some(arg) if !arg.is_empty() => {
-                    self.config_file = Some(arg.to_string());
-                }
-                _ => {
-                    return Err("Expected a value after `--config-file`, found nothing".to_string());
-                }
-            },
-            "--release-sysroot" => self.sysroot_release_channel = true,
-            "--release" => self.channel = Channel::Release,
-            "--sysroot-panic-abort" => self.sysroot_panic_abort = true,
-            "--gcc-path" => match args.next() {
-                Some(arg) if !arg.is_empty() => {
-                    self.gcc_path = Some(arg);
-                }
-                _ => {
-                    return Err("Expected a value after `--gcc-path`, found nothing".to_string());
-                }
-            },
-            "--cg_gcc-path" => match args.next() {
-                Some(arg) if !arg.is_empty() => {
-                    self.cg_gcc_path = Some(arg.into());
-                }
-                _ => {
-                    return Err("Expected a value after `--cg_gcc-path`, found nothing".to_string());
-                }
-            },
-            "--use-backend" => match args.next() {
-                Some(backend) if !backend.is_empty() => self.backend = Some(backend),
-                _ => return Err("Expected an argument after `--use-backend`, found nothing".into()),
-            },
-            "--no-default-features" => self.no_default_features = true,
-            _ => return Ok(false),
-        }
-        Ok(true)
-    }
-
     pub fn rustc_command_vec(&self) -> Vec<&dyn AsRef<OsStr>> {
         let mut command: Vec<&dyn AsRef<OsStr>> = Vec::with_capacity(self.rustc_command.len());
         for arg in self.rustc_command.iter() {
@@ -543,35 +471,6 @@ impl ConfigInfo {
             env.insert("RUSTC_LOG".to_string(), "warn".to_string());
         }
         Ok(())
-    }
-
-    pub fn usage() -> Vec<(String, &'static str)> {
-        vec![
-            ("--features [arg]".to_string(), "Add a new feature [arg]"),
-            ("--target-triple [arg]".to_string(), "Set the target triple to [arg]"),
-            ("--target [arg]".to_string(), "Set the target to [arg]"),
-            ("--release".to_string(), "Build backend in release mode with optimized dependencies"),
-            ("--out-dir".to_string(), "Location where the files will be generated"),
-            ("--config-file".to_string(), "Location of the config file to be used"),
-            ("--gcc-path".to_string(), "Location of the GCC root folder"),
-            (
-                "--cg_gcc-path".to_string(),
-                "Location of the rustc_codegen_gcc root folder (used when ran from another directory)",
-            ),
-            (
-                "--no-default-features".to_string(),
-                "Add `--no-default-features` flag to cargo commands",
-            ),
-            ("--use-backend".to_string(), "Useful only for rustc testsuite"),
-            (
-                "--sysroot-panic-abort".to_string(),
-                "Build the sysroot with `-Cpanic=abort` (no unwinding). Only used when the sysroot is built",
-            ),
-            (
-                "--release-sysroot".to_string(),
-                "Build the sysroot in release mode. Only used when the sysroot is built",
-            ),
-        ]
     }
 }
 
