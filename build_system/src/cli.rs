@@ -265,7 +265,7 @@ impl<O: 'static> CommandsHandler<O> {
     }
 
     pub fn parse_args<I: Iterator<Item = String>>(
-        &mut self,
+        mut self,
         mut args: I,
     ) -> Result<Option<O>, String> {
         if let Some(arg) = args.next() {
