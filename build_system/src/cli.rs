@@ -241,8 +241,6 @@ Options:",
     }
 }
 
-type UniqueFlagFn<O> = Box<dyn Fn() -> O>;
-
 /// This struct is used to declare and parse one CLI command.
 pub struct CommandsHandler<O> {
     handlers: BTreeMap<&'static str, CommandHandler<O>>,
@@ -250,7 +248,7 @@ pub struct CommandsHandler<O> {
 }
 
 struct CommandHandler<O> {
-    handler: UniqueFlagFn<O>,
+    handler: O,
     help: &'static str,
 }
 
@@ -259,29 +257,23 @@ impl<O: 'static> CommandsHandler<O> {
         Self { handlers: BTreeMap::new(), command_name }
     }
 
-    pub fn with_flag<F: Fn() -> O + 'static>(
-        mut self,
-        name: &'static str,
-        help: &'static str,
-        callback: F,
-    ) -> Self {
-        if self
-            .handlers
-            .insert(name, CommandHandler { handler: Box::new(callback), help })
-            .is_some()
-        {
+    pub fn with_command(mut self, name: &'static str, help: &'static str, handler: O) -> Self {
+        if self.handlers.insert(name, CommandHandler { handler, help }).is_some() {
             panic!("`{name}` is already defined in `{}`", self.command_name);
         }
         self
     }
 
-    pub fn parse_args<I: Iterator<Item = String>>(&self, mut args: I) -> Result<Option<O>, String> {
+    pub fn parse_args<I: Iterator<Item = String>>(
+        &mut self,
+        mut args: I,
+    ) -> Result<Option<O>, String> {
         if let Some(arg) = args.next() {
             if arg == "--help" {
                 self.show_usage();
                 Ok(None)
-            } else if let Some(arg_handler) = self.handlers.get(arg.as_str()) {
-                Ok(Some((arg_handler.handler)()))
+            } else if let Some(arg_handler) = self.handlers.remove(arg.as_str()) {
+                Ok(Some(arg_handler.handler))
             } else {
                 Err(format!(
                     "Unknown command `{arg}`. Use `--help` to see the list of available commands",

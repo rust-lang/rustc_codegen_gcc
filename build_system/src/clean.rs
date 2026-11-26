@@ -47,8 +47,8 @@ fn clean_ui_tests() -> Result<(), String> {
 
 pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     match CommandsHandler::<CleanArg>::new("clean")
-        .with_flag("all", "Clean all data", || CleanArg::All)
-        .with_flag("ui-tests", "Clean ui tests", || CleanArg::UiTests)
+        .with_command("all", "Clean all data", CleanArg::All)
+        .with_command("ui-tests", "Clean ui tests", CleanArg::UiTests)
         .parse_args(args)?
     {
         Some(CleanArg::All) => clean_all(),
