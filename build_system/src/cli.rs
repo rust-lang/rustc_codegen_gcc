@@ -123,7 +123,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
-    /// Equivalent of [`Self::with_non_empty_arg`] but the callback returns a `Result` this time.
+    /// Equivalent of [`Self::with_arg`] but the callback returns a `Result` this time.
     pub fn with_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
         mut self,
         name: &'static str,
