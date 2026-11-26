@@ -13,7 +13,7 @@ fn handle_args<I: Iterator<Item = String>>(
     args: I,
 ) -> Result<Option<Vec<String>>, String> {
     ArgsHandler::<Vec<String>>::new(command)
-        .with_fallback(|o, arg, args| {
+        .with_fallback("Arguments passed to the subcommand", |o, arg, args| {
             o.push(arg.into());
             o.extend(args);
         })

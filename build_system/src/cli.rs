@@ -9,7 +9,12 @@ type MultiArgFn<O> = Box<dyn Fn(&mut O, &str, &mut dyn Iterator<Item = String>)>
 pub struct ArgsHandler<O> {
     handlers: BTreeMap<&'static str, ArgHandler<O>>,
     command_name: &'static str,
-    fallback: Option<MultiArgFn<O>>,
+    fallback: Option<Fallback<O>>,
+}
+
+struct Fallback<O> {
+    handler: MultiArgFn<O>,
+    help: &'static str,
 }
 
 struct ArgHandler<O> {
@@ -156,12 +161,13 @@ impl<O: Default + 'static> ArgsHandler<O> {
 
     pub fn with_fallback<F: Fn(&mut O, &str, &mut dyn Iterator<Item = String>) + 'static>(
         mut self,
+        help: &'static str,
         callback: F,
     ) -> Self {
         if self.fallback.is_some() {
             panic!("`with_fallback` was called more than once on command `{}`", self.command_name);
         }
-        self.fallback = Some(Box::new(callback));
+        self.fallback = Some(Fallback { handler: Box::new(callback), help });
         self
     }
 
@@ -217,7 +223,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
             }
             Ok(true)
         } else if let Some(ref fallback) = self.fallback {
-            fallback(parsed, arg, args);
+            (fallback.handler)(parsed, arg, args);
             Ok(true)
         } else {
             Ok(false)
@@ -244,6 +250,9 @@ Options:",
                 arg_name.to_string()
             };
             commands.push((name, handler.help));
+        }
+        if let Some(ref fallback) = self.fallback {
+            commands.push(("[args]".into(), fallback.help));
         }
         crate::utils::show_help_with_indent(commands, true);
     }
