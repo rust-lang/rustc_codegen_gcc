@@ -75,22 +75,14 @@ impl<O: Default + 'static> ArgsHandler<O> {
         help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name,
-                ArgHandler {
-                    handler: ArgKind::Flag(Box::new(move |o| {
-                        callback(o);
-                        Ok(())
-                    })),
-                    help,
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(
+            name,
+            help,
+            ArgKind::Flag(Box::new(move |o| {
+                callback(o);
+                Ok(())
+            })),
+        );
         self
     }
 
@@ -104,22 +96,14 @@ impl<O: Default + 'static> ArgsHandler<O> {
         help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name,
-                ArgHandler {
-                    handler: ArgKind::Arg(Box::new(move |o, s| {
-                        callback(o, s);
-                        Ok(())
-                    })),
-                    help,
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(
+            name,
+            help,
+            ArgKind::Arg(Box::new(move |o, s| {
+                callback(o, s);
+                Ok(())
+            })),
+        );
         self
     }
 
@@ -130,13 +114,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(name, ArgHandler { handler: ArgKind::Arg(Box::new(callback)), help })
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(name, help, ArgKind::Arg(Box::new(callback)));
         self
     }
 
@@ -146,17 +124,22 @@ impl<O: Default + 'static> ArgsHandler<O> {
         help: &'static str,
         callback: F,
     ) -> Self {
-        self.handlers.insert(
+        self.insert_handler(
             name,
-            ArgHandler {
-                handler: ArgKind::Multi(Box::new(move |o, s| {
-                    callback(o, s);
-                    Ok(())
-                })),
-                help,
-            },
+            help,
+            ArgKind::Multi(Box::new(move |o, s| {
+                callback(o, s);
+                Ok(())
+            })),
         );
         self
+    }
+
+    fn insert_handler(&mut self, name: &'static str, help: &'static str, handler: ArgKind<O>) {
+        let handler = ArgHandler { handler, help };
+        if self.handlers.insert(name, handler).is_some() {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
     }
 
     pub fn with_fallback<F: Fn(&mut O, &str, &mut dyn Iterator<Item = String>) + 'static>(
@@ -179,13 +162,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         get_field: fn(&mut O) -> &mut S,
     ) -> Self {
         for (name, ArgHandler { handler, help }) in sub.handlers {
-            let handler = ArgHandler { handler: handler.convert_to_parent(get_field), help };
-            if self.handlers.insert(name, handler).is_some() {
-                panic!(
-                    "`{name}` is defined both in `{}` and `{}`",
-                    self.command_name, sub.command_name
-                );
-            }
+            self.insert_handler(name, help, handler.convert_to_parent(get_field));
         }
         self
     }
