@@ -43,7 +43,7 @@ fn main() {
 
     let mut args = std::env::args().skip(1);
 
-    let Some(command) = cli::CommandsHandler::<Command>::new("[command] [options]")
+    if let Some(command) = cli::CommandsHandler::<Command>::new("[command] [options]")
         .with_flag("cargo", "Executes a cargo command", || Command::Cargo)
         .with_flag("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
         .with_flag("clippy", "Runs clippy", || Command::Clippy)
@@ -57,10 +57,8 @@ fn main() {
         .with_flag("fuzz", "Fuzzes `cg_gcc` using `rustlantis`", || Command::Fuzz)
         .with_flag("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
         .with_flag("check-todo", "Checks todo in the project", || Command::CheckTodo)
-        .parse_args(&mut args) else {
-            return
-    };
-    if let Err(e) = match command {
+        .parse_args(&mut args)
+    && let Err(e) = match command {
         Command::Cargo => rust_tools::run_cargo(args),
         Command::Rustc => rust_tools::run_rustc(args),
         Command::Clean => clean::run(args),

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
 type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
 type MultiArgFnRes<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
-type MultiArgFn<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>)>;
+type MultiArgFn<O> = Box<dyn Fn(&mut O, &str, &mut dyn Iterator<Item = String>)>;
 
 /// This struct is used to declare and parse CLI arguments.
 pub struct ArgsHandler<O> {
@@ -154,7 +154,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
         self
     }
 
-    pub fn with_fallback<F: Fn(&mut O, &mut dyn Iterator<Item = String>) + 'static>(
+    pub fn with_fallback<F: Fn(&mut O, &str, &mut dyn Iterator<Item = String>) + 'static>(
         mut self,
         callback: F,
     ) -> Self {
@@ -217,7 +217,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
             }
             Ok(true)
         } else if let Some(ref fallback) = self.fallback {
-            fallback(parsed, args);
+            fallback(parsed, arg, args);
             Ok(true)
         } else {
             Ok(false)
@@ -228,10 +228,11 @@ impl<O: Default + 'static> ArgsHandler<O> {
         println!(
             "rustc_codegen_gcc build system
 
-Usage: build_system{}
+Usage: build_system{}{}
 
 Options:",
-            if self.command_name.is_empty() { "" } else { " " }
+            if self.command_name.is_empty() { "" } else { " " },
+            self.command_name,
         );
 
         // `+ 1` because we add the `--help` in `show_help_with_indent`.
