@@ -49,18 +49,19 @@ jobs:
             run_cargo_tests: true
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       # `llvm-tools` is needed to install the `FileCheck` binary which is used for asm tests.
@@ -101,7 +102,7 @@ jobs:
         ./y.sh clean all
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
@@ -113,13 +114,15 @@ jobs:
 
     - name: Check out rust-lang/rust
       if: ${{ contains(matrix.commands, '-rustc') }}
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
       with:
         path: rust/compiler/rustc_codegen_gcc
 
     - name: Run tests
       run: |
-        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${{ matrix.commands }}
+        ./y.sh test --release --clean --build-sysroot --no-builtins-tests ${MATRIX_COMMANDS}
+      env:
+        MATRIX_COMMANDS: ${{ matrix.commands }}
 
   # FIXME: test LTO, based on release.yml, once rustup distributes liblto_plugin.so and lto1
   # (and cg_gcc can find them in the sysroot).
@@ -138,13 +141,14 @@ jobs:
         ]
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
@@ -153,7 +157,7 @@ jobs:
       run: rustup component add rustfmt
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -199,7 +203,7 @@ jobs:
         ./y.sh test --cargo-tests
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
@@ -216,7 +220,9 @@ jobs:
         # FIXME: these tests fail when the sysroot is compiled with LTO because of a missing symbol in proc-macro.
         # FIXME: remove --skip test_tile_ and --skip --skip test__tile when it's implemented.
         # FIXME: remove --skip test_mm_srav_epi64 when it's fixed upstream.
-        STDARCH_TEST_SKIP_FUNCTION="xsave,xsaveopt,xsave64,xsaveopt64" STDARCH_TEST_EVERYTHING=1 CHANNEL=release CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${{ matrix.cargo_runner }}" TARGET=x86_64-unknown-linux-gnu CG_RUSTFLAGS="-Ainternal_features" ./y.sh cargo test --manifest-path build/build_sysroot/sysroot_src/library/stdarch/Cargo.toml -- --skip rtm --skip tbm --skip sse4a --skip test_tile_ --skip test__tile --skip test_mm_srav_epi64
+        STDARCH_TEST_SKIP_FUNCTION="xsave,xsaveopt,xsave64,xsaveopt64" STDARCH_TEST_EVERYTHING=1 CHANNEL=release CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${MATRIX_CARGO_RUNNER}" TARGET=x86_64-unknown-linux-gnu CG_RUSTFLAGS="-Ainternal_features" ./y.sh cargo test --manifest-path build/build_sysroot/sysroot_src/library/stdarch/Cargo.toml -- --skip rtm --skip tbm --skip sse4a --skip test_tile_ --skip test__tile --skip test_mm_srav_epi64
+      env:
+        MATRIX_CARGO_RUNNER: ${{ matrix.cargo_runner }}
 
   failures:
     runs-on: ubuntu-26.04
@@ -224,23 +230,24 @@ jobs:
     timeout-minutes: 90
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         sparse-checkout: .github
         sparse-checkout-cone-mode: false
+        persist-credentials: false
 
     - name: Use the cg_gcc distributed by rustup
-      uses: ./.github/actions/rustup-cg-gcc
+      uses: $/.github/actions/rustup-cg-gcc
       with:
         path: rust
 
     - name: Remove rustc-dev
-      uses: ./.github/actions/remove-rustc-dev
+      uses: $/.github/actions/remove-rustc-dev
       with:
         directory: rust/compiler/rustc_codegen_gcc
 
     - name: Add apt mirrors
-      uses: ./.github/actions/apt-mirrors
+      uses: $/.github/actions/apt-mirrors
 
     - name: Install packages
       timeout-minutes: 20
@@ -259,7 +266,7 @@ jobs:
         ./y.sh prepare
 
     - name: Check out rust-lang/rust
-      uses: ./.github/actions/checkout-rust
+      uses: $/.github/actions/checkout-rust
       with:
         path: rust/compiler/rustc_codegen_gcc
 
