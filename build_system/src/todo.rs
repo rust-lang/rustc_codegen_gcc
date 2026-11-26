@@ -37,7 +37,7 @@ fn list_tracked_files() -> Result<Vec<PathBuf>, String> {
 }
 
 pub(crate) fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
-    if ArgsHandler::<()>::new("todo").parse_args(args)?.is_none() {
+    if ArgsHandler::<()>::new("check-todo").parse_args(args)?.is_none() {
         return Ok(());
     }
 
