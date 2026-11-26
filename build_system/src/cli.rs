@@ -292,22 +292,21 @@ impl<O: 'static> CommandsHandler<O> {
         self
     }
 
-    pub fn parse_args<I: Iterator<Item = String>>(&self, mut args: I) -> Option<O> {
+    pub fn parse_args<I: Iterator<Item = String>>(&self, mut args: I) -> Result<Option<O>, String> {
         if let Some(arg) = args.next() {
             if arg == "--help" {
                 self.show_usage();
-                None
+                Ok(None)
             } else if let Some(arg_handler) = self.handlers.get(arg.as_str()) {
-                Some((arg_handler.handler)())
+                Ok(Some((arg_handler.handler)()))
             } else {
-                eprintln!("Unknown command `{arg}`");
-                eprintln!();
-                self.show_usage();
-                std::process::exit(1);
+                Err(format!(
+                    "Unknown command `{arg}`. Use `--help` to see the list of available commands",
+                ))
             }
         } else {
             self.show_usage();
-            None
+            Ok(None)
         }
     }
 

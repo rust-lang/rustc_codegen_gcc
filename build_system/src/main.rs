@@ -43,7 +43,7 @@ fn main() {
 
     let mut args = std::env::args().skip(1);
 
-    if let Some(command) = cli::CommandsHandler::<Command>::new("[command] [options]")
+    match cli::CommandsHandler::<Command>::new("[command] [options]")
         .with_flag("cargo", "Executes a cargo command", || Command::Cargo)
         .with_flag("clean", "Cleans the build directory, removing all compiled files and artifacts", || Command::Clean)
         .with_flag("clippy", "Runs clippy", || Command::Clippy)
@@ -58,25 +58,34 @@ fn main() {
         .with_flag("abi-test", "Runs the abi-cafe test suite on the codegen, checking for ABI compatibility with LLVM", || Command::AbiTest)
         .with_flag("check-todo", "Checks todo in the project", || Command::CheckTodo)
         .parse_args(&mut args)
-    && let Err(e) = match command {
-        Command::Cargo => rust_tools::run_cargo(args),
-        Command::Rustc => rust_tools::run_rustc(args),
-        Command::Clean => clean::run(args),
-        Command::Prepare => prepare::run(args),
-        Command::Build => build::run(args),
-        Command::Test => test::run(args),
-        Command::Info => info::run(args),
-        Command::CloneGcc => clone_gcc::run(args),
-        Command::Fmt => fmt::run(args),
-        Command::Fuzz => fuzz::run(args),
-        Command::AbiTest => abi_test::run(args),
-        Command::Clippy => clippy::run(args),
-        Command::CheckTodo => todo::run(args),
-    } {
-        eprintln!("Command failed to run: {e}");
-        // CI needs to tell a build system error apart from the test failures some suites expect.
-        let exit_code =
-            if e == test::TESTS_FAILED_ERROR { test::TESTS_FAILED_EXIT_CODE } else { 1 };
-        process::exit(exit_code);
+    {
+        Ok(Some(command)) => {
+            if let Err(e) = match command {
+                Command::Cargo => rust_tools::run_cargo(args),
+                Command::Rustc => rust_tools::run_rustc(args),
+                Command::Clean => clean::run(args),
+                Command::Prepare => prepare::run(args),
+                Command::Build => build::run(args),
+                Command::Test => test::run(args),
+                Command::Info => info::run(args),
+                Command::CloneGcc => clone_gcc::run(args),
+                Command::Fmt => fmt::run(args),
+                Command::Fuzz => fuzz::run(args),
+                Command::AbiTest => abi_test::run(args),
+                Command::Clippy => clippy::run(args),
+                Command::CheckTodo => todo::run(args),
+            } {
+                eprintln!("Command failed to run: {e}");
+                // CI needs to tell a build system error apart from the test failures some suites expect.
+                let exit_code =
+                    if e == test::TESTS_FAILED_ERROR { test::TESTS_FAILED_EXIT_CODE } else { 1 };
+                process::exit(exit_code);
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
     }
 }
