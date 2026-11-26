@@ -1,30 +1,14 @@
 use std::ffi::OsStr;
 use std::path::Path;
 
+use crate::cli::ArgsHandler;
 use crate::utils::run_command_with_output;
 
-fn show_usage() {
-    println!(
-        r#"
-`abi-test` command help:
-    --help                 : Show this help"#
-    );
-}
-
-pub fn run() -> Result<(), String> {
-    let mut args = std::env::args().skip(2);
-    // FractalFir: In the future, I'd like to add some more subcommands / options.
-    // So, this loop ought to stay for that purpose. It should also stay as a while loop(to parse args)
-    #[allow(clippy::never_loop, clippy::while_let_on_iterator)]
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--help" => {
-                show_usage();
-                return Ok(());
-            }
-            _ => return Err(format!("Unknown option {arg:?}")),
-        }
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    if ArgsHandler::<()>::new("abi-test").parse_args(args)?.is_none() {
+        return Ok(());
     }
+
     // Ensure that we have a cloned version of abi-cafe on hand.
     crate::utils::git_clone(
         "https://github.com/Gankra/abi-cafe.git",

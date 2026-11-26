@@ -1,26 +1,34 @@
 use std::collections::BTreeMap;
 
+type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
+type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
+type MultiArgFnRes<O> = Box<dyn Fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>>;
+type MultiArgFn<O> = Box<dyn Fn(&mut O, &str, &mut dyn Iterator<Item = String>)>;
+
 /// This struct is used to declare and parse CLI arguments.
-pub struct ArgsHandler<O: Default> {
-    handlers: BTreeMap<String, ArgHandler<O>>,
+pub struct ArgsHandler<O> {
+    handlers: BTreeMap<&'static str, ArgHandler<O>>,
     command_name: &'static str,
+    fallback: Option<Fallback<O>>,
+}
+
+struct Fallback<O> {
+    handler: MultiArgFn<O>,
+    help: &'static str,
 }
 
 struct ArgHandler<O> {
     handler: ArgKind<O>,
-    help: String,
+    help: &'static str,
 }
-
-type FlagFn<O> = Box<dyn Fn(&mut O) -> Result<(), String>>;
-type ArgFn<O> = Box<dyn Fn(&mut O, String) -> Result<(), String>>;
 
 enum ArgKind<O> {
     /// No argument.
     Flag(FlagFn<O>),
     /// One argument.
-    Arg { callback: ArgFn<O>, allow_empty: bool },
-    // /// Undefined number of arguments.
-    // Multi(fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>),
+    Arg(ArgFn<O>),
+    /// Undefined number of arguments.
+    Multi(MultiArgFnRes<O>),
 }
 
 impl<O: 'static> ArgKind<O> {
@@ -33,27 +41,29 @@ impl<O: 'static> ArgKind<O> {
             ArgKind::Flag(callback) => {
                 ArgKind::Flag(Box::new(move |parent: &mut Parent| callback(get_field(parent))))
             }
-            ArgKind::Arg { callback, allow_empty } => ArgKind::Arg {
-                callback: Box::new(move |parent: &mut Parent, arg| {
-                    callback(get_field(parent), arg)
-                }),
-                allow_empty,
-            },
-            // ArgKind::Multi(callback) => ArgKind::Multi(Box::new(move |o: &mut Parent, args| callback(get_field(o), args))),
+            ArgKind::Arg(callback) => ArgKind::Arg(Box::new(move |parent: &mut Parent, arg| {
+                callback(get_field(parent), arg)
+            })),
+            ArgKind::Multi(callback) => {
+                ArgKind::Multi(Box::new(move |parent: &mut Parent, args| {
+                    callback(get_field(parent), args)
+                }))
+            }
         }
     }
 
     fn extra_help_word(&self) -> Option<&'static str> {
         match self {
             ArgKind::Flag(_) => None,
-            ArgKind::Arg { .. } => Some("[arg]"),
+            ArgKind::Arg(_) => Some("[arg]"),
+            ArgKind::Multi(_) => Some("[args...]"),
         }
     }
 }
 
 impl<O: Default + 'static> ArgsHandler<O> {
     pub fn new(command_name: &'static str) -> Self {
-        Self { handlers: BTreeMap::new(), command_name }
+        Self { handlers: BTreeMap::new(), command_name, fallback: None }
     }
 
     /// Used to handle a flag (ie an argument without an associated value). `callback` is called
@@ -61,102 +71,88 @@ impl<O: Default + 'static> ArgsHandler<O> {
     /// field).
     pub fn with_flag<F: Fn(&mut O) + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler {
-                    handler: ArgKind::Flag(Box::new(move |o| {
-                        callback(o);
-                        Ok(())
-                    })),
-                    help: help.to_string(),
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(
+            name,
+            help,
+            ArgKind::Flag(Box::new(move |o| {
+                callback(o);
+                Ok(())
+            })),
+        );
         self
     }
 
     /// Used to handle an argument (ie an CLI arg with an associated value like `--value something`).
     /// `callback` is called when processed so you can run an associated action for this argument
-    /// (like setting a type's field).
+    /// (like setting a type's field). It checks that the associated value is not empty.
+    /// If empty, `callback` will not be called and it will emit an error.
     pub fn with_arg<F: Fn(&mut O, String) + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler {
-                    handler: ArgKind::Arg {
-                        callback: Box::new(move |o, s| {
-                            callback(o, s);
-                            Ok(())
-                        }),
-                        allow_empty: true,
-                    },
-                    help: help.to_string(),
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(
+            name,
+            help,
+            ArgKind::Arg(Box::new(move |o, s| {
+                callback(o, s);
+                Ok(())
+            })),
+        );
         self
     }
 
-    /// Similar to [`Self::with_arg`] except it will check that the associated value is not empty.
-    /// If empty, `callback` will not be called and it will emit an error.
-    pub fn with_non_empty_arg<F: Fn(&mut O, String) + 'static>(
+    /// Equivalent of [`Self::with_arg`] but the callback returns a `Result` this time.
+    pub fn with_arg_res<F: Fn(&mut O, String) -> Result<(), String> + 'static>(
         mut self,
-        name: &str,
-        help: &str,
+        name: &'static str,
+        help: &'static str,
         callback: F,
     ) -> Self {
-        if self
-            .handlers
-            .insert(
-                name.to_string(),
-                ArgHandler {
-                    handler: ArgKind::Arg {
-                        callback: Box::new(move |o, s| {
-                            callback(o, s);
-                            Ok(())
-                        }),
-                        allow_empty: false,
-                    },
-                    help: help.to_string(),
-                },
-            )
-            .is_some()
-        {
-            panic!("`{name}` is already defined in `{}`", self.command_name);
-        }
+        self.insert_handler(name, help, ArgKind::Arg(Box::new(callback)));
         self
     }
 
-    // pub fn with_multi(
-    //     mut self,
-    //     name: &str,
-    //     help: &str,
-    //     callback: fn(&mut O, &mut dyn Iterator<Item = String>) -> Result<(), String>,
-    // ) -> Self {
-    //     self.handlers.insert(
-    //         name.to_string(),
-    //         ArgHandler { handler: ArgKind::Multi(callback), help: help.to_string() },
-    //     );
-    //     self
-    // }
+    pub fn with_multi<F: Fn(&mut O, &mut dyn Iterator<Item = String>) + 'static>(
+        mut self,
+        name: &'static str,
+        help: &'static str,
+        callback: F,
+    ) -> Self {
+        self.insert_handler(
+            name,
+            help,
+            ArgKind::Multi(Box::new(move |o, s| {
+                callback(o, s);
+                Ok(())
+            })),
+        );
+        self
+    }
+
+    fn insert_handler(&mut self, name: &'static str, help: &'static str, handler: ArgKind<O>) {
+        let handler = ArgHandler { handler, help };
+        if self.handlers.insert(name, handler).is_some() {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
+    }
+
+    pub fn with_fallback<F: Fn(&mut O, &str, &mut dyn Iterator<Item = String>) + 'static>(
+        mut self,
+        help: &'static str,
+        callback: F,
+    ) -> Self {
+        if self.fallback.is_some() {
+            panic!("`with_fallback` was called more than once on command `{}`", self.command_name);
+        }
+        self.fallback = Some(Fallback { handler: Box::new(callback), help });
+        self
+    }
 
     /// Adds `sub`'s options as if they were declared here; their values go to the field
     /// `get_field` returns.
@@ -166,13 +162,13 @@ impl<O: Default + 'static> ArgsHandler<O> {
         get_field: fn(&mut O) -> &mut S,
     ) -> Self {
         for (name, ArgHandler { handler, help }) in sub.handlers {
-            let handler = ArgHandler { handler: handler.convert_to_parent(get_field), help };
-            if self.handlers.insert(name.clone(), handler).is_some() {
+            if self.handlers.contains_key(name) {
                 panic!(
                     "`{name}` is defined both in `{}` and `{}`",
-                    self.command_name, sub.command_name
+                    self.command_name, sub.command_name,
                 );
             }
+            self.insert_handler(name, help, handler.convert_to_parent(get_field));
         }
         self
     }
@@ -183,8 +179,7 @@ impl<O: Default + 'static> ArgsHandler<O> {
             if arg == "--help" {
                 self.show_usage();
                 return Ok(None);
-            }
-            if !self.parse_arg(&arg, &mut args, &mut parsed)? {
+            } else if !self.parse_arg(&arg, &mut args, &mut parsed)? {
                 return Err(format!(
                     "Unknown argument `{arg}`. Use `--help` to see the list of available options."
                 ));
@@ -203,13 +198,15 @@ impl<O: Default + 'static> ArgsHandler<O> {
         if let Some(arg_handler) = self.handlers.get(arg) {
             match arg_handler.handler {
                 ArgKind::Flag(ref callback) => callback(parsed)?,
-                ArgKind::Arg { ref callback, allow_empty } => match args.next() {
-                    Some(next_arg) if allow_empty || !next_arg.is_empty() => {
-                        callback(parsed, next_arg)?
-                    }
+                ArgKind::Arg(ref callback) => match args.next() {
+                    Some(next_arg) if !next_arg.is_empty() => callback(parsed, next_arg)?,
                     _ => return Err(format!("Expected a value after `{arg}`, found nothing")),
-                }, // ArgKind::Multi(callback) => callback(parsed, args)?,
+                },
+                ArgKind::Multi(ref callback) => callback(parsed, args)?,
             }
+            Ok(true)
+        } else if let Some(ref fallback) = self.fallback {
+            (fallback.handler)(parsed, arg, args);
             Ok(true)
         } else {
             Ok(false)
@@ -217,7 +214,15 @@ impl<O: Default + 'static> ArgsHandler<O> {
     }
 
     fn show_usage(&self) {
-        println!("`{}` command help:\n", self.command_name);
+        println!(
+            "rustc_codegen_gcc build system
+
+Usage: build_system{}{}
+
+Options:",
+            if self.command_name.is_empty() { "" } else { " " },
+            self.command_name,
+        );
 
         // `+ 1` because we add the `--help` in `show_help_with_indent`.
         let mut commands = Vec::with_capacity(self.handlers.len() + 1);
@@ -225,10 +230,78 @@ impl<O: Default + 'static> ArgsHandler<O> {
             let name = if let Some(extra) = handler.handler.extra_help_word() {
                 format!("{arg_name} {extra}")
             } else {
-                arg_name.clone()
+                arg_name.to_string()
             };
-            commands.push((name, handler.help.as_str()));
+            commands.push((name, handler.help));
+        }
+        if let Some(ref fallback) = self.fallback {
+            commands.push(("[args]".into(), fallback.help));
         }
         crate::utils::show_help_with_indent(commands, true);
+    }
+}
+
+/// This struct is used to declare and parse one CLI command.
+pub struct CommandsHandler<O> {
+    handlers: BTreeMap<&'static str, CommandHandler<O>>,
+    command_name: &'static str,
+}
+
+struct CommandHandler<O> {
+    handler: O,
+    help: &'static str,
+}
+
+impl<O: 'static> CommandsHandler<O> {
+    pub fn new(command_name: &'static str) -> Self {
+        Self { handlers: BTreeMap::new(), command_name }
+    }
+
+    pub fn with_command(mut self, name: &'static str, help: &'static str, handler: O) -> Self {
+        if self.handlers.insert(name, CommandHandler { handler, help }).is_some() {
+            panic!("`{name}` is already defined in `{}`", self.command_name);
+        }
+        self
+    }
+
+    pub fn parse_args<I: Iterator<Item = String>>(
+        mut self,
+        mut args: I,
+    ) -> Result<Option<O>, String> {
+        if let Some(arg) = args.next() {
+            if arg == "--help" {
+                self.show_usage();
+                Ok(None)
+            } else if let Some(arg_handler) = self.handlers.remove(arg.as_str()) {
+                Ok(Some(arg_handler.handler))
+            } else {
+                Err(format!(
+                    "Unknown command `{arg}`. Use `--help` to see the list of available commands",
+                ))
+            }
+        } else {
+            self.show_usage();
+            Ok(None)
+        }
+    }
+
+    fn show_usage(&self) {
+        println!(
+            "rustc_codegen_gcc build system
+
+Usage: build_system {}
+
+Options:
+    --help     : Displays this help message.
+
+Commands:",
+            self.command_name,
+        );
+        // `+ 1` because we add the `--help` in `show_help_with_indent`.
+        let mut commands = Vec::with_capacity(self.handlers.len() + 1);
+        for (arg_name, handler) in &self.handlers {
+            commands.push((arg_name.to_string(), handler.help));
+        }
+        crate::utils::show_help_with_indent(commands, false);
     }
 }

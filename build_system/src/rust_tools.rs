@@ -4,33 +4,20 @@ use std::ffi::OsStr;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 
+use crate::cli::ArgsHandler;
 use crate::config::ConfigInfo;
 use crate::utils::{get_toolchain, rustc_toolchain_version_info, rustc_version_info};
 
-fn args(command: &str) -> Result<Option<Vec<String>>, String> {
-    // We skip the binary and the "cargo"/"rustc" option.
-    if let Some("--help") = std::env::args().nth(2).as_deref() {
-        usage(command);
-        return Ok(None);
-    }
-    let args = std::env::args().skip(2).collect::<Vec<_>>();
-    if args.is_empty() {
-        return Err(format!(
-            "Expected at least one argument for `{command}` subcommand, found none"
-        ));
-    }
-    Ok(Some(args))
-}
-
-fn usage(command: &str) {
-    println!(
-        r#"
-`{command}` command help:
-
-    [args]     : Arguments to be passed to the cargo command
-    --help     : Show this help
-"#,
-    )
+fn handle_args<I: Iterator<Item = String>>(
+    command: &'static str,
+    args: I,
+) -> Result<Option<Vec<String>>, String> {
+    ArgsHandler::<Vec<String>>::new(command)
+        .with_fallback("Arguments passed to the subcommand", |o, arg, args| {
+            o.push(arg.into());
+            o.extend(args);
+        })
+        .parse_args(args)
 }
 
 struct RustcTools {
@@ -41,8 +28,11 @@ struct RustcTools {
 }
 
 impl RustcTools {
-    fn new(command: &str) -> Result<Option<Self>, String> {
-        let Some(args) = args(command)? else { return Ok(None) };
+    fn new<I: Iterator<Item = String>>(
+        command: &'static str,
+        args: I,
+    ) -> Result<Option<Self>, String> {
+        let Some(args) = handle_args(command, args)? else { return Ok(None) };
 
         // We first need to go to the original location to ensure that the config setup will go as
         // expected.
@@ -114,8 +104,8 @@ fn exec(input: &[&dyn AsRef<OsStr>], env: &HashMap<String, String>) -> Result<()
     }
 }
 
-pub fn run_cargo() -> Result<(), String> {
-    let Some(mut tools) = RustcTools::new("cargo")? else { return Ok(()) };
+pub fn run_cargo<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    let Some(mut tools) = RustcTools::new("cargo", args)? else { return Ok(()) };
     let rustflags = tools.env.get("RUSTFLAGS").cloned().unwrap_or_default();
     tools.env.insert("RUSTDOCFLAGS".to_string(), rustflags);
     let mut command: Vec<&dyn AsRef<OsStr>> = vec![&"cargo", &tools.toolchain];
@@ -125,8 +115,8 @@ pub fn run_cargo() -> Result<(), String> {
     exec(&command, &tools.env)
 }
 
-pub fn run_rustc() -> Result<(), String> {
-    let Some(tools) = RustcTools::new("rustc")? else { return Ok(()) };
+pub fn run_rustc<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    let Some(tools) = RustcTools::new("rustc", args)? else { return Ok(()) };
     let mut command = tools.config.rustc_command_vec();
     for arg in &tools.args {
         command.push(arg);

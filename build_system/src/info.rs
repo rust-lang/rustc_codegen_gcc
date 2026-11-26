@@ -28,7 +28,7 @@ fn show_llvm_commit() -> Result<(), String> {
     Ok(())
 }
 
-pub fn run() -> Result<(), String> {
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
     let Some(mut info) = ArgsHandler::<Info>::new("info")
         .with_flag("--show-gcc-path", "Display the path where gcc will be located", |obj| {
             obj.show_gcc_path = true;
@@ -37,7 +37,7 @@ pub fn run() -> Result<(), String> {
             obj.llvm_commit = true;
         })
         .with_sub_handler(ConfigInfo::args(), |info| &mut info.config)
-        .parse_args(std::env::args().skip(2))?
+        .parse_args(args)?
     else {
         return Ok(());
     };

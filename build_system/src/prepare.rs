@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
+use crate::cli::ArgsHandler;
 use crate::rustc_info::get_rustc_path;
 use crate::utils::{
     cargo_install, create_dir, get_sysroot_dir, git_clone_root_dir, remove_file, run_command,
@@ -176,37 +177,53 @@ where
     Ok(())
 }
 
-sub_command_decl! {
-    PrepareArg => "prepare",
-    cross_compile: bool = "--cross" => "Apply the patches needed to do cross-compilation",
-    only_libcore: bool = "--only-libcore" => "Only setup libcore and don't clone other repositories",
-    libgccjit12_patches: bool = "--libgccjit12-patches" => "Apply patches needed for libgccjit12",
-    sysroot_source: Option<String> = "--sysroot-source" => "Specify custom path for sysroot source",
+#[derive(Default)]
+struct PrepareArgs {
+    cross_compile: bool,
+    only_libcore: bool,
+    libgccjit12_patches: bool,
+    sysroot_source: Option<String>,
 }
 
-pub fn run() -> Result<(), String> {
-    let args = match PrepareArg::new()? {
-        Some(a) => a,
-        None => return Ok(()),
-    };
-    let sysroot_path = get_sysroot_dir();
-    prepare_libcore(
-        &sysroot_path,
-        args.libgccjit12_patches,
-        args.cross_compile,
-        args.sysroot_source,
-    )?;
-
-    if !args.only_libcore {
-        cargo_install("hyperfine")?;
-
-        clone_and_setup(
-            "https://github.com/ebobby/simple-raytracer",
-            "804a7a21b9e673a482797aa289a18ed480e4d813",
-            Some(build_raytracer),
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    if let Some(args) = ArgsHandler::<PrepareArgs>::new("prepare")
+        .with_flag("--cross", "Apply the patches needed to do cross-compilation", |obj| {
+            obj.cross_compile = true;
+        })
+        .with_flag(
+            "--only-libcore",
+            "Only setup libcore and don't clone other repositories",
+            |obj| {
+                obj.only_libcore = true;
+            },
+        )
+        .with_flag("--libgccjit12-patches", "Apply patches needed for libgccjit12", |obj| {
+            obj.libgccjit12_patches = true;
+        })
+        .with_arg("--sysroot-source", "Specify custom path for sysroot source", |obj, arg| {
+            obj.sysroot_source = Some(arg);
+        })
+        .parse_args(args)?
+    {
+        let sysroot_path = get_sysroot_dir();
+        prepare_libcore(
+            &sysroot_path,
+            args.libgccjit12_patches,
+            args.cross_compile,
+            args.sysroot_source,
         )?;
-    }
 
-    println!("Successfully ran `prepare`");
+        if !args.only_libcore {
+            cargo_install("hyperfine")?;
+
+            clone_and_setup(
+                "https://github.com/ebobby/simple-raytracer",
+                "804a7a21b9e673a482797aa289a18ed480e4d813",
+                Some(build_raytracer),
+            )?;
+        }
+
+        println!("Successfully ran `prepare`");
+    }
     Ok(())
 }

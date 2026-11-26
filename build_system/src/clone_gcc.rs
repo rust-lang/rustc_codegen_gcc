@@ -1,33 +1,46 @@
 use std::path::{Path, PathBuf};
 
+use crate::cli::ArgsHandler;
 use crate::config::ConfigInfo;
 use crate::utils::{git_clone, run_command_with_output};
 
-sub_command_decl! {
-    Args => "clone-gcc",
-    out_path: PathBuf = "--out-path" => "Location where the GCC repository will be cloned (default: `./gcc`)",
-    + config_info: ConfigInfo
-    ~ out_path = PathBuf::from("./gcc"),
+struct CloneGccArgs {
+    out_path: PathBuf,
+    config_info: ConfigInfo,
 }
 
-pub fn run() -> Result<(), String> {
-    let Some(args) = Args::new()? else {
-        return Ok(());
-    };
+impl Default for CloneGccArgs {
+    fn default() -> Self {
+        Self { out_path: PathBuf::from("./gcc"), config_info: ConfigInfo::default() }
+    }
+}
 
-    let result = git_clone("https://github.com/rust-lang/gcc", Some(&args.out_path), false)?;
-    if result.ran_clone {
-        let gcc_commit = args.config_info.get_gcc_commit()?;
-        println!("Checking out GCC commit `{gcc_commit}`...");
-        run_command_with_output(
-            &[&"git", &"checkout", &gcc_commit],
-            Some(Path::new(&result.repo_dir)),
-        )?;
-    } else {
-        println!(
-            "There is already a GCC folder in `{}`, leaving things as is...",
-            args.out_path.display()
-        );
+pub fn run<I: Iterator<Item = String>>(args: I) -> Result<(), String> {
+    if let Some(args) = ArgsHandler::<CloneGccArgs>::new("clone-gcc")
+        .with_arg(
+            "--out-path",
+            "Location where the GCC repository will be cloned (default: `./gcc`)",
+            |obj, arg| {
+                obj.out_path = arg.into();
+            },
+        )
+        .with_sub_handler(ConfigInfo::args(), |info| &mut info.config_info)
+        .parse_args(args)?
+    {
+        let result = git_clone("https://github.com/rust-lang/gcc", Some(&args.out_path), false)?;
+        if result.ran_clone {
+            let gcc_commit = args.config_info.get_gcc_commit()?;
+            println!("Checking out GCC commit `{gcc_commit}`...");
+            run_command_with_output(
+                &[&"git", &"checkout", &gcc_commit],
+                Some(Path::new(&result.repo_dir)),
+            )?;
+        } else {
+            println!(
+                "There is already a GCC folder in `{}`, leaving things as is...",
+                args.out_path.display()
+            );
+        }
     }
     Ok(())
 }
