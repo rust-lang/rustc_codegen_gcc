@@ -162,6 +162,12 @@ impl<O: Default + 'static> ArgsHandler<O> {
         get_field: fn(&mut O) -> &mut S,
     ) -> Self {
         for (name, ArgHandler { handler, help }) in sub.handlers {
+            if self.handlers.contains_key(name) {
+                panic!(
+                    "`{name}` is defined both in `{}` and `{}`",
+                    self.command_name, sub.command_name,
+                );
+            }
             self.insert_handler(name, help, handler.convert_to_parent(get_field));
         }
         self
