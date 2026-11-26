@@ -636,12 +636,14 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
 
     fn type_checked_load(
         &mut self,
-        _vtable: Self::Value,
-        _vtable_byte_offset: u64,
+        vtable: Self::Value,
+        vtable_byte_offset: u64,
         _typeid: &[u8],
     ) -> Self::Value {
-        // Unsupported.
-        self.context.new_rvalue_from_int(self.int_type, 0)
+        // libgccjit cannot express the vtable type info GCC's devirtualization needs, so the
+        // typeid is unused and this is a plain vtable load.
+        let entry = self.inbounds_ptradd(vtable, self.const_usize(vtable_byte_offset));
+        self.load(self.type_ptr(), entry, self.data_layout().pointer_align())
     }
 
     fn va_start(&mut self, va_list: RValue<'gcc>) {
