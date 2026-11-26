@@ -151,7 +151,10 @@ impl TestArg {
             if test_arg.config_info.no_default_features {
                 test_arg.flags.push("--no-default-features".into());
             }
-            test_arg.flags.append(&mut test_arg.config_info.features);
+            for feature in test_arg.config_info.features.drain(..) {
+                test_arg.flags.push("--features".into());
+                test_arg.flags.push(feature);
+            }
             Ok(Some(test_arg))
         } else {
             Ok(None)
